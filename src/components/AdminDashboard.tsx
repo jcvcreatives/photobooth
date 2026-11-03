@@ -2601,42 +2601,95 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Paper Roll Width & Print Density Settings */}
-              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h4 className="text-sm font-bold text-white mb-1">Paper Width Format (58mm / 80mm)</h4>
-                  <p className="text-xs text-slate-400">
-                    Select 58mm (384 dots) or 80mm (576 dots) to match your connected USB or Wireless printer paper width.
-                  </p>
+              {/* Paper Roll Width & ESC/POS Command Mode Settings */}
+              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-white mb-1">
+                      Paper Width Format (58mm / 80mm)
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Select <strong>58mm (384 dots)</strong> for KPrinter_461a / MP58-09 or <strong>80mm (576 dots)</strong> to match your thermal paper width.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {([58, 80] as const).map((widthMm) => (
+                      <button
+                        key={widthMm}
+                        type="button"
+                        onClick={async () => {
+                          soundEffects.playTap();
+                          const updated: RemoteKioskConfig = {
+                            ...localConfig,
+                            thermalPrinter: {
+                              ...localConfig.thermalPrinter,
+                              paperWidthMm: widthMm,
+                              dotsPerLine: widthMm === 80 ? 576 : 384,
+                            },
+                          };
+                          setLocalConfig(updated);
+                          await remoteConfigService.updateConfig(updated);
+                          onUpdateConfig(updated);
+                        }}
+                        className={`px-4 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                          localConfig.thermalPrinter.paperWidthMm === widthMm
+                            ? 'bg-emerald-600 border-emerald-500 text-white'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {widthMm}mm Roll ({widthMm === 80 ? '576px' : '384px'})
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {([58, 80] as const).map((widthMm) => (
-                    <button
-                      key={widthMm}
-                      type="button"
-                      onClick={async () => {
-                        soundEffects.playTap();
-                        const updated: RemoteKioskConfig = {
-                          ...localConfig,
-                          thermalPrinter: {
-                            ...localConfig.thermalPrinter,
-                            paperWidthMm: widthMm,
-                            dotsPerLine: widthMm === 80 ? 576 : 384,
-                          },
-                        };
-                        setLocalConfig(updated);
-                        await remoteConfigService.updateConfig(updated);
-                        onUpdateConfig(updated);
-                      }}
-                      className={`px-4 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
-                        localConfig.thermalPrinter.paperWidthMm === widthMm
-                          ? 'bg-emerald-600 border-emerald-500 text-white'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {widthMm}mm Roll
-                    </button>
-                  ))}
+
+                {/* ESC/POS Command Mode Toggle for KPrinter_461a / MP58-09 */}
+                <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-white mb-1">
+                      ESC/POS Bitmap Command Mode (KPrinter_461a / MP58-09)
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Switch between <strong>GS v 0 (8-Row Micro-Band)</strong> (384 bytes/band) and <strong>ESC * 33 (24-Dot Column Mode)</strong> fallback for 58mm firmware clones, paced at ≤128B / 25ms.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {(
+                      [
+                        { id: 'gs_v_0', label: 'GS v 0 (8-Row Micro-Band)' },
+                        { id: 'esc_star_33', label: 'ESC * 33 (24-Dot Column Mode)' },
+                      ] as const
+                    ).map((cmdMode) => {
+                      const isSelected =
+                        (localConfig.thermalPrinter.escPosCommandMode || 'gs_v_0') === cmdMode.id;
+                      return (
+                        <button
+                          key={cmdMode.id}
+                          type="button"
+                          onClick={async () => {
+                            soundEffects.playTap();
+                            const updated: RemoteKioskConfig = {
+                              ...localConfig,
+                              thermalPrinter: {
+                                ...localConfig.thermalPrinter,
+                                escPosCommandMode: cmdMode.id,
+                              },
+                            };
+                            setLocalConfig(updated);
+                            await remoteConfigService.updateConfig(updated);
+                            onUpdateConfig(updated);
+                          }}
+                          className={`px-4 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-600 border-emerald-500 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {cmdMode.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 

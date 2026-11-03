@@ -160,6 +160,7 @@ export interface ThermalPrinterConfig {
   networkPort?: number;
   serialBaudRate?: number;
   systemPrintColor?: boolean;
+  escPosCommandMode?: 'gs_v_0' | 'esc_star_33';
 }
 
 export interface EmailQueueItem {

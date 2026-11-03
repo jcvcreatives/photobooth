@@ -758,7 +758,8 @@ class ThermalPrinterService {
     _paperWidthMm: 58 | 80 = 80,
     copies: number = 1,
     onProgress?: (percent: number, statusText: string) => void,
-    escposBytes?: Uint8Array
+    escposBytes?: Uint8Array,
+    pacedPackets?: Uint8Array[]
   ): Promise<{ success: boolean; error?: string }> {
     const totalCopies = Math.max(1, Math.min(50, Math.round(Number(copies) || 1)));
     onProgress?.(
@@ -779,16 +780,21 @@ class ThermalPrinterService {
 
     // 1. If running inside the Android APK with Native PrintManager or USB bridge
     if (typeof window !== 'undefined' && window.AndroidPrinter) {
-      if (escposBytes && window.AndroidPrinter.printUsbBase64) {
+      if ((pacedPackets || escposBytes) && window.AndroidPrinter.printUsbBase64) {
         try {
-          const b64 = uint8ToBase64(escposBytes);
+          const packetsToSend =
+            pacedPackets ||
+            (escposBytes ? this.buildPacedPackets([escposBytes], 128) : []);
           for (let c = 0; c < totalCopies; c++) {
+            for (let p = 0; p < packetsToSend.length; p++) {
+              const res = window.AndroidPrinter.printUsbBase64(uint8ToBase64(packetsToSend[p]));
+              if (!res || !res.startsWith('OK')) throw new Error('USB transfer not ready');
+              await new Promise((r) => setTimeout(r, 15));
+            }
             onProgress?.(
-              45 + Math.round((c / totalCopies) * 50),
+              45 + Math.round(((c + 1) / totalCopies) * 50),
               totalCopies > 1 ? `Printing copy ${c + 1} of ${totalCopies}...` : 'Printing via USB...'
             );
-            const res = window.AndroidPrinter.printUsbBase64(b64);
-            if (!res || !res.startsWith('OK')) throw new Error('USB transfer not ready');
             if (c < totalCopies - 1) await new Promise((r) => setTimeout(r, 800));
           }
           onProgress?.(100, `Printed ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'}!`);
@@ -814,7 +820,7 @@ class ThermalPrinterService {
     }
 
     // 2. Try silent direct WebUSB if an authorized USB printer is available
-    if (escposBytes && typeof navigator !== 'undefined' && 'usb' in navigator && navigator.usb) {
+    if ((pacedPackets || escposBytes) && typeof navigator !== 'undefined' && 'usb' in navigator && navigator.usb) {
       try {
         if (!this.usbDevice || this.usbEndpointNumber === null) {
           const devices = await navigator.usb.getDevices();
@@ -823,15 +829,20 @@ class ThermalPrinterService {
           }
         }
         if (this.usbDevice && this.usbEndpointNumber !== null) {
-          const chunkSize = 1024;
+          const packetsToSend =
+            pacedPackets ||
+            (escposBytes ? this.buildPacedPackets([escposBytes], 128) : []);
           for (let c = 0; c < totalCopies; c++) {
             const copyLabel = totalCopies > 1 ? ` (Copy ${c + 1}/${totalCopies})` : '';
-            for (let i = 0; i < escposBytes.length; i += chunkSize) {
-              const chunk = escposBytes.slice(i, i + chunkSize);
-              await this.usbDevice.transferOut(this.usbEndpointNumber, chunk);
-              const progressRatio = (c + i / escposBytes.length) / totalCopies;
+            for (let p = 0; p < packetsToSend.length; p++) {
+              await this.usbDevice.transferOut(
+                this.usbEndpointNumber,
+                packetsToSend[p] as unknown as BufferSource
+              );
+              const progressRatio = (c + p / packetsToSend.length) / totalCopies;
               const percent = 45 + Math.round(progressRatio * 50);
               onProgress?.(percent, `Printing to USB printer${copyLabel}...`);
+              await new Promise((r) => setTimeout(r, 15));
             }
             soundEffects.playPaperCut();
             if (c < totalCopies - 1) {
@@ -884,6 +895,7 @@ class ThermalPrinterService {
 
   /**
    * Floyd-Steinberg error diffusion dithering with calibrated neutral contrast and optional brightness lift.
+   * Pads height to a multiple of 24 so both 8-row GS v 0 micro-bands and 24-dot ESC * 33 column bands align cleanly.
    */
   public generateDitheredRaster(
     sourceCanvas: HTMLCanvasElement,
@@ -899,8 +911,8 @@ class ThermalPrinterService {
     const ratio = sourceCanvas.height / sourceCanvas.width;
     const width = targetWidth;
     let height = Math.round(width * ratio);
-    if (height % 8 !== 0) {
-      height += 8 - (height % 8);
+    if (height % 24 !== 0) {
+      height += 24 - (height % 24);
     }
 
     const offCanvas = document.createElement('canvas');
@@ -979,8 +991,134 @@ class ThermalPrinterService {
   }
 
   /**
-   * Builds industry-standard ESC/POS raster byte sequence.
-   * Slices tall images into safe 256-row raster bands so printers with small RAM buffers never clip or garble!
+   * Builds atomic ESC/POS command bands for KPrinter_461a (MP58-09 58mm) and universal 58mm/80mm printers:
+   * - Mode 1 ('gs_v_0', default): Slices GS v 0 into 8-row micro-bands (`bandHeight = 8`, 48 * 8 = 384 bytes per band on 58mm)
+   *   with its own 8-byte header `[0x1D, 0x76, 0x30, 0x00, xL, xH, bandHeight, 0, ...384_bytes_of_pixels]`.
+   * - Mode 2 ('esc_star_33'): Uses ESC * 33 24-dot double-density column mode
+   *   `[0x1B, 0x2A, 0x21, width & 0xFF, (width >> 8) & 0xFF, ...columnBytes, 0x0A]` with line spacing `[0x1B, 0x33, 24]`.
+   */
+  public buildEscPosCommandBands(
+    monoBitmap: Uint8Array,
+    width: number,
+    height: number,
+    config: ThermalPrinterConfig
+  ): Uint8Array[] {
+    const commandMode = config.escPosCommandMode || 'gs_v_0';
+    const bands: Uint8Array[] = [];
+
+    if (commandMode === 'esc_star_33') {
+      // Initialize printer, center align, and set 24-dot line spacing [0x1B, 0x33, 24]
+      bands.push(new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x01, 0x1b, 0x33, 24]));
+
+      const nL = width & 0xff;
+      const nH = (width >> 8) & 0xff;
+
+      for (let startY = 0; startY < height; startY += 24) {
+        // 5-byte ESC * 33 header + (width * 3) column bytes + 1-byte LF (0x0A)
+        const band = new Uint8Array(5 + width * 3 + 1);
+        band[0] = 0x1b;
+        band[1] = 0x2a;
+        band[2] = 0x21;
+        band[3] = nL;
+        band[4] = nH;
+
+        let offset = 5;
+        for (let x = 0; x < width; x++) {
+          for (let k = 0; k < 3; k++) {
+            let colByte = 0;
+            for (let b = 0; b < 8; b++) {
+              const py = startY + k * 8 + b;
+              if (py < height && monoBitmap[py * width + x] === 1) {
+                colByte |= 0x80 >> b;
+              }
+            }
+            band[offset++] = colByte;
+          }
+        }
+        band[offset] = 0x0a; // LF prints the 24-dot column strip
+        bands.push(band);
+      }
+
+      // Restore default line spacing (ESC 2), feed lines, and optional cut
+      const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, config.feedLines || 0x04];
+      if (config.autoCut !== false) {
+        footer.push(0x1d, 0x56, 0x42, 0x00);
+      }
+      bands.push(new Uint8Array(footer));
+      return bands;
+    }
+
+    // Default Mode: GS v 0 sliced into 8-row micro-bands
+    // Never send full canvas height in one GS v 0 header so KPrinter_461a's 2KB buffer never overflows.
+    bands.push(new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x01]));
+
+    const bytesWidth = width / 8; // 48 bytes for 384px (58mm)
+    const xL = bytesWidth & 0xff;
+    const xH = (bytesWidth >> 8) & 0xff;
+    const bandHeight = 8;
+
+    for (let startY = 0; startY < height; startY += bandHeight) {
+      const currentBandHeight = Math.min(bandHeight, height - startY);
+      const pixelByteCount = bytesWidth * currentBandHeight; // 48 * 8 = 384 bytes
+      const band = new Uint8Array(8 + pixelByteCount);
+
+      // 8-byte GS v 0 header: [0x1D, 0x76, 0x30, 0x00, 48, 0, bandHeight, 0]
+      band[0] = 0x1d;
+      band[1] = 0x76;
+      band[2] = 0x30;
+      band[3] = 0x00;
+      band[4] = xL;
+      band[5] = xH;
+      band[6] = currentBandHeight & 0xff;
+      band[7] = (currentBandHeight >> 8) & 0xff;
+
+      let offset = 8;
+      for (let y = startY; y < startY + currentBandHeight; y++) {
+        const rowOffset = y * width;
+        for (let bx = 0; bx < bytesWidth; bx++) {
+          let byteVal = 0;
+          const basePixelX = rowOffset + bx * 8;
+          for (let bit = 0; bit < 8; bit++) {
+            if (monoBitmap[basePixelX + bit] === 1) {
+              byteVal |= 0x80 >> bit;
+            }
+          }
+          band[offset++] = byteVal;
+        }
+      }
+
+      bands.push(band);
+    }
+
+    const footer: number[] = [0x1b, 0x64, config.feedLines || 0x04];
+    if (config.autoCut !== false) {
+      footer.push(0x1d, 0x56, 0x42, 0x00);
+    }
+    bands.push(new Uint8Array(footer));
+    return bands;
+  }
+
+  /**
+   * Splits atomic ESC/POS command bands into Bluetooth/USB write packets of at most `maxBytesPerWrite` (128 bytes).
+   * Because each band starts at offset 0 of its first chunk, a command header (`GS v 0` or `ESC * 33`)
+   * is NEVER split across two packets, preventing dropped `0x1D` (`GS`) or `0x1B` (`ESC`) bytes.
+   */
+  public buildPacedPackets(
+    bands: Uint8Array[],
+    maxBytesPerWrite: number = 128
+  ): Uint8Array[] {
+    const packets: Uint8Array[] = [];
+    for (const band of bands) {
+      for (let offset = 0; offset < band.length; offset += maxBytesPerWrite) {
+        packets.push(band.slice(offset, offset + maxBytesPerWrite));
+      }
+    }
+    return packets;
+  }
+
+  /**
+   * Builds industry-standard ESC/POS raster byte sequence by concatenating the 8-row micro-bands
+   * (or ESC * 33 24-dot column bands).
    */
   public buildEscPosCommands(
     monoBitmap: Uint8Array,
@@ -988,56 +1126,15 @@ class ThermalPrinterService {
     height: number,
     config: ThermalPrinterConfig
   ): Uint8Array {
-    const bytesWidth = width / 8;
-    const xL = bytesWidth % 256;
-    const xH = Math.floor(bytesWidth / 256);
-
-    const chunks: number[] = [
-      0x1b, 0x40, // ESC @ (Initialize printer)
-      0x1b, 0x61, 0x01, // ESC a 1 (Center align)
-    ];
-
-    // Hardware ESC/POS Print Density / Thermal Head Heating Energy (GS ( K fn 49)
-    // Maps Admin density & printDarkness to Epson/ESC-POS density level (-6 light to +6 dark)
-    const darknessVal = config.printDarkness ?? 35;
-    let densityStep = 0;
-    if (config.density === 'light' || darknessVal < 42) {
-      densityStep = Math.max(-6, Math.round((darknessVal - 50) / 7)); // e.g. -2 to -6 (lighter burn)
-    } else if (config.density === 'dark' || darknessVal > 60) {
-      densityStep = Math.min(6, Math.round((darknessVal - 50) / 8)); // e.g. +1 to +6 (darker burn)
+    const bands = this.buildEscPosCommandBands(monoBitmap, width, height, config);
+    const totalLength = bands.reduce((sum, b) => sum + b.length, 0);
+    const merged = new Uint8Array(totalLength);
+    let pos = 0;
+    for (const b of bands) {
+      merged.set(b, pos);
+      pos += b.length;
     }
-    const densityByte = densityStep < 0 ? (256 + densityStep) & 0xff : densityStep & 0xff;
-    chunks.push(0x1d, 0x28, 0x4b, 0x02, 0x00, 0x31, densityByte);
-
-    // Send raster in bands of max 240 vertical dots for universal USB & Bluetooth buffer compatibility
-    const bandHeightMax = 240;
-    for (let startY = 0; startY < height; startY += bandHeightMax) {
-      const bandH = Math.min(bandHeightMax, height - startY);
-      const yL = bandH % 256;
-      const yH = Math.floor(bandH / 256);
-
-      chunks.push(0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH);
-
-      for (let y = startY; y < startY + bandH; y++) {
-        for (let bx = 0; bx < bytesWidth; bx++) {
-          let byteVal = 0;
-          for (let bit = 0; bit < 8; bit++) {
-            const pixelX = bx * 8 + bit;
-            if (monoBitmap[y * width + pixelX] === 1) {
-              byteVal |= 0x80 >> bit;
-            }
-          }
-          chunks.push(byteVal);
-        }
-      }
-    }
-
-    chunks.push(0x1b, 0x64, config.feedLines || 0x04); // Feed lines
-    if (config.autoCut !== false) {
-      chunks.push(0x1d, 0x56, 0x42, 0x00); // GS V 66 0 (Partial cut)
-    }
-
-    return new Uint8Array(chunks);
+    return merged;
   }
 
   /**
@@ -1128,7 +1225,11 @@ class ThermalPrinterService {
     soundEffects.playPrintingMotor();
 
     const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
-    const targetWidth = config.paperWidthMm === 80 ? 576 : 384;
+    // KPrinter_461a / MP58-09 and 58mm printers strictly require 384px (48 bytes) width
+    const is58mmHardware = /kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210/i.test(
+      this.currentStatus.deviceName || ''
+    );
+    const targetWidth = is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
 
     // Apply Admin Printer Printout Darkness & Density calibration to the canvas
     const calibratedCanvas = this.applyDarknessToCanvas(canvas, config);
@@ -1145,7 +1246,14 @@ class ThermalPrinterService {
       brightnessLift
     );
 
-    onProgress?.(35, 'Compiling ESC/POS raster bands...');
+    onProgress?.(35, 'Compiling ESC/POS micro-bands...');
+    const commandBands = this.buildEscPosCommandBands(
+      dithered.bitmap,
+      dithered.width,
+      dithered.height,
+      config
+    );
+    const pacedPackets = this.buildPacedPackets(commandBands, 128);
     const escposBytes = this.buildEscPosCommands(
       dithered.bitmap,
       dithered.width,
@@ -1159,10 +1267,11 @@ class ThermalPrinterService {
     if (mode === 'system') {
       const sysRes = await this.printViaSystemDriver(
         calibratedCanvas,
-        config.paperWidthMm || 80,
+        config.paperWidthMm || 58,
         copies,
         onProgress,
-        escposBytes
+        escposBytes,
+        pacedPackets
       );
       soundEffects.playPaperCut();
       return {
@@ -1174,18 +1283,21 @@ class ThermalPrinterService {
 
     // 2. USB Cord Flow (Native Android USB Host OR WebUSB)
     if (mode === 'usb') {
-      // A. Native Android USB OTG Host
+      // A. Native Android USB OTG Host (paced in <=128-byte header-aligned packets so KPrinter_461a never overflows)
       if (this.nativeUsbActive && typeof window !== 'undefined' && window.AndroidPrinter?.printUsbBase64) {
         try {
-          const b64 = uint8ToBase64(escposBytes);
           for (let c = 0; c < copies; c++) {
-            onProgress?.(
-              50 + Math.round((c / copies) * 45),
-              copies > 1 ? `Printing USB copy ${c + 1} of ${copies}...` : 'Streaming to USB OTG printer...'
-            );
-            const res = window.AndroidPrinter.printUsbBase64(b64);
-            if (!res || !res.startsWith('OK')) {
-              throw new Error(res || 'Android USB transfer failed');
+            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+            for (let p = 0; p < pacedPackets.length; p++) {
+              const b64 = uint8ToBase64(pacedPackets[p]);
+              const res = window.AndroidPrinter.printUsbBase64(b64);
+              if (!res || !res.startsWith('OK')) {
+                throw new Error(res || 'Android USB transfer failed');
+              }
+              const progressRatio = (c + p / pacedPackets.length) / copies;
+              const percent = 50 + Math.round(progressRatio * 45);
+              onProgress?.(percent, `Streaming to USB OTG printer${copyLabel}... ${percent}%`);
+              await new Promise((r) => setTimeout(r, 15));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1204,18 +1316,18 @@ class ThermalPrinterService {
         }
       }
 
-      // B. WebUSB Direct Transfer (sequential per copy so >2 copies never overflow printer RAM buffer)
+      // B. WebUSB Direct Transfer (sends header-aligned packets so 58mm & 80mm USB printers never drop headers or overflow)
       if (this.usbDevice && this.usbEndpointNumber !== null) {
         try {
-          const chunkSize = 1024;
           for (let c = 0; c < copies; c++) {
             const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            for (let i = 0; i < escposBytes.length; i += chunkSize) {
-              const chunk = escposBytes.slice(i, i + chunkSize);
-              await this.usbDevice.transferOut(this.usbEndpointNumber, chunk);
-              const progressRatio = (c + i / escposBytes.length) / copies;
+            for (let p = 0; p < pacedPackets.length; p++) {
+              const packet = pacedPackets[p];
+              await this.usbDevice.transferOut(this.usbEndpointNumber, packet as unknown as BufferSource);
+              const progressRatio = (c + p / pacedPackets.length) / copies;
               const percent = 50 + Math.round(progressRatio * 45);
               onProgress?.(percent, `Streaming to USB printer${copyLabel}... ${percent}%`);
+              await new Promise((r) => setTimeout(r, 15));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1239,16 +1351,14 @@ class ThermalPrinterService {
     if (mode === 'serial' && this.serialPort && this.serialPort.writable) {
       try {
         const writer = this.serialPort.writable.getWriter();
-        const chunkSize = 512;
         for (let c = 0; c < copies; c++) {
           const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-          for (let i = 0; i < escposBytes.length; i += chunkSize) {
-            const chunk = escposBytes.slice(i, i + chunkSize);
-            await writer.write(chunk);
-            const progressRatio = (c + i / escposBytes.length) / copies;
+          for (let p = 0; p < pacedPackets.length; p++) {
+            await writer.write(pacedPackets[p]);
+            const progressRatio = (c + p / pacedPackets.length) / copies;
             const percent = 50 + Math.round(progressRatio * 45);
             onProgress?.(percent, `Writing to Serial USB${copyLabel}... ${percent}%`);
-            await new Promise((r) => setTimeout(r, 8));
+            await new Promise((r) => setTimeout(r, 25));
           }
           soundEffects.playPaperCut();
           if (c < copies - 1) {
@@ -1269,6 +1379,7 @@ class ThermalPrinterService {
     }
 
     // 4. Wireless Bluetooth Flow (Native Android Classic SPP OR Web Bluetooth BLE)
+    // Strict Bluetooth Packet Pacing: at most 128 bytes per write (never splitting a command header) with a 25ms delay between writes
     if (mode === 'bluetooth') {
       if (
         this.nativeBluetoothActive &&
@@ -1276,15 +1387,18 @@ class ThermalPrinterService {
         window.AndroidPrinter?.printBluetoothBase64
       ) {
         try {
-          const b64 = uint8ToBase64(escposBytes);
           for (let c = 0; c < copies; c++) {
-            onProgress?.(
-              50 + Math.round((c / copies) * 45),
-              copies > 1 ? `Printing Bluetooth copy ${c + 1} of ${copies}...` : 'Sending to Bluetooth printer...'
-            );
-            const res = window.AndroidPrinter.printBluetoothBase64(b64);
-            if (!res || !res.startsWith('OK')) {
-              throw new Error(res || 'Bluetooth SPP print failed');
+            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+            for (let p = 0; p < pacedPackets.length; p++) {
+              const b64 = uint8ToBase64(pacedPackets[p]);
+              const res = window.AndroidPrinter.printBluetoothBase64(b64);
+              if (!res || !res.startsWith('OK')) {
+                throw new Error(res || 'Bluetooth SPP print failed');
+              }
+              const progressRatio = (c + p / pacedPackets.length) / copies;
+              const percent = 50 + Math.round(progressRatio * 45);
+              onProgress?.(percent, `Transmitting via Bluetooth SPP${copyLabel}... ${percent}%`);
+              await new Promise((r) => setTimeout(r, 25));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1306,20 +1420,19 @@ class ThermalPrinterService {
       if (this.bluetoothCharacteristic) {
         try {
           const canWriteNoResp = this.bluetoothCharacteristic.properties.writeWithoutResponse;
-          const chunkSize = 128;
           for (let c = 0; c < copies; c++) {
             const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            for (let i = 0; i < escposBytes.length; i += chunkSize) {
-              const chunk = escposBytes.slice(i, i + chunkSize);
+            for (let p = 0; p < pacedPackets.length; p++) {
+              const chunk = pacedPackets[p];
               if (canWriteNoResp) {
-                await this.bluetoothCharacteristic.writeValueWithoutResponse(chunk);
+                await this.bluetoothCharacteristic.writeValueWithoutResponse(chunk as unknown as BufferSource);
               } else {
-                await this.bluetoothCharacteristic.writeValue(chunk);
+                await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
               }
-              const progressRatio = (c + i / escposBytes.length) / copies;
+              const progressRatio = (c + p / pacedPackets.length) / copies;
               const percent = 50 + Math.round(progressRatio * 45);
               onProgress?.(percent, `Transmitting via Bluetooth${copyLabel}... ${percent}%`);
-              await new Promise((r) => setTimeout(r, 12));
+              await new Promise((r) => setTimeout(r, 25));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
