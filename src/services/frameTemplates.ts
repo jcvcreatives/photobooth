@@ -30,7 +30,7 @@ export const THERMAL_FRAME_THEMES: FrameTheme[] = [
     textColor: '#000000',
     accentColor: '#000000',
     headerText: 'GOBBLE-CHU • HP 999',
-    footerText: 'SIZZLING SILOG SLAM • +999 DMG',
+    footerText: 'CHICKEN INASAL FLAME • +999 DMG',
     dateVisible: true,
     cornerIcon: '⚡',
   },
@@ -43,7 +43,7 @@ export const THERMAL_FRAME_THEMES: FrameTheme[] = [
     textColor: '#000000',
     accentColor: '#000000',
     headerText: 'GOBBLE HAUS • RICE IN A BOX',
-    footerText: 'HOT GARLIC RICE • EGG • SAVORY MEAT',
+    footerText: 'CHICKEN INASAL • ICE CREAM • FLOAT',
     dateVisible: true,
     cornerIcon: '🥡',
   },
@@ -61,6 +61,32 @@ export const THERMAL_FRAME_THEMES: FrameTheme[] = [
     cornerIcon: '🍴',
   },
   {
+    id: 'gobble_ice_cream_float',
+    name: 'Ice Cream & Float',
+    category: 'gobble',
+    background: '#ffffff',
+    borderStyle: 'ice_cream_float',
+    textColor: '#000000',
+    accentColor: '#000000',
+    headerText: 'GOBBLE HAUS • FLOAT & ICE CREAM',
+    footerText: 'ICE COLD FLOAT • CREAMY SWIRL',
+    dateVisible: true,
+    cornerIcon: '🍦',
+  },
+  {
+    id: 'gobble_chicken_inasal',
+    name: 'Chicken Inasal',
+    category: 'gobble',
+    background: '#ffffff',
+    borderStyle: 'chicken_inasal',
+    textColor: '#000000',
+    accentColor: '#000000',
+    headerText: 'GOBBLE HAUS • CHICKEN INASAL',
+    footerText: 'GRILLED TO PERFECTION • 100% JUICY',
+    dateVisible: true,
+    cornerIcon: '🍗',
+  },
+  {
     id: 'gobble_receipt',
     name: 'Gobble Receipt',
     category: 'gobble',
@@ -69,35 +95,9 @@ export const THERMAL_FRAME_THEMES: FrameTheme[] = [
     textColor: '#000000',
     accentColor: '#000000',
     headerText: 'GOBBLE HAUS • ORDER #088',
-    footerText: '100% FRESH • THANK YOU FOR DINING!',
+    footerText: 'CHICKEN INASAL • FLOAT • ICE CREAM',
     dateVisible: true,
     cornerIcon: '🧾',
-  },
-  {
-    id: 'gobble_arcade',
-    name: 'Silog Arcade',
-    category: 'gobble',
-    background: '#ffffff',
-    borderStyle: 'arcade_card',
-    textColor: '#000000',
-    accentColor: '#000000',
-    headerText: 'PLAYER 1 • HIGH SCORE',
-    footerText: 'LEVEL UP! • WINNER EATS RICE BOX',
-    dateVisible: true,
-    cornerIcon: '🕹️',
-  },
-  {
-    id: 'gobble_vip_pass',
-    name: 'VIP Foodie Pass',
-    category: 'gobble',
-    background: '#ffffff',
-    borderStyle: 'vip_pass',
-    textColor: '#000000',
-    accentColor: '#000000',
-    headerText: 'GOBBLE HAUS • VIP PASS',
-    footerText: 'CERTIFIED FOODIE • ALL-ACCESS CLUB',
-    dateVisible: true,
-    cornerIcon: '👑',
   },
 ];
 
@@ -115,7 +115,7 @@ export const DIGITAL_COLOR_THEMES: FrameTheme[] = [
     textColor: '#1e1b4b',
     accentColor: '#d97706',
     headerText: 'GOBBLE-CHU • HP 999',
-    footerText: 'SIZZLING SILOG SLAM • +999 DMG',
+    footerText: 'CHICKEN INASAL FLAME • +999 DMG',
     dateVisible: true,
     cornerIcon: '⚡',
   },
@@ -128,7 +128,7 @@ export const DIGITAL_COLOR_THEMES: FrameTheme[] = [
     textColor: '#7c2d12',
     accentColor: '#ea580c',
     headerText: 'GOBBLE HAUS • RICE IN A BOX',
-    footerText: 'HOT GARLIC RICE • EGG • SAVORY MEAT',
+    footerText: 'CHICKEN INASAL • ICE CREAM • FLOAT',
     dateVisible: true,
     cornerIcon: '🥡',
   },
@@ -146,6 +146,32 @@ export const DIGITAL_COLOR_THEMES: FrameTheme[] = [
     cornerIcon: '🍴',
   },
   {
+    id: 'gobble_ice_cream_float',
+    name: 'Ice Cream & Float',
+    category: 'gobble',
+    background: '#f0f9ff',
+    borderStyle: 'ice_cream_float',
+    textColor: '#0c4a6e',
+    accentColor: '#0284c7',
+    headerText: 'GOBBLE HAUS • FLOAT & ICE CREAM',
+    footerText: 'ICE COLD FLOAT • CREAMY SWIRL',
+    dateVisible: true,
+    cornerIcon: '🍦',
+  },
+  {
+    id: 'gobble_chicken_inasal',
+    name: 'Chicken Inasal',
+    category: 'gobble',
+    background: '#fff7ed',
+    borderStyle: 'chicken_inasal',
+    textColor: '#7c2d12',
+    accentColor: '#ea580c',
+    headerText: 'GOBBLE HAUS • CHICKEN INASAL',
+    footerText: 'GRILLED TO PERFECTION • 100% JUICY',
+    dateVisible: true,
+    cornerIcon: '🍗',
+  },
+  {
     id: 'gobble_receipt',
     name: 'Gobble Receipt',
     category: 'gobble',
@@ -154,35 +180,9 @@ export const DIGITAL_COLOR_THEMES: FrameTheme[] = [
     textColor: '#18181b',
     accentColor: '#52525b',
     headerText: 'GOBBLE HAUS • ORDER #088',
-    footerText: '100% FRESH • THANK YOU FOR DINING!',
+    footerText: 'CHICKEN INASAL • FLOAT • ICE CREAM',
     dateVisible: true,
     cornerIcon: '🧾',
-  },
-  {
-    id: 'gobble_arcade',
-    name: 'Silog Arcade',
-    category: 'gobble',
-    background: '#f0f9ff',
-    borderStyle: 'arcade_card',
-    textColor: '#0c4a6e',
-    accentColor: '#0284c7',
-    headerText: 'PLAYER 1 • HIGH SCORE',
-    footerText: 'LEVEL UP! • WINNER EATS RICE BOX',
-    dateVisible: true,
-    cornerIcon: '🕹️',
-  },
-  {
-    id: 'gobble_vip_pass',
-    name: 'VIP Foodie Pass',
-    category: 'gobble',
-    background: '#fdf4ff',
-    borderStyle: 'vip_pass',
-    textColor: '#4a044e',
-    accentColor: '#c026d3',
-    headerText: 'GOBBLE HAUS • VIP PASS',
-    footerText: 'CERTIFIED FOODIE • ALL-ACCESS CLUB',
-    dateVisible: true,
-    cornerIcon: '👑',
   },
 ];
 
@@ -535,7 +535,7 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.textAlign = 'center';
     ctx.fillStyle = ink;
     ctx.fillText(
-      `NO. 088  SIZZLING SILOG POKÉMON  •  HT: 100% FRESH  •  ${dateStr.toUpperCase()}`,
+      `NO. 088  INASAL & FLOAT POKÉMON  •  HT: 100% FRESH  •  ${dateStr.toUpperCase()}`,
       centerX,
       bannerY + 22 * s
     );
@@ -549,19 +549,19 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.lineTo(rightX, bottomStartY + 8 * s);
     ctx.stroke();
 
-    // Attack 1
+    // Attack 1: Ice Cream Float Chill
     const atk1Y = bottomStartY + 42 * s;
     drawEnergyBadge(leftX + 28 * s, atk1Y - 6 * s, 12 * s);
     drawEnergyBadge(leftX + 56 * s, atk1Y - 6 * s, 12 * s);
     ctx.textAlign = 'left';
     ctx.font = `900 ${Math.round(20 * s)}px sans-serif`;
-    ctx.fillText('Garlic Rice Boost', leftX + 80 * s, atk1Y);
+    ctx.fillText('Ice Cream Float Chill', leftX + 80 * s, atk1Y);
     ctx.textAlign = 'right';
     ctx.font = `900 ${Math.round(22 * s)}px sans-serif`;
     ctx.fillText('+100', rightX - 18 * s, atk1Y);
     ctx.textAlign = 'left';
     ctx.font = `bold ${Math.round(11.5 * s)}px sans-serif`;
-    ctx.fillText('Restores 100% hunger with hot garlic rice & sunny-side egg.', leftX + 80 * s, atk1Y + 20 * s);
+    ctx.fillText('Restores 100% energy with creamy ice cream & ice-cold float!', leftX + 80 * s, atk1Y + 20 * s);
 
     // Divider line between attacks
     ctx.lineWidth = 2 * s;
@@ -570,20 +570,20 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.lineTo(rightX - 14 * s, atk1Y + 34 * s);
     ctx.stroke();
 
-    // Attack 2
+    // Attack 2: Chicken Inasal Flame
     const atk2Y = atk1Y + 66 * s;
     drawEnergyBadge(leftX + 24 * s, atk2Y - 6 * s, 11 * s);
     drawEnergyBadge(leftX + 49 * s, atk2Y - 6 * s, 11 * s);
     drawEnergyBadge(leftX + 74 * s, atk2Y - 6 * s, 11 * s);
     ctx.textAlign = 'left';
     ctx.font = `900 ${Math.round(21 * s)}px sans-serif`;
-    ctx.fillText('Sizzling Silog Slam', leftX + 96 * s, atk2Y);
+    ctx.fillText('Chicken Inasal Flame', leftX + 96 * s, atk2Y);
     ctx.textAlign = 'right';
     ctx.font = `900 ${Math.round(24 * s)}px sans-serif`;
     ctx.fillText('999', rightX - 18 * s, atk2Y);
     ctx.textAlign = 'left';
     ctx.font = `bold ${Math.round(11.5 * s)}px sans-serif`;
-    ctx.fillText('Flip a coin! If heads, double crispy toppings & unlimited smiles.', leftX + 96 * s, atk2Y + 20 * s);
+    ctx.fillText('Flip a coin! If heads, double grilled Chicken Inasal & rice box!', leftX + 96 * s, atk2Y + 20 * s);
 
     // Weakness / Resistance / Retreat Bar
     const statBarY = atk2Y + 36 * s;
@@ -659,24 +659,19 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.lineWidth = 2.5 * s;
     ctx.strokeRect(leftX + 20 * s, ribY, contentW - 40 * s, 34 * s);
     ctx.font = `900 ${Math.round(15 * s)}px monospace`;
-    ctx.fillText('★  RICE IN A BOX • ALL-DAY SILOG TO-GO  ★', centerX, ribY + 23 * s);
+    ctx.fillText('★  RICE IN A BOX • CHICKEN INASAL & FLOAT  ★', centerX, ribY + 23 * s);
 
-    // Bottom Illustration: Iconic Takeout Rice Box Carton with Sunny-Side Egg & Garlic Rice
+    // Bottom Illustration: Iconic Takeout Rice Box Carton with Chicken Inasal & Rice
     const cartonCx = centerX;
     const cartonTopY = bottomStartY + 52 * s;
     const cartonBotY = bottomStartY + 132 * s;
 
-    // Puffy garlic rice domes & sunny-side-up egg peeking above the box
+    // Steaming rice & grilled Chicken Inasal peeking above the box
     ctx.lineWidth = 3 * s;
     ctx.beginPath();
     ctx.arc(cartonCx - 38 * s, cartonTopY, 24 * s, Math.PI, 0, false);
     ctx.arc(cartonCx, cartonTopY - 8 * s, 30 * s, Math.PI, 0, false);
     ctx.arc(cartonCx + 38 * s, cartonTopY, 24 * s, Math.PI, 0, false);
-    ctx.stroke();
-
-    // Egg yolk circle inside top dome
-    ctx.beginPath();
-    ctx.arc(cartonCx, cartonTopY - 12 * s, 10 * s, 0, Math.PI * 2);
     ctx.stroke();
 
     // Open side flaps of the rice box
@@ -708,7 +703,7 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.font = `900 ${Math.round(14 * s)}px sans-serif`;
     ctx.fillText('GOBBLE', cartonCx, cartonTopY + 38 * s);
     ctx.font = `bold ${Math.round(11 * s)}px monospace`;
-    ctx.fillText('HAUS BOX', cartonCx, cartonTopY + 54 * s);
+    ctx.fillText('RICE BOX', cartonCx, cartonTopY + 54 * s);
 
     // Flanking stars & badges
     drawStar(leftX + 55 * s, cartonTopY + 40 * s, 18 * s, 8 * s, false);
@@ -719,7 +714,7 @@ function drawGobbleFrameTopAndBottomArt(
 
     // Bottom Text Banner
     ctx.font = `900 ${Math.round(20 * s)}px sans-serif`;
-    ctx.fillText('HOT GARLIC RICE • FRIED EGG • SAVORY MEAT', centerX, cartonBotY + 34 * s);
+    ctx.fillText('CHICKEN INASAL • ICE CREAM • COLD FLOAT', centerX, cartonBotY + 34 * s);
     ctx.font = `bold ${Math.round(13 * s)}px monospace`;
     ctx.fillText(`PACKED FRESH AT GOBBLE HAUS  •  ${dateStr.toUpperCase()}`, centerX, cartonBotY + 58 * s);
   }
@@ -757,7 +752,6 @@ function drawGobbleFrameTopAndBottomArt(
       const bx = barStartX + i * (segW + segGap);
       ctx.lineWidth = 2.5 * s;
       ctx.strokeRect(bx, gaugeY + 8 * s, segW, 22 * s);
-      // Diagonal hatch lines inside each segment (crisp thermal rendering without heavy black block)
       ctx.beginPath();
       ctx.moveTo(bx + 4 * s, gaugeY + 28 * s);
       ctx.lineTo(bx + segW - 4 * s, gaugeY + 10 * s);
@@ -770,10 +764,10 @@ function drawGobbleFrameTopAndBottomArt(
 
     // Sub-banner above photo
     ctx.textAlign = 'center';
-    ctx.font = `900 ${Math.round(15 * s)}px monospace`;
-    ctx.fillText('WARNING: WILL TRADE POSES FOR GOBBLE HAUS SILOG!', centerX, gaugeY + 64 * s);
+    ctx.font = `900 ${Math.round(14.5 * s)}px monospace`;
+    ctx.fillText('WARNING: WILL TRADE POSES FOR INASAL & ICE CREAM FLOAT!', centerX, gaugeY + 64 * s);
 
-    // Bottom Illustration: Steaming Plate + Fork & Knife + Cravings Checklist
+    // Bottom Illustration: Steaming Plate + Fork & Spoon + Cravings Checklist
     const plateCy = bottomStartY + 76 * s;
 
     // Left Fork drawing
@@ -796,7 +790,7 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.lineTo(spoonX, plateCy + 34 * s);
     ctx.stroke();
 
-    // Center Plate & Dome Cloche / Rice Bowl drawing
+    // Center Plate drawing
     ctx.lineWidth = 3.5 * s;
     ctx.beginPath();
     ctx.arc(centerX, plateCy, 42 * s, 0, Math.PI * 2);
@@ -814,17 +808,192 @@ function drawGobbleFrameTopAndBottomArt(
     const chkY = plateCy + 56 * s;
     ctx.lineWidth = 2.5 * s;
     ctx.strokeRect(leftX + 16 * s, chkY, contentW - 32 * s, 32 * s);
-    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
-    ctx.fillText('[✓] HUNGRY   [✓] RICE BOX SECURED   [✓] 100% HAPPY', centerX, chkY + 21 * s);
+    ctx.font = `900 ${Math.round(12.5 * s)}px monospace`;
+    ctx.fillText('[✓] CHICKEN INASAL   [✓] ICE CREAM FLOAT   [✓] HAPPY', centerX, chkY + 21 * s);
 
     ctx.font = `900 ${Math.round(19 * s)}px sans-serif`;
     ctx.fillText(`POWERED BY GOBBLE HAUS  •  ${dateStr.toUpperCase()}`, centerX, chkY + 56 * s);
   }
 
   // =========================================================================
-  // 4. GOBBLE RECEIPT THEME ('order_receipt' / 'gobble_receipt')
+  // 4. ICE CREAM & FLOAT THEME ('ice_cream_float' / 'gobble_ice_cream_float')
   // =========================================================================
-  else if (styleId === 'order_receipt' || theme.id === 'gobble_receipt') {
+  else if (styleId === 'ice_cream_float' || theme.id === 'gobble_ice_cream_float') {
+    // Top Illustration: Swirl Ice Cream Cone (Left) + Fizzy Float Cup with Straw (Right)
+    const topY = 52 * s;
+
+    // Left Mini Ice Cream Cone drawing
+    const coneX = leftX + 46 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.beginPath();
+    ctx.arc(coneX, topY, 18 * s, Math.PI, 0, false);
+    ctx.arc(coneX, topY - 12 * s, 12 * s, Math.PI, 0, false);
+    ctx.moveTo(coneX - 18 * s, topY);
+    ctx.lineTo(coneX, topY + 38 * s);
+    ctx.lineTo(coneX + 18 * s, topY);
+    ctx.closePath();
+    ctx.stroke();
+
+    // Right Mini Float Cup with Dome & Straw drawing
+    const cupX = rightX - 46 * s;
+    ctx.beginPath();
+    ctx.moveTo(cupX - 18 * s, topY);
+    ctx.lineTo(cupX + 18 * s, topY);
+    ctx.lineTo(cupX + 13 * s, topY + 38 * s);
+    ctx.lineTo(cupX - 13 * s, topY + 38 * s);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cupX, topY, 18 * s, Math.PI, 0, false);
+    ctx.moveTo(cupX + 4 * s, topY - 6 * s);
+    ctx.lineTo(cupX + 16 * s, topY - 26 * s);
+    ctx.stroke();
+
+    // Main Top Title & Subtitle
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${Math.round(30 * s)}px sans-serif`;
+    ctx.fillText('GOBBLE HAUS FLOAT', centerX, topY + 8 * s);
+    ctx.font = `900 ${Math.round(16 * s)}px monospace`;
+    ctx.fillText('🍦 CREAMY ICE CREAM & COLD FLOAT 🥤', centerX, topY + 34 * s);
+
+    // Top Ribbon Box
+    const ribY = topY + 52 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.strokeRect(leftX + 16 * s, ribY, contentW - 32 * s, 34 * s);
+    ctx.font = `900 ${Math.round(14 * s)}px monospace`;
+    ctx.fillText(`★  SWEET SWIRL • FIZZY FLOAT • ${dateStr.toUpperCase()}  ★`, centerX, ribY + 22 * s);
+
+    // Bottom Illustration: Tall Float Cup with Ice Cream Scoop, Cherry & Straw
+    const fltCx = centerX;
+    const fltTopY = bottomStartY + 58 * s;
+    const fltBotY = bottomStartY + 136 * s;
+
+    // Ice cream scoop domes on top of float cup + cherry + straw
+    ctx.lineWidth = 3 * s;
+    ctx.beginPath();
+    ctx.arc(fltCx, fltTopY - 6 * s, 32 * s, Math.PI, 0, false);
+    ctx.stroke();
+    // Cherry on top
+    ctx.beginPath();
+    ctx.arc(fltCx - 6 * s, fltTopY - 44 * s, 8 * s, 0, Math.PI * 2);
+    ctx.stroke();
+    // Drinking straw
+    ctx.lineWidth = 4 * s;
+    ctx.beginPath();
+    ctx.moveTo(fltCx + 12 * s, fltTopY - 16 * s);
+    ctx.lineTo(fltCx + 34 * s, fltTopY - 46 * s);
+    ctx.stroke();
+
+    // Float Cup Body
+    ctx.lineWidth = 3.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(fltCx - 44 * s, fltTopY);
+    ctx.lineTo(fltCx + 44 * s, fltTopY);
+    ctx.lineTo(fltCx + 32 * s, fltBotY);
+    ctx.lineTo(fltCx - 32 * s, fltBotY);
+    ctx.closePath();
+    ctx.stroke();
+
+    // Fizzy bubbles & badge inside float cup
+    ctx.font = `900 ${Math.round(14 * s)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('FLOAT', fltCx, fltTopY + 34 * s);
+    ctx.font = `bold ${Math.round(11 * s)}px monospace`;
+    ctx.fillText('& SWIRL', fltCx, fltTopY + 52 * s);
+
+    // Flanking stars & badges
+    drawStar(leftX + 65 * s, fltTopY + 36 * s, 18 * s, 8 * s, false);
+    drawStar(rightX - 65 * s, fltTopY + 36 * s, 18 * s, 8 * s, false);
+    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
+    ctx.fillText('ICE', leftX + 65 * s, fltTopY + 70 * s);
+    ctx.fillText('COLD', rightX - 65 * s, fltTopY + 70 * s);
+
+    // Bottom Text Banner
+    ctx.font = `900 ${Math.round(20 * s)}px sans-serif`;
+    ctx.fillText('ICE CREAM FLOAT • SOFT SERVE • CHICKEN INASAL', centerX, fltBotY + 34 * s);
+    ctx.font = `bold ${Math.round(13 * s)}px monospace`;
+    ctx.fillText('CHILL & REFRESH AT GOBBLE HAUS • 100% SWEET VIBES', centerX, fltBotY + 58 * s);
+  }
+
+  // =========================================================================
+  // 5. CHICKEN INASAL THEME ('chicken_inasal' / 'gobble_chicken_inasal')
+  // =========================================================================
+  else if (styleId === 'chicken_inasal' || theme.id === 'gobble_chicken_inasal') {
+    // Top Grill Marquee & Sizzling Banner
+    ctx.lineWidth = 3 * s;
+    ctx.strokeRect(leftX, 24 * s, contentW, 44 * s);
+    ctx.font = `900 ${Math.round(15 * s)}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillText('🔥 CHAR-GRILLED SPECIAL', leftX + 14 * s, 52 * s);
+    ctx.textAlign = 'right';
+    ctx.fillText('100% JUICY & HOT', rightX - 14 * s, 52 * s);
+
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${Math.round(30 * s)}px sans-serif`;
+    ctx.fillText('🍗 CHICKEN INASAL 🍗', centerX, 108 * s);
+
+    const barW = contentW - 40 * s;
+    const barX = leftX + 20 * s;
+    const barY = 124 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.strokeRect(barX, barY, barW, 30 * s);
+    ctx.font = `900 ${Math.round(13.5 * s)}px monospace`;
+    ctx.fillText('GOBBLE HAUS GRILL • PAIRED WITH ICE-COLD FLOAT!', centerX, barY + 20 * s);
+
+    ctx.font = `bold ${Math.round(13 * s)}px monospace`;
+    ctx.fillText(`FRESH OFF THE GRILL  •  ${dateStr.toUpperCase()}`, centerX, headerZoneHeight - 16 * s);
+
+    // Bottom Illustration: Sizzling Grilled Chicken Inasal Drumstick/Quarter on Platter
+    const pltCy = bottomStartY + 78 * s;
+
+    // Platter oval drawing
+    ctx.lineWidth = 3.5 * s;
+    ctx.beginPath();
+    ctx.ellipse(centerX, pltCy + 14 * s, 96 * s, 34 * s, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Grilled Chicken Inasal Drumstick shape drawing on platter
+    ctx.lineWidth = 3 * s;
+    ctx.beginPath();
+    ctx.ellipse(centerX - 16 * s, pltCy - 4 * s, 44 * s, 24 * s, -0.15, 0, Math.PI * 2);
+    ctx.stroke();
+    // Bone handle on right of drumstick
+    ctx.beginPath();
+    ctx.moveTo(centerX + 26 * s, pltCy - 12 * s);
+    ctx.lineTo(centerX + 56 * s, pltCy - 18 * s);
+    ctx.moveTo(centerX + 26 * s, pltCy - 2 * s);
+    ctx.lineTo(centerX + 56 * s, pltCy - 8 * s);
+    ctx.arc(centerX + 60 * s, pltCy - 17 * s, 6 * s, 0, Math.PI * 2);
+    ctx.arc(centerX + 60 * s, pltCy - 7 * s, 6 * s, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Char-grill sear marks on the Chicken Inasal
+    ctx.lineWidth = 2.5 * s;
+    [-32 * s, -16 * s, 0].forEach((dx) => {
+      ctx.beginPath();
+      ctx.moveTo(centerX + dx - 6 * s, pltCy - 16 * s);
+      ctx.lineTo(centerX + dx + 6 * s, pltCy + 8 * s);
+      ctx.stroke();
+    });
+
+    // Flanking stars & badges
+    drawStar(leftX + 55 * s, pltCy - 4 * s, 18 * s, 8 * s, false);
+    drawStar(rightX - 55 * s, pltCy - 4 * s, 18 * s, 8 * s, false);
+    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
+    ctx.fillText('HOT', leftX + 55 * s, pltCy + 28 * s);
+    ctx.fillText('GRILL', rightX - 55 * s, pltCy + 28 * s);
+
+    // Bottom Text Banner
+    ctx.font = `900 ${Math.round(19 * s)}px sans-serif`;
+    ctx.fillText('SIGNATURE CHICKEN INASAL • RICE BOX • ICE CREAM FLOAT', centerX, pltCy + 76 * s);
+    ctx.font = `bold ${Math.round(13 * s)}px monospace`;
+    ctx.fillText('GOBBLE HAUS GRILL HOUSE • 100% BUSOG & SATISFIED', centerX, pltCy + 100 * s);
+  }
+
+  // =========================================================================
+  // 6. GOBBLE RECEIPT THEME ('order_receipt' / 'gobble_receipt')
+  // =========================================================================
+  else {
     // Top Zig-Zag Receipt Tear Edge
     ctx.lineWidth = 2.5 * s;
     ctx.beginPath();
@@ -855,7 +1024,7 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.font = `900 ${Math.round(15 * s)}px monospace`;
     ctx.fillText('QTY  ITEM DESCRIPTION', leftX + 8 * s, 142 * s);
     ctx.textAlign = 'right';
-    ctx.fillText('PRICE', rightX - 8 * s, 142 * s);
+    ctx.fillText('STATUS', rightX - 8 * s, 142 * s);
 
     ctx.beginPath();
     ctx.moveTo(leftX, 154 * s);
@@ -878,9 +1047,9 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.setLineDash([]);
 
     const items = [
-      ['1x  SIGNATURE SILOG RICE BOX', '100% HOT'],
-      ['1x  EXTRA GARLIC RICE & EGG', 'INCLUDED'],
-      ['1x  UNLIMITED GOOD VIBES', 'PRICELESS'],
+      ['1x  GRILLED CHICKEN INASAL', '100% HOT'],
+      ['1x  CREAMY ICE CREAM FLOAT', 'ICE COLD'],
+      ['1x  RICE IN A BOX & ICE CREAM', 'FRESH'],
     ];
     ctx.font = `bold ${Math.round(14 * s)}px monospace`;
     items.forEach(([label, val], idx) => {
@@ -922,142 +1091,6 @@ function drawGobbleFrameTopAndBottomArt(
     ctx.textAlign = 'center';
     ctx.font = `bold ${Math.round(12 * s)}px monospace`;
     ctx.fillText('* GOBBLE-HAUS-VIP-088 *   •   THANK YOU, COME AGAIN!', centerX, bcY + bcH + 18 * s);
-  }
-
-  // =========================================================================
-  // 5. SILOG ARCADE THEME ('arcade_card' / 'gobble_arcade')
-  // =========================================================================
-  else if (styleId === 'arcade_card' || theme.id === 'gobble_arcade') {
-    // Top Arcade Marquee & Health Hearts
-    ctx.lineWidth = 3 * s;
-    ctx.strokeRect(leftX, 24 * s, contentW, 44 * s);
-    ctx.font = `900 ${Math.round(16 * s)}px monospace`;
-    ctx.textAlign = 'left';
-    ctx.fillText('1UP: GOBBLE PLAYER', leftX + 14 * s, 52 * s);
-    ctx.textAlign = 'right';
-    ctx.fillText('HI-SCORE: 999,990', rightX - 14 * s, 52 * s);
-
-    // Headline + 5 Star/Heart HP Bar
-    ctx.textAlign = 'center';
-    ctx.font = `900 ${Math.round(28 * s)}px sans-serif`;
-    ctx.fillText('🕹️ SILOG POWER CLUB 🕹️', centerX, 108 * s);
-
-    // Energy Bar
-    const hpW = contentW - 60 * s;
-    const hpX = leftX + 30 * s;
-    const hpY = 124 * s;
-    ctx.lineWidth = 2.5 * s;
-    ctx.strokeRect(hpX, hpY, hpW, 28 * s);
-    ctx.font = `900 ${Math.round(14 * s)}px monospace`;
-    ctx.fillText('STAMINA: ★ ★ ★ ★ ★  [FULL POWER +99]', centerX, hpY + 19 * s);
-
-    ctx.font = `bold ${Math.round(13 * s)}px monospace`;
-    ctx.fillText(`STAGE 1: GOBBLE HAUS ARENA  •  ${dateStr.toUpperCase()}`, centerX, headerZoneHeight - 16 * s);
-
-    // Bottom Arcade Controller Drawing (D-Pad on Left, Power-Up Box Center, A/B Buttons Right)
-    const ctrlCy = bottomStartY + 78 * s;
-
-    // D-Pad Plus Shape Drawing on Left
-    const dpadX = leftX + 66 * s;
-    const arm = 16 * s;
-    ctx.lineWidth = 3 * s;
-    ctx.beginPath();
-    ctx.moveTo(dpadX - arm, ctrlCy - arm * 2.2);
-    ctx.lineTo(dpadX + arm, ctrlCy - arm * 2.2);
-    ctx.lineTo(dpadX + arm, ctrlCy - arm);
-    ctx.lineTo(dpadX + arm * 2.2, ctrlCy - arm);
-    ctx.lineTo(dpadX + arm * 2.2, ctrlCy + arm);
-    ctx.lineTo(dpadX + arm, ctrlCy + arm);
-    ctx.lineTo(dpadX + arm, ctrlCy + arm * 2.2);
-    ctx.lineTo(dpadX - arm, ctrlCy + arm * 2.2);
-    ctx.lineTo(dpadX - arm, ctrlCy + arm);
-    ctx.lineTo(dpadX - arm * 2.2, ctrlCy + arm);
-    ctx.lineTo(dpadX - arm * 2.2, ctrlCy - arm);
-    ctx.lineTo(dpadX - arm, ctrlCy - arm);
-    ctx.closePath();
-    ctx.stroke();
-
-    // Center Arcade Dialogue Box
-    const dlgW = contentW - 250 * s;
-    ctx.lineWidth = 3 * s;
-    ctx.strokeRect(centerX - dlgW / 2, ctrlCy - 34 * s, dlgW, 68 * s);
-    ctx.textAlign = 'center';
-    ctx.font = `900 ${Math.round(16 * s)}px monospace`;
-    ctx.fillText('LEVEL UP!', centerX, ctrlCy - 8 * s);
-    ctx.font = `bold ${Math.round(12 * s)}px monospace`;
-    ctx.fillText('+1 RICE BOX', centerX, ctrlCy + 12 * s);
-    ctx.fillText('UNLOCKED!', centerX, ctrlCy + 27 * s);
-
-    // Right A & B Arcade Buttons
-    const btnBX = rightX - 82 * s;
-    const btnAX = rightX - 34 * s;
-    ctx.lineWidth = 3 * s;
-    ctx.beginPath();
-    ctx.arc(btnBX, ctrlCy + 8 * s, 18 * s, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(btnAX, ctrlCy - 10 * s, 18 * s, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.font = `900 ${Math.round(16 * s)}px monospace`;
-    ctx.fillText('B', btnBX, ctrlCy + 14 * s);
-    ctx.fillText('A', btnAX, ctrlCy - 4 * s);
-
-    // Bottom Arcade Prompt
-    ctx.font = `900 ${Math.round(19 * s)}px monospace`;
-    ctx.fillText('WINNER EATS GOBBLE HAUS • INSERT COIN TO CONTINUE', centerX, bottomStartY + 168 * s);
-  }
-
-  // =========================================================================
-  // 6. VIP FOODIE PASS THEME ('vip_pass' / 'gobble_vip_pass')
-  // =========================================================================
-  else {
-    // Lanyard Slot Punch Hole at Top Center
-    ctx.lineWidth = 3 * s;
-    ctx.strokeRect(centerX - 48 * s, 22 * s, 96 * s, 18 * s);
-
-    // VIP Badge Top Header Box
-    ctx.lineWidth = 3.5 * s;
-    ctx.strokeRect(leftX, 52 * s, contentW, 88 * s);
-
-    ctx.textAlign = 'center';
-    ctx.font = `900 ${Math.round(28 * s)}px sans-serif`;
-    ctx.fillText('👑 GOBBLE HAUS VIP PASS 👑', centerX, 92 * s);
-
-    ctx.font = `900 ${Math.round(14 * s)}px monospace`;
-    ctx.fillText('OFFICIAL FOODIE CLUB  •  ALL-ACCESS RICE BOX MEMBER', centerX, 122 * s);
-
-    ctx.font = `bold ${Math.round(13.5 * s)}px monospace`;
-    ctx.fillText(`ISSUED: ${dateStr.toUpperCase()}  •  STATUS: CERTIFIED BUSOG`, centerX, headerZoneHeight - 16 * s);
-
-    // Bottom Loyalty Stamp Card (5 Punch Circles) + Approved Stamp
-    const cardY = bottomStartY + 26 * s;
-    const cardH = 96 * s;
-    ctx.lineWidth = 3 * s;
-    ctx.strokeRect(leftX + 10 * s, cardY, contentW - 20 * s, cardH);
-
-    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.fillText('GOBBLE HAUS LOYALTY STAMP CARD • 5/5 COMPLETED!', centerX, cardY + 22 * s);
-
-    const stampCount = 5;
-    const stampSpacing = (contentW - 100 * s) / (stampCount - 1);
-    const stampStartX = leftX + 50 * s;
-    const stampCy = cardY + 60 * s;
-
-    for (let i = 0; i < stampCount; i++) {
-      const sx = stampStartX + i * stampSpacing;
-      ctx.lineWidth = 2.5 * s;
-      ctx.beginPath();
-      ctx.arc(sx, stampCy, 22 * s, 0, Math.PI * 2);
-      ctx.stroke();
-      drawStar(sx, stampCy, 13 * s, 6 * s, true);
-    }
-
-    // Bottom Chef Seal & Signature
-    ctx.font = `900 ${Math.round(19 * s)}px sans-serif`;
-    ctx.fillText('★ APPROVED BY CHEF • 100% LEGIT FOODIE ★', centerX, cardY + cardH + 34 * s);
-    ctx.font = `bold ${Math.round(12.5 * s)}px monospace`;
-    ctx.fillText('GOBBLE HAUS SILOG & RICE BOXES • VIP COLLECTOR EDITION', centerX, cardY + cardH + 58 * s);
   }
 
   ctx.restore();

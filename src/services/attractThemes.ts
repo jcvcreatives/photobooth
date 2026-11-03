@@ -51,7 +51,7 @@ export const GOBBLE_HAUS_STICKER_ASSETS = [
   },
   {
     id: 'gh-02',
-    name: 'Tapa & Garlic Rice',
+    name: 'Chicken Inasal & Rice',
     url: '/assets/aistudio/02_tapa_and_garlic_rice_77785a88.png',
   },
   {
@@ -163,10 +163,10 @@ export const ATTRACT_OCCASION_THEMES: AttractOccasionTheme[] = [
     name: 'Gobble Haus',
     shortLabel: 'Gobble Haus',
     emoji: '🥡',
-    description: 'Signature Gobble Haus restaurant theme with animated dropping rice-box stickers, warm kraft takeout styling, and savory gold accents.',
+    description: 'Signature Gobble Haus restaurant theme featuring Chicken Inasal, Ice Cream, Float, and Rice Box stickers.',
     isDark: false,
     screenBgClass: 'bg-gradient-to-b from-[#fffbf2] via-[#fdf3e1] to-[#f5e1be] text-[#2c1a0e]',
-    floatingSymbols: ['🥡', '🍳', '🍚', '🥩', '🥢', '✨'],
+    floatingSymbols: ['🥡', '🍗', '🍦', '🥤', '🥢', '✨'],
     floatingOpacityClass: 'opacity-100',
     animatedStickers: [
       // All 8 Gobble Haus Rice Box Stickers cascading and dropping across the home screen
@@ -183,9 +183,9 @@ export const ATTRACT_OCCASION_THEMES: AttractOccasionTheme[] = [
       },
       {
         id: 'gh-drop-2',
-        emoji: '🥡',
+        emoji: '🍗',
         imageUrl: '/assets/aistudio/02_tapa_and_garlic_rice_77785a88.png',
-        label: 'Tapa & Garlic Rice',
+        label: 'Chicken Inasal & Rice',
         animation: 'food_drop',
         positionClass: 'left-[14%] sm:left-[16%] top-0',
         sizeClass: 'w-15 h-15 sm:w-20 sm:h-20',
@@ -261,9 +261,9 @@ export const ATTRACT_OCCASION_THEMES: AttractOccasionTheme[] = [
       // Featured bouncing rice-box stickers anchored on the sides of the home screen
       {
         id: 'gh-land-tl',
-        emoji: '🥡',
+        emoji: '🍗',
         imageUrl: '/assets/aistudio/02_tapa_and_garlic_rice_77785a88.png',
-        label: 'Tapa & Garlic Rice',
+        label: 'Chicken Inasal & Rice',
         animation: 'food_land',
         positionClass: 'top-20 right-6 sm:right-14',
         sizeClass: 'w-18 h-18 sm:w-24 sm:h-24',
