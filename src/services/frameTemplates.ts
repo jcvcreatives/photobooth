@@ -585,34 +585,8 @@ export async function renderPhotostripCanvas(options: {
   ctx.fillStyle = effectiveBg;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // Decorative border styles
-  if (isThermalMode) {
-    // Thermal receipt style: clean solid black border lines without colored fills
-    ctx.strokeStyle = '#000000';
-    if (theme.borderStyle === 'double_gold' || theme.borderStyle === 'wedding_gold') {
-      ctx.lineWidth = 2.5;
-      ctx.strokeRect(16, 16, canvasWidth - 32, canvasHeight - 32);
-      ctx.lineWidth = 1;
-      ctx.strokeRect(22, 22, canvasWidth - 44, canvasHeight - 44);
-    } else if (theme.borderStyle === 'passport_emboss') {
-      ctx.lineWidth = 2;
-      ctx.strokeRect(16, 16, canvasWidth - 32, canvasHeight - 32);
-      ctx.beginPath();
-      ctx.moveTo(30, 20); ctx.lineTo(30, 42);
-      ctx.moveTo(20, 30); ctx.lineTo(42, 30);
-      ctx.moveTo(canvasWidth - 30, 20); ctx.lineTo(canvasWidth - 30, 42);
-      ctx.moveTo(canvasWidth - 20, 30); ctx.lineTo(canvasWidth - 42, 30);
-      ctx.stroke();
-    } else if (theme.borderStyle === 'airmail_border') {
-      ctx.lineWidth = 2;
-      ctx.setLineDash([12, 8]);
-      ctx.strokeRect(16, 16, canvasWidth - 32, canvasHeight - 32);
-      ctx.setLineDash([]);
-    } else {
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(18, 18, canvasWidth - 36, canvasHeight - 36);
-    }
-  } else {
+  // Decorative border styles (only for digital color keepsake; thermal receipt mode stays clean and borderless)
+  if (!isThermalMode) {
     // Full color digital frame rendering
     if (theme.borderStyle === 'wedding_gold' || theme.borderStyle === 'double_gold') {
       ctx.strokeStyle = theme.accentColor;

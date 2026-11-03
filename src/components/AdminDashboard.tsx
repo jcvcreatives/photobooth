@@ -2650,13 +2650,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       ESC/POS Bitmap Command Mode (KPrinter_461a / MP58-09)
                     </h4>
                     <p className="text-xs text-slate-400">
-                      Switch between <strong>GS v 0 (8-Row Micro-Band)</strong> (384 bytes/band) and <strong>ESC * 33 (24-Dot Column Mode)</strong> fallback for 58mm firmware clones, paced at ≤128B / 25ms.
+                      Default <strong>GS v 0 (Zero-Line Continuous)</strong> streams 2 full rows (96B) per write so the stepper motor never stops mid-photo and leaves zero horizontal band lines.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     {(
                       [
-                        { id: 'gs_v_0', label: 'GS v 0 (8-Row Micro-Band)' },
+                        { id: 'gs_v_0', label: 'GS v 0 (Zero-Line Continuous)' },
+                        { id: 'gs_v_0_banded', label: 'GS v 0 (8-Row Micro-Band)' },
                         { id: 'esc_star_33', label: 'ESC * 33 (24-Dot Column Mode)' },
                       ] as const
                     ).map((cmdMode) => {

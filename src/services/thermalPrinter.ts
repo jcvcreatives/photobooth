@@ -942,26 +942,37 @@ class ThermalPrinterService {
 
     const mono = new Uint8Array(width * height);
 
+    // Serpentine (boustrophedon) error-diffusion dithering with gentle damping (0.90)
+    // Eliminates horizontal "worm" / bar lines in dark hair and smooth tonal transitions
     for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
+      const reverse = (y & 1) === 1;
+      const startX = reverse ? width - 1 : 0;
+      const endX = reverse ? -1 : width;
+      const stepX = reverse ? -1 : 1;
+
+      for (let x = startX; x !== endX; x += stepX) {
         const idx = y * width + x;
         const oldPixel = gray[idx];
         const newPixel = oldPixel < 128 ? 0 : 255;
         mono[idx] = newPixel === 0 ? 1 : 0;
 
-        const err = oldPixel - newPixel;
+        // Slightly damped error prevents horizontal oscillation bands in dark hair
+        const err = (oldPixel - newPixel) * 0.9;
 
-        if (x + 1 < width) {
-          gray[idx + 1] += (err * 7) / 16;
-        }
-        if (x - 1 >= 0 && y + 1 < height) {
-          gray[(y + 1) * width + (x - 1)] += (err * 3) / 16;
+        const nextX = x + stepX;
+        const prevX = x - stepX;
+
+        if (nextX >= 0 && nextX < width) {
+          gray[y * width + nextX] += (err * 7) / 16;
         }
         if (y + 1 < height) {
+          if (prevX >= 0 && prevX < width) {
+            gray[(y + 1) * width + prevX] += (err * 3) / 16;
+          }
           gray[(y + 1) * width + x] += (err * 5) / 16;
-        }
-        if (x + 1 < width && y + 1 < height) {
-          gray[(y + 1) * width + (x + 1)] += (err * 1) / 16;
+          if (nextX >= 0 && nextX < width) {
+            gray[(y + 1) * width + nextX] += (err * 1) / 16;
+          }
         }
       }
     }
@@ -992,10 +1003,11 @@ class ThermalPrinterService {
 
   /**
    * Builds atomic ESC/POS command bands for KPrinter_461a (MP58-09 58mm) and universal 58mm/80mm printers:
-   * - Mode 1 ('gs_v_0', default): Slices GS v 0 into 8-row micro-bands (`bandHeight = 8`, 48 * 8 = 384 bytes per band on 58mm)
-   *   with its own 8-byte header `[0x1D, 0x76, 0x30, 0x00, xL, xH, bandHeight, 0, ...384_bytes_of_pixels]`.
-   * - Mode 2 ('esc_star_33'): Uses ESC * 33 24-dot double-density column mode
-   *   `[0x1B, 0x2A, 0x21, width & 0xFF, (width >> 8) & 0xFF, ...columnBytes, 0x0A]` with line spacing `[0x1B, 0x33, 24]`.
+   * - Mode 1 ('gs_v_0', default): Continuous Seamless GS v 0 stream with zero line-spacing (`ESC 3 0`)
+   *   and row-aligned packet pacing (96 bytes = 2 full 48-byte rows per write) so the stepper motor
+   *   never stops/restarts every 8 rows and never leaves horizontal white seam lines across dark hair/faces.
+   * - Mode 2 ('gs_v_0_banded'): 8-row GS v 0 micro-bands with zero line-spacing (`ESC 3 0`) and row-aligned 104B/96B packets.
+   * - Mode 3 ('esc_star_33'): ESC * 33 24-dot double-density column mode with `[0x1B, 0x33, 24]` line spacing.
    */
   public buildEscPosCommandBands(
     monoBitmap: Uint8Array,
@@ -1048,21 +1060,25 @@ class ThermalPrinterService {
       return bands;
     }
 
-    // Default Mode: GS v 0 sliced into 8-row micro-bands
-    // Never send full canvas height in one GS v 0 header so KPrinter_461a's 2KB buffer never overflows.
-    bands.push(new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x01]));
+    // Initialize printer (ESC @), center align (ESC a 1), and set zero line-spacing (ESC 3 0)
+    // so there is never any vertical gap between raster strips
+    bands.push(new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x01, 0x1b, 0x33, 0x00]));
 
     const bytesWidth = width / 8; // 48 bytes for 384px (58mm)
     const xL = bytesWidth & 0xff;
     const xH = (bytesWidth >> 8) & 0xff;
-    const bandHeight = 8;
+
+    // In default 'gs_v_0' mode, emit a single continuous GS v 0 raster command for the whole image
+    // so the stepper motor never stops and restarts every 8 rows (eliminating horizontal white banding lines).
+    // If 'gs_v_0_banded' is selected, slice into 8-row micro-bands.
+    const bandHeight = commandMode === 'gs_v_0_banded' ? 8 : height;
 
     for (let startY = 0; startY < height; startY += bandHeight) {
       const currentBandHeight = Math.min(bandHeight, height - startY);
-      const pixelByteCount = bytesWidth * currentBandHeight; // 48 * 8 = 384 bytes
+      const pixelByteCount = bytesWidth * currentBandHeight;
       const band = new Uint8Array(8 + pixelByteCount);
 
-      // 8-byte GS v 0 header: [0x1D, 0x76, 0x30, 0x00, 48, 0, bandHeight, 0]
+      // 8-byte GS v 0 header: [0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]
       band[0] = 0x1d;
       band[1] = 0x76;
       band[2] = 0x30;
@@ -1090,7 +1106,8 @@ class ThermalPrinterService {
       bands.push(band);
     }
 
-    const footer: number[] = [0x1b, 0x64, config.feedLines || 0x04];
+    // Restore default line spacing (ESC 2), feed lines, and optional cut
+    const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, config.feedLines || 0x04];
     if (config.autoCut !== false) {
       footer.push(0x1d, 0x56, 0x42, 0x00);
     }
@@ -1100,8 +1117,11 @@ class ThermalPrinterService {
 
   /**
    * Splits atomic ESC/POS command bands into Bluetooth/USB write packets of at most `maxBytesPerWrite` (128 bytes).
-   * Because each band starts at offset 0 of its first chunk, a command header (`GS v 0` or `ESC * 33`)
-   * is NEVER split across two packets, preventing dropped `0x1D` (`GS`) or `0x1B` (`ESC`) bytes.
+   * For `GS v 0` bands (`band[0] === 0x1d && band[1] === 0x76`), slices packets on EXACT full-row boundaries:
+   * - First packet of band: 8-byte `GS v 0` header + 2 full rows (96 bytes for 58mm) = 104 bytes (<= 128 bytes)
+   * - Subsequent packets: 2 full rows (96 bytes for 58mm, or 1 full row = 72 bytes for 80mm) per write (<= 128 bytes)
+   * Because every packet ends on a complete dot-row boundary and the `GS v 0` command is never interrupted,
+   * the thermal head never stalls mid-row and never leaves horizontal white banding lines.
    */
   public buildPacedPackets(
     bands: Uint8Array[],
@@ -1109,16 +1129,31 @@ class ThermalPrinterService {
   ): Uint8Array[] {
     const packets: Uint8Array[] = [];
     for (const band of bands) {
-      for (let offset = 0; offset < band.length; offset += maxBytesPerWrite) {
-        packets.push(band.slice(offset, offset + maxBytesPerWrite));
+      if (band.length > 8 && band[0] === 0x1d && band[1] === 0x76 && band[2] === 0x30) {
+        const bytesWidth = (band[4] | (band[5] << 8)) || 48;
+        // Max complete rows that fit along with the 8-byte header in the first <=128B packet
+        const firstPacketRows = Math.max(1, Math.floor((maxBytesPerWrite - 8) / bytesWidth));
+        const firstPacketSize = Math.min(band.length, 8 + firstPacketRows * bytesWidth);
+        packets.push(band.slice(0, firstPacketSize));
+
+        // Max complete rows per subsequent <=128B packet (for 48B/row 58mm: 2 rows = 96 bytes)
+        const rowsPerPacket = Math.max(1, Math.floor(maxBytesPerWrite / bytesWidth));
+        const rowAlignedStep = rowsPerPacket * bytesWidth;
+
+        for (let offset = firstPacketSize; offset < band.length; offset += rowAlignedStep) {
+          packets.push(band.slice(offset, offset + rowAlignedStep));
+        }
+      } else {
+        for (let offset = 0; offset < band.length; offset += maxBytesPerWrite) {
+          packets.push(band.slice(offset, offset + maxBytesPerWrite));
+        }
       }
     }
     return packets;
   }
 
   /**
-   * Builds industry-standard ESC/POS raster byte sequence by concatenating the 8-row micro-bands
-   * (or ESC * 33 24-dot column bands).
+   * Builds industry-standard ESC/POS raster byte sequence by concatenating the command bands.
    */
   public buildEscPosCommands(
     monoBitmap: Uint8Array,
