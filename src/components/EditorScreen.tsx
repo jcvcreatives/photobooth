@@ -94,10 +94,60 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   // Preview view switcher: which version to inspect on the photostrip preview
   const [previewView, setPreviewView] = useState<'thermal' | 'digital'>('thermal');
 
-  const [filter, setFilter] = useState<PhotoFilterType>(initialFilter);
+  const [editablePhotos, setEditablePhotos] = useState<string[]>(photos);
+  const [mirroredFlags, setMirroredFlags] = useState<boolean[]>(() => photos.map(() => false));
+  const [isMirroring, setIsMirroring] = useState(false);
+
+  useEffect(() => {
+    setEditablePhotos(photos);
+    setMirroredFlags(photos.map(() => false));
+  }, [photos]);
+
+  const handleMirrorSelectedPhoto = async () => {
+    if (isMirroring) return;
+    const targetSrc = editablePhotos[selectedPhotoIndex];
+    if (!targetSrc) return;
+
+    soundEffects.playTap();
+    setIsMirroring(true);
+
+    try {
+      const flippedDataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width || 800;
+          canvas.height = img.naturalHeight || img.height || 600;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(targetSrc);
+            return;
+          }
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.95));
+        };
+        img.onerror = () => reject(new Error('Failed to mirror image'));
+        img.src = targetSrc;
+      });
+
+      setEditablePhotos((prev) =>
+        prev.map((item, idx) => (idx === selectedPhotoIndex ? flippedDataUrl : item))
+      );
+      setMirroredFlags((prev) =>
+        prev.map((flag, idx) => (idx === selectedPhotoIndex ? !flag : flag))
+      );
+    } catch {
+      // ignore
+    } finally {
+      setIsMirroring(false);
+    }
+  };
+
+  const [filter] = useState<PhotoFilterType>(initialFilter);
   const [printBrightness, setPrintBrightness] = useState<number>(brightness ?? 45);
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-  const [themePage, setThemePage] = useState<number>(0);
   const [stickers, setStickers] = useState<StickerItem[]>([]);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
   const [previewSrc, setPreviewSrc] = useState<string>('');
@@ -130,7 +180,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         const activeFilter = isThermal ? 'noir' : filter;
 
         const canvas = await renderPhotostripCanvas({
-          photos,
+          photos: editablePhotos,
           layout: currentLayout,
           theme: activeTheme,
           filter: activeFilter,
@@ -155,7 +205,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     return () => {
       active = false;
     };
-  }, [photos, currentLayout, thermalTheme, digitalTheme, filter, previewView, printBrightness]);
+  }, [editablePhotos, currentLayout, thermalTheme, digitalTheme, filter, previewView, printBrightness]);
 
   // Add Sticker to strip
   const handleAddSticker = (emoji: string) => {
@@ -238,7 +288,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     try {
       // 1. Thermal print canvas (calibrated portrait brightness for ESC/POS & Silent Spooler)
       const thermalCanvas = await renderPhotostripCanvas({
-        photos,
+        photos: editablePhotos,
         layout: currentLayout,
         theme: thermalTheme,
         filter: 'noir',
@@ -255,7 +305,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
       // 2. Full color digital canvas (for phone QR and email download)
       const colorCanvas = await renderPhotostripCanvas({
-        photos,
+        photos: editablePhotos,
         layout: currentLayout,
         theme: digitalTheme,
         filter,
@@ -273,7 +323,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
       const result: PhotostripResult = {
         id: shareId,
         createdAt: Date.now(),
-        photos,
+        photos: editablePhotos,
         compositeDataUrl: fullDataUrl, // Full color strip for phone QR & email
         thermalRasterDataUrl: dithered.previewDataUrl, // Crisp monochrome for thermal dispenser
         layout: currentLayout,
@@ -424,7 +474,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           {/* Compact Bottom Controls under Preview */}
           <div className="mt-1 text-center space-y-1 shrink-0">
             <div className="flex items-center justify-center gap-2">
-              {photos.map((p, idx) => (
+              {editablePhotos.map((p, idx) => (
                 <button
                   key={idx}
                   onClick={() => {
@@ -433,7 +483,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     setShowReviewModal(true);
                   }}
                   className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg overflow-hidden border border-zinc-200 hover:border-black transition active:scale-95 shadow-2xs cursor-pointer"
-                  title={`Tap to retake Shot #${idx + 1} (${retakesLeft} left)`}
+                  title={`Tap to mirror or retake Shot #${idx + 1} (${retakesLeft} left)`}
                 >
                   <img src={p} alt={`Shot ${idx + 1}`} className="w-full h-full object-cover" />
                 </button>
@@ -453,8 +503,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 onClick={() => setShowReviewModal(true)}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-medium transition cursor-pointer shadow-2xs"
               >
-                <Sliders className="w-3 h-3" />
-                <span>Filters & Retake ({retakesLeft})</span>
+                <FlipHorizontal className="w-3 h-3" />
+                <span>Mirror & Retake ({retakesLeft})</span>
               </button>
             </div>
           </div>
@@ -629,7 +679,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         </button>
       </div>
 
-      {/* Modal 1: Review Photos & Filters */}
+      {/* Modal 1: Review Photos ("Love these?") */}
       {showReviewModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-[#faf8f5] rounded-3xl p-6 max-w-sm w-full flex flex-col items-center text-center shadow-xl border border-zinc-200">
@@ -645,22 +695,30 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
             {/* Selected Photo Preview */}
             <div className="relative w-48 h-56 rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-sm mb-3 flex items-center justify-center">
-              {photos[selectedPhotoIndex] && (
+              {editablePhotos[selectedPhotoIndex] && (
                 <img
-                  src={photos[selectedPhotoIndex]}
+                  src={editablePhotos[selectedPhotoIndex]}
                   alt="Selected Shot"
                   className="w-full h-full object-cover"
                 />
               )}
+              {mirroredFlags[selectedPhotoIndex] && (
+                <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/70 text-white text-[10px] font-medium backdrop-blur-xs">
+                  Mirrored
+                </span>
+              )}
             </div>
 
             {/* Thumbnail row */}
-            <div className="flex items-center justify-center gap-2 mb-3">
-              {photos.map((p, idx) => (
+            <div className="flex items-center justify-center gap-2 mb-4">
+              {editablePhotos.map((p, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setSelectedPhotoIndex(idx)}
-                  className={`w-10 h-10 rounded-lg overflow-hidden border transition ${
+                  onClick={() => {
+                    soundEffects.playTap();
+                    setSelectedPhotoIndex(idx);
+                  }}
+                  className={`w-10 h-10 rounded-lg overflow-hidden border transition cursor-pointer ${
                     selectedPhotoIndex === idx
                       ? 'border-black ring-2 ring-black/20 scale-105'
                       : 'border-zinc-200 opacity-60'
@@ -671,17 +729,24 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               ))}
             </div>
 
-            {/* Actions: Mirror & Retake this one */}
-            <div className="flex items-center gap-4 text-xs text-zinc-600 mb-4">
+            {/* Actions: Working Mirror & Retake this one (Filters removed) */}
+            <div className="flex items-center justify-center gap-3 text-xs mb-5 w-full">
               <button
-                onClick={() => soundEffects.playTap()}
-                className="flex items-center gap-1 hover:text-zinc-900"
+                type="button"
+                disabled={isMirroring}
+                onClick={handleMirrorSelectedPhoto}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full border font-medium transition active:scale-95 cursor-pointer ${
+                  mirroredFlags[selectedPhotoIndex]
+                    ? 'bg-black text-white border-black shadow-xs'
+                    : 'bg-white text-zinc-800 border-zinc-300 hover:border-black'
+                }`}
               >
                 <FlipHorizontal className="w-3.5 h-3.5" />
-                <span>Mirror</span>
+                <span>{mirroredFlags[selectedPhotoIndex] ? 'Mirrored' : 'Mirror'}</span>
               </button>
-              <span>•</span>
+
               <button
+                type="button"
                 onClick={() => {
                   soundEffects.playTap();
                   if (retakesLeft > 0) {
@@ -690,36 +755,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     onRetake();
                   }
                 }}
-                className="flex items-center gap-1 hover:text-zinc-900"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-zinc-300 bg-white text-zinc-800 hover:border-black font-medium transition active:scale-95 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Retake this one</span>
               </button>
-            </div>
-
-            {/* Filter Slider Section */}
-            <div className="w-full mb-5 text-left">
-              <span className="text-[10px] uppercase font-mono tracking-widest text-zinc-400 block mb-1.5">
-                FILTER
-              </span>
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {AVAILABLE_FILTERS.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => {
-                      soundEffects.playTap();
-                      setFilter(f.id);
-                    }}
-                    className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer ${
-                      filter === f.id
-                        ? 'bg-black text-white'
-                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                    }`}
-                  >
-                    {f.name}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Use these photos button */}
@@ -728,7 +768,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 soundEffects.playTap();
                 setShowReviewModal(false);
               }}
-              className="w-full py-3.5 rounded-full bg-black text-white font-medium text-sm shadow-md active:scale-98 transition"
+              className="w-full py-3.5 rounded-full bg-black text-white font-medium text-sm shadow-md active:scale-98 transition cursor-pointer"
             >
               Use these photos
             </button>
@@ -738,7 +778,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 setShowReviewModal(false);
                 setShowRetakeConfirm(true);
               }}
-              className="mt-3 text-xs text-zinc-500 hover:text-zinc-900"
+              className="mt-3 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
             >
               Start the shots over
             </button>
