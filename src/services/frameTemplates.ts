@@ -378,54 +378,39 @@ export function applyThermalPhotoToneCurve(
   }
   const avgLum = sampleCount > 0 ? sumLum / sampleCount : 128;
 
-  // Automatic low-light compensation if the original camera capture is dark (avgLum < 125)
-  const autoLowLightBoost = avgLum < 125 ? Math.min(0.32, ((125 - avgLum) / 125) * 0.38) : 0;
-  const effectiveBNorm = Math.max(-0.25, Math.min(1.15, bNorm + autoLowLightBoost));
+  // Gentle automatic low-light compensation if the original camera capture is dark (avgLum < 115)
+  const autoLowLightBoost = avgLum < 115 ? Math.min(0.22, ((115 - avgLum) / 115) * 0.26) : 0;
+  const effectiveBNorm = Math.max(-0.25, Math.min(1.0, bNorm + autoLowLightBoost));
 
-  // 2. Smooth gamma (< 1.0) opens up dark hair and shadows while preserving strand-to-strand gradient
-  const gamma = Math.max(0.32, Math.min(0.95, 0.58 - effectiveBNorm * 0.24));
+  // 2. Smooth gamma (< 1.0) opens up dark hair and shadows while preserving full dynamic range
+  const gamma = Math.max(0.48, Math.min(0.95, 0.72 - effectiveBNorm * 0.20));
 
-  // 3. Soft shadow toe: keeps dark hair above the 82..98 luminance threshold (~52-60% thermal dot density)
-  // so 58mm battery thermal printers (like KPrinter_461a at 3.67V) never suffer voltage sag or row-lock banding
-  const shadowToe = Math.max(82, Math.min(122, Math.round(88 + effectiveBNorm * 28)));
+  // 3. Natural shadow toe (28..52) so dark areas retain rich gradation without crushing into a flat gray plateau
+  const shadowToe = Math.max(24, Math.min(54, Math.round(32 + effectiveBNorm * 18)));
 
   // 4. Clean white point so light backgrounds stay crisp paper-white
-  const whitePoint = Math.max(195, Math.min(248, Math.round(236 - Math.max(0, effectiveBNorm) * 24)));
+  const whitePoint = Math.max(215, Math.min(250, Math.round(242 - Math.max(0, effectiveBNorm) * 18)));
 
-  const lut = new Float32Array(256);
+  const lut = new Uint8ClampedArray(256);
   for (let v = 0; v < 256; v++) {
     const n = v / 255;
-    // Combine smooth power curve with linear slope in deepest shadows so v=0..35 never flattens into a constant plateau
-    const curved = Math.pow(n, gamma) * 0.85 + n * 0.15;
-    let mapped = curved * 255;
-    mapped = (mapped - 148) * 1.04 + 148;
+    const curved = Math.pow(n, gamma) * 0.88 + n * 0.12;
+    const mapped = curved * 255;
     if (mapped >= whitePoint) {
       lut[v] = 255;
     } else {
       const ratio = Math.max(0, mapped) / whitePoint;
-      lut[v] = shadowToe + ratio * (255 - shadowToe);
+      lut[v] = Math.round(shadowToe + ratio * (255 - shadowToe));
     }
   }
 
-  for (let py = 0; py < rh; py++) {
-    const rowBase = py * rw;
-    for (let px = 0; px < rw; px++) {
-      const i = (rowBase + px) * 4;
-      const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
-      const baseVal = lut[Math.max(0, Math.min(255, gray))];
-
-      // Inject 2D Interleaved Gradient Blue-Noise micro-dither (±4.5 levels) in dark/mid tones
-      // so quantized webcam shadow plateaus in dark hair are completely decorrelated before scaling
-      let out = baseVal;
-      if (baseVal < 245) {
-        const ign = ((52.9829189 * ((0.06711056 * px + 0.00583715 * py) % 1)) % 1 + 1) % 1;
-        out = baseVal + (ign - 0.5) * 9.0;
-      }
-      const clamped = Math.max(0, Math.min(255, Math.round(out)));
-      data[i] = clamped;
-      data[i + 1] = clamped;
-      data[i + 2] = clamped;
-    }
+  // Pure 1D tone lookup with zero periodic spatial noise so downsampling never creates Moiré or vertical/horizontal lines
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+    const val = lut[Math.max(0, Math.min(255, gray))];
+    data[i] = val;
+    data[i + 1] = val;
+    data[i + 2] = val;
   }
 
   ctx.putImageData(imgData, rx, ry);
@@ -1127,25 +1112,26 @@ export async function renderPhotostripCanvas(options: {
     thermalBrightness = 45,
   } = options;
 
-  // Dimensions chosen so the photo(s) sit centered vertically with generous top & bottom drawing zones
-  let canvasWidth = 600;
-  let canvasHeight = 1900; // 3-cut vertical strip
+  // Dimensions are exact 2x / 3x integer multiples of 384px (58mm thermal printhead width) and 48px height
+  // so downsampling to 384px is an exact 2x2 integer block average with zero fractional resampling Moiré
+  let canvasWidth = 768; // 384 * 2
+  let canvasHeight = 1824; // 912 * 2 (912 is divisible by 24)
 
   if (layout === 'grid_4') {
     if (photos.length <= 2) {
       // 2-shot vertical strip ("Grid (2 shots)")
-      canvasWidth = 600;
-      canvasHeight = 1560;
+      canvasWidth = 768; // 384 * 2
+      canvasHeight = 1536; // 768 * 2 (768 is divisible by 24)
     } else {
-      canvasWidth = 1200;
-      canvasHeight = 1880; // 2x2 grid
+      canvasWidth = 1152; // 384 * 3
+      canvasHeight = 1800; // 600 * 3 (600 is divisible by 24)
     }
   } else if (layout === 'single_polaroid') {
-    canvasWidth = 800;
-    canvasHeight = 1220; // Centered single portrait with top & bottom frame drawings
+    canvasWidth = 768; // 384 * 2
+    canvasHeight = 1152; // 576 * 2 (576 is divisible by 24)
   } else if (layout === 'strip_4') {
-    canvasWidth = 600;
-    canvasHeight = 2280; // 4-cut vertical strip
+    canvasWidth = 768; // 384 * 2
+    canvasHeight = 2208; // 1104 * 2 (1104 is divisible by 24)
   }
 
   const canvas = document.createElement('canvas');

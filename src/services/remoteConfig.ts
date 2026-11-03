@@ -51,7 +51,7 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
   },
   remoteSyncUrl: 'https://api.snapkiosk.io/v1/kiosks/KIOSK-TAB-01/config',
   autoUpdateEnabled: true,
-  version: '2.4.0-kiosk',
+  version: '2.6.0-kiosk',
   lastSyncTimestamp: Date.now(),
 };
 
@@ -113,10 +113,14 @@ class RemoteConfigService {
         this.config.thermalPrinter.density = 'light';
         needsSave = true;
       }
-      if (this.config.thermalPrinter && !this.config.thermalPrinter.escPosCommandMode) {
+      if (
+        this.config.thermalPrinter &&
+        (!this.config.thermalPrinter.escPosCommandMode || this.config.version !== '2.6.0-kiosk')
+      ) {
         this.config.thermalPrinter.escPosCommandMode = 'gs_v_0';
         this.config.thermalPrinter.paperWidthMm = 58;
         this.config.thermalPrinter.dotsPerLine = 384;
+        this.config.version = '2.6.0-kiosk';
         needsSave = true;
       }
       if (needsSave) {

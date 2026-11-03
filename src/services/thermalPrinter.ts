@@ -897,7 +897,8 @@ class ThermalPrinterService {
    * 2D Box-Filter Area-Averaging Downsampler + 100% Conserved Serpentine Error Diffusion
    * with 2D Interleaved Gradient Blue-Noise Threshold Modulation.
    * - Eliminates 25:12 bilinear downscaling beat lines when resizing 800x1000 photostrips to 384x480.
-   * - Eliminates horizontal phase-locked oscillation stripes in dark hair while keeping text razor-sharp.
+   * - Uses clean Serpentine Error Diffusion with a fixed 128 threshold (zero periodic IGN wave)
+   *   so photos never develop vertical or horizontal beat/Moiré lines while keeping text razor-sharp.
    * - Pads height to a multiple of 24 so both 8-row GS v 0 micro-bands and 24-dot ESC * 33 column bands align cleanly.
    */
   public generateDitheredRaster(
@@ -966,20 +967,22 @@ class ThermalPrinterService {
 
           let lum = totalWeight > 0 ? sumLum / totalWeight : 255;
 
-          // Keep black typography and top/bottom frame line-art drawings (lum <= 65) razor-sharp black,
-          // while photo shadows (guaranteed >= 82 by applyThermalPhotoToneCurve) stay above the row-lock threshold
-          if (lum <= 65) {
+          // Keep pure black typography and top/bottom frame line-art drawings (lum <= 22) razor-sharp black,
+          // and pure white paper background (lum >= 248) crisp white
+          if (lum <= 22) {
             lum = 0;
           } else if (lum >= 248) {
             lum = 255;
           } else {
             if (brightnessDelta !== 0) {
-              lum = lum + brightnessDelta * 0.65;
+              lum = lum + brightnessDelta * 0.5;
             }
-            lum = (lum - 140) * contrastMultiplier + 140;
-            // Soft shadow toe prevents >=70% black row saturation and horizontal row-locking in dark hair
-            if (lum < 84) {
-              lum = 84 + (lum / 84) * 14;
+            if (contrastMultiplier !== 1.0) {
+              lum = (lum - 128) * contrastMultiplier + 128;
+            }
+            // Keep deepest photo shadows at >= 36 so thermal dots never fuse into solid black bars
+            if (lum < 36) {
+              lum = 36 + (lum / 36) * 12;
             }
           }
 
@@ -990,8 +993,9 @@ class ThermalPrinterService {
 
     const mono = new Uint8Array(width * height);
 
-    // 100% Error-Conserving Serpentine Dithering with 2D Interleaved Gradient Blue-Noise Threshold Modulation.
-    // Decorrelates adjacent columns in dark hair so rows never synchronize into horizontal white lines.
+    // Clean Serpentine Atkinson-Floyd Hybrid Error Diffusion (zero periodic IGN threshold wave).
+    // Uses a fixed 128 threshold and diffuses 7/8 of quantization error across 2 rows below
+    // so neither vertical nor horizontal periodic lines can ever form in photos.
     for (let y = 0; y < height; y++) {
       const reverse = (y & 1) === 1;
       const startX = reverse ? width - 1 : 0;
@@ -1002,34 +1006,34 @@ class ThermalPrinterService {
         const idx = y * width + x;
         const oldPixel = gray[idx];
 
-        // Pure black text/graphics or pure white paper bypasses threshold jitter
-        let threshold = 128;
-        if (oldPixel > 14 && oldPixel < 246) {
-          const ign =
-            (((52.9829189 * ((0.06711056 * x + 0.00583715 * y) % 1)) % 1) + 1) % 1;
-          threshold = 128 + (ign - 0.5) * 46;
-        }
-
-        const newPixel = oldPixel < threshold ? 0 : 255;
+        const newPixel = oldPixel < 128 ? 0 : 255;
         mono[idx] = newPixel === 0 ? 1 : 0;
 
-        // 100% conserved quantization error (never damped, preventing multi-row stall/discharge waves)
-        const err = oldPixel - newPixel;
+        // Diffuse 14/16 (87.5%) of quantization error across adjacent & 2-row neighbors (Atkinson-Stucki blend)
+        // Prevents solid black row saturation on 58mm battery printers while preserving full tonal smoothness
+        const err = (oldPixel - newPixel) / 16;
 
         const nextX = x + stepX;
+        const next2X = x + stepX * 2;
         const prevX = x - stepX;
 
         if (nextX >= 0 && nextX < width) {
-          gray[y * width + nextX] += (err * 7) / 16;
+          gray[y * width + nextX] += err * 5;
+        }
+        if (next2X >= 0 && next2X < width) {
+          gray[y * width + next2X] += err * 1;
         }
         if (y + 1 < height) {
           if (prevX >= 0 && prevX < width) {
-            gray[(y + 1) * width + prevX] += (err * 3) / 16;
+            gray[(y + 1) * width + prevX] += err * 2;
           }
-          gray[(y + 1) * width + x] += (err * 5) / 16;
+          gray[(y + 1) * width + x] += err * 4;
           if (nextX >= 0 && nextX < width) {
-            gray[(y + 1) * width + nextX] += (err * 1) / 16;
+            gray[(y + 1) * width + nextX] += err * 1;
           }
+        }
+        if (y + 2 < height) {
+          gray[(y + 2) * width + x] += err * 1;
         }
       }
     }
@@ -1060,10 +1064,10 @@ class ThermalPrinterService {
 
   /**
    * Builds atomic ESC/POS command bands for KPrinter_461a (MP58-09 58mm) and universal 58mm/80mm printers:
-   * - Mode 1 ('gs_v_0', default): Continuous Seamless GS v 0 stream with zero line-spacing (`ESC 3 0`)
-   *   and row-aligned packet pacing (96 bytes = 2 full 48-byte rows per write) so the stepper motor
-   *   never stops/restarts every 8 rows and never leaves horizontal white seam lines across dark hair/faces.
-   * - Mode 2 ('gs_v_0_banded'): 8-row GS v 0 micro-bands with zero line-spacing (`ESC 3 0`) and row-aligned 104B/96B packets.
+   * - Mode 1 ('gs_v_0', default): Continuous Seamless GS v 0 stream with zero line-spacing (`ESC 3 0`),
+   *   high-speed single-strobe printhead heating (`ESC 7 11 70 2`), and row-aligned packet pacing
+   *   so the stepper motor feeds at constant speed from top to bottom with zero lines in photos.
+   * - Mode 2 ('gs_v_0_banded'): 8-row GS v 0 micro-bands with zero line-spacing (`ESC 3 0`).
    * - Mode 3 ('esc_star_33'): ESC * 33 24-dot double-density column mode with `[0x1B, 0x33, 24]` line spacing.
    */
   public buildEscPosCommandBands(
@@ -1076,8 +1080,15 @@ class ThermalPrinterService {
     const bands: Uint8Array[] = [];
 
     if (commandMode === 'esc_star_33') {
-      // Initialize printer, center align, and set 24-dot line spacing [0x1B, 0x33, 24]
-      bands.push(new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x01, 0x1b, 0x33, 24]));
+      // Initialize printer, set fast printhead strobe heating (ESC 7 11 70 2), center align, and set 24-dot line spacing
+      bands.push(
+        new Uint8Array([
+          0x1b, 0x40,
+          0x1b, 0x37, 11, 70, 2,
+          0x1b, 0x61, 0x01,
+          0x1b, 0x33, 24,
+        ])
+      );
 
       const nL = width & 0xff;
       const nH = (width >> 8) & 0xff;
@@ -1117,17 +1128,23 @@ class ThermalPrinterService {
       return bands;
     }
 
-    // Initialize printer (ESC @), center align (ESC a 1), and set zero line-spacing (ESC 3 0)
-    // so there is never any vertical gap between raster strips
-    bands.push(new Uint8Array([0x1b, 0x40, 0x1b, 0x61, 0x01, 0x1b, 0x33, 0x00]));
+    // Initialize printer (ESC @), configure thermal head heating (ESC 7 11 70 2: 96 dots/strobe, 700us heat, 20us interval
+    // so photo rows print at the same continuous motor speed as top/bottom frame art), center align (ESC a 1), and zero line-spacing (ESC 3 0)
+    bands.push(
+      new Uint8Array([
+        0x1b, 0x40,
+        0x1b, 0x37, 11, 70, 2,
+        0x1b, 0x61, 0x01,
+        0x1b, 0x33, 0x00,
+      ])
+    );
 
     const bytesWidth = width / 8; // 48 bytes for 384px (58mm)
     const xL = bytesWidth & 0xff;
     const xH = (bytesWidth >> 8) & 0xff;
 
     // In default 'gs_v_0' mode, emit a single continuous GS v 0 raster command for the whole image
-    // so the stepper motor never stops and restarts every 8 rows (eliminating horizontal white banding lines).
-    // If 'gs_v_0_banded' is selected, slice into 8-row micro-bands.
+    // so the stepper motor never stops and restarts every 8 rows.
     const bandHeight = commandMode === 'gs_v_0_banded' ? 8 : height;
 
     for (let startY = 0; startY < height; startY += bandHeight) {
@@ -1173,27 +1190,24 @@ class ThermalPrinterService {
   }
 
   /**
-   * Splits atomic ESC/POS command bands into Bluetooth/USB write packets of at most `maxBytesPerWrite` (128 bytes).
-   * For `GS v 0` bands (`band[0] === 0x1d && band[1] === 0x76`), slices packets on EXACT full-row boundaries:
-   * - First packet of band: 8-byte `GS v 0` header + 2 full rows (96 bytes for 58mm) = 104 bytes (<= 128 bytes)
-   * - Subsequent packets: 2 full rows (96 bytes for 58mm, or 1 full row = 72 bytes for 80mm) per write (<= 128 bytes)
-   * Because every packet ends on a complete dot-row boundary and the `GS v 0` command is never interrupted,
-   * the thermal head never stalls mid-row and never leaves horizontal white banding lines.
+   * Splits atomic ESC/POS command bands into Bluetooth/USB write packets of at most `maxBytesPerWrite` (default 144 bytes = 3 full 48B rows).
+   * For `GS v 0` bands (`band[0] === 0x1d && band[1] === 0x76`), slices packets on EXACT full-row boundaries
+   * so every packet ends on a complete dot-row boundary and the `GS v 0` command is never interrupted.
    */
   public buildPacedPackets(
     bands: Uint8Array[],
-    maxBytesPerWrite: number = 128
+    maxBytesPerWrite: number = 144
   ): Uint8Array[] {
     const packets: Uint8Array[] = [];
     for (const band of bands) {
       if (band.length > 8 && band[0] === 0x1d && band[1] === 0x76 && band[2] === 0x30) {
         const bytesWidth = (band[4] | (band[5] << 8)) || 48;
-        // Max complete rows that fit along with the 8-byte header in the first <=128B packet
+        // Max complete rows that fit along with the 8-byte header in the first packet
         const firstPacketRows = Math.max(1, Math.floor((maxBytesPerWrite - 8) / bytesWidth));
         const firstPacketSize = Math.min(band.length, 8 + firstPacketRows * bytesWidth);
         packets.push(band.slice(0, firstPacketSize));
 
-        // Max complete rows per subsequent <=128B packet (for 48B/row 58mm: 2 rows = 96 bytes)
+        // Max complete rows per subsequent packet (for 48B/row 58mm: 3 rows = 144 bytes or 2 rows = 96 bytes)
         const rowsPerPacket = Math.max(1, Math.floor(maxBytesPerWrite / bytesWidth));
         const rowAlignedStep = rowsPerPacket * bytesWidth;
 
@@ -1241,12 +1255,11 @@ class ThermalPrinterService {
   ): HTMLCanvasElement {
     const rawDarkness = config.printDarkness ?? 35;
     const densityOffset =
-      config.density === 'light' ? -8 : config.density === 'dark' ? 10 : 0;
-    // Effective darkness on a 5..100 scale where 50 is neutral-standard, <50 lightens printout, >50 darkens printout
+      config.density === 'light' ? -6 : config.density === 'dark' ? 8 : 0;
+    // Effective darkness on a 5..100 scale where 45 is neutral-standard, <45 lightens printout, >45 darkens printout
     const effectiveDarkness = Math.max(5, Math.min(100, rawDarkness + densityOffset));
 
-    // If right at 52..55 standard neutral, return sourceCanvas directly
-    if (Math.abs(effectiveDarkness - 54) <= 2) {
+    if (Math.abs(effectiveDarkness - 45) <= 4) {
       return sourceCanvas;
     }
 
@@ -1264,33 +1277,29 @@ class ThermalPrinterService {
     const d = imgData.data;
 
     // Normalize delta: negative means lighter printout (less black ink), positive means darker printout
-    const darknessDelta = (effectiveDarkness - 54) / 46; // -1.06 (ultra light) to +1.0 (max dark)
+    const darknessDelta = (effectiveDarkness - 45) / 55; // -0.72 (ultra light) to +1.0 (max dark)
 
     // Precompute 256-entry lookup table for fast pixel tone mapping
     const lut = new Uint8ClampedArray(256);
     for (let v = 0; v < 256; v++) {
       // Keep pure black text/typography (#000000) and pure white background (#ffffff) untouched
-      if (v <= 14 || v >= 250) {
+      if (v <= 18 || v >= 248) {
         lut[v] = v;
         continue;
       }
       const norm = v / 255;
       if (darknessDelta < 0) {
-        // Lighter printout requested (e.g. 15% Ultra Light, 35% Light):
-        // Lift shadows & midtones so thermal printer burns fewer black dots
-        const liftStrength = Math.abs(darknessDelta); // 0 to 1.06
-        const gamma = Math.max(0.45, 1.0 - liftStrength * 0.42);
+        const liftStrength = Math.abs(darknessDelta);
+        const gamma = Math.max(0.62, 1.0 - liftStrength * 0.28);
         const curved = Math.pow(norm, gamma);
-        const shadowFloor = liftStrength * 44;
+        const shadowFloor = liftStrength * 22;
         lut[v] = Math.min(252, Math.round(shadowFloor + curved * (255 - shadowFloor)));
       } else {
-        // Darker printout requested (e.g. 70% Dark, 90% Extra Dark):
-        // Deepen midtones while protecting a soft 80-luminance shadow toe so dark hair never bands
-        const darkStrength = darknessDelta; // 0 to 1.0
-        const gamma = 1.0 + darkStrength * 0.42;
+        const darkStrength = darknessDelta;
+        const gamma = 1.0 + darkStrength * 0.35;
         const curved = Math.pow(norm, gamma);
         const mapped = Math.round(curved * 255);
-        lut[v] = Math.max(80, Math.min(252, mapped));
+        lut[v] = Math.max(32, Math.min(252, mapped));
       }
     }
 
@@ -1317,24 +1326,20 @@ class ThermalPrinterService {
 
     const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
     // KPrinter_461a / MP58-09 and 58mm printers strictly require 384px (48 bytes) width
-    const is58mmHardware = /kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210/i.test(
+    const is58mmHardware = /kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210|mobile\s*printer/i.test(
       this.currentStatus.deviceName || ''
     );
     const targetWidth = is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
 
-    // Apply Admin Printer Printout Darkness & Density calibration to the canvas
+    // Apply Admin Printer Printout Darkness & Density calibration to the canvas (once, without duplicate lifting)
     const calibratedCanvas = this.applyDarknessToCanvas(canvas, config);
-
-    const darknessVal = config.printDarkness ?? 35;
-    const contrast = Math.max(0.78, Math.min(1.22, 0.85 + darknessVal / 240));
-    const brightnessLift = Math.round((50 - darknessVal) * 0.35);
 
     onProgress?.(15, 'Calibrating print darkness & dithering...');
     const dithered = this.generateDitheredRaster(
       calibratedCanvas,
       targetWidth,
-      contrast,
-      brightnessLift
+      1.0,
+      0
     );
 
     onProgress?.(35, 'Compiling ESC/POS raster stream...');
@@ -1344,7 +1349,8 @@ class ThermalPrinterService {
       dithered.height,
       config
     );
-    const pacedPackets = this.buildPacedPackets(commandBands, 128);
+    // 144 bytes = 3 complete 48-byte rows per packet (fits inside BLE MTU & keeps printer buffer fed ahead of motor)
+    const pacedPackets = this.buildPacedPackets(commandBands, 144);
     const escposBytes = this.buildEscPosCommands(
       dithered.bitmap,
       dithered.width,
@@ -1391,7 +1397,7 @@ class ThermalPrinterService {
                 const percent = 50 + Math.round(progressRatio * 45);
                 onProgress?.(percent, `Streaming to USB OTG printer${copyLabel}... ${percent}%`);
               }
-              await new Promise((r) => setTimeout(r, 8));
+              await new Promise((r) => setTimeout(r, 4));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1423,7 +1429,7 @@ class ThermalPrinterService {
                 const percent = 50 + Math.round(progressRatio * 45);
                 onProgress?.(percent, `Streaming to USB printer${copyLabel}... ${percent}%`);
               }
-              await new Promise((r) => setTimeout(r, 6));
+              await new Promise((r) => setTimeout(r, 3));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1456,7 +1462,7 @@ class ThermalPrinterService {
               const percent = 50 + Math.round(progressRatio * 45);
               onProgress?.(percent, `Writing to Serial USB${copyLabel}... ${percent}%`);
             }
-            await new Promise((r) => setTimeout(r, 10));
+            await new Promise((r) => setTimeout(r, 4));
           }
           soundEffects.playPaperCut();
           if (c < copies - 1) {
@@ -1497,7 +1503,7 @@ class ThermalPrinterService {
                 const percent = 50 + Math.round(progressRatio * 45);
                 onProgress?.(percent, `Transmitting via Bluetooth SPP${copyLabel}... ${percent}%`);
               }
-              await new Promise((r) => setTimeout(r, 10));
+              await new Promise((r) => setTimeout(r, 5));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1519,23 +1525,39 @@ class ThermalPrinterService {
       if (this.bluetoothCharacteristic) {
         try {
           const canWriteNoResp = this.bluetoothCharacteristic.properties.writeWithoutResponse;
+          const canWriteWithResp = this.bluetoothCharacteristic.properties.write;
+          let activePackets = pacedPackets;
+
           for (let c = 0; c < copies; c++) {
             const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            for (let p = 0; p < pacedPackets.length; p++) {
-              const chunk = pacedPackets[p];
-              if (canWriteNoResp) {
-                await this.bluetoothCharacteristic.writeValueWithoutResponse(chunk as unknown as BufferSource);
-              } else {
-                await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
+            for (let p = 0; p < activePackets.length; p++) {
+              const chunk = activePackets[p];
+              try {
+                if (canWriteNoResp) {
+                  await this.bluetoothCharacteristic.writeValueWithoutResponse(chunk as unknown as BufferSource);
+                } else {
+                  await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
+                }
+              } catch {
+                // If BLE MTU is smaller than 144 bytes on this device, automatically fall back to 96B (2-row) packets
+                if (p === 0 && activePackets === pacedPackets) {
+                  activePackets = this.buildPacedPackets(commandBands, 96);
+                  p = -1;
+                  continue;
+                }
+                if (canWriteWithResp) {
+                  await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
+                }
               }
               if (p % progressStep === 0) {
-                const progressRatio = (c + p / pacedPackets.length) / copies;
+                const progressRatio = (c + p / activePackets.length) / copies;
                 const percent = 50 + Math.round(progressRatio * 45);
                 onProgress?.(percent, `Transmitting via Bluetooth${copyLabel}... ${percent}%`);
               }
-              // Smooth continuous motor feed: writeValue already waits for BLE ACK (~10ms), so 4ms keeps motor moving;
-              // writeValueWithoutResponse uses 8ms per 2-row packet (~250 rows/s = 31mm/s continuous paper feed).
-              await new Promise((r) => setTimeout(r, canWriteNoResp ? 8 : 4));
+              // Keep printer receive buffer continuously ahead of stepper motor feed (~45mm/s) so motor never pauses mid-photo
+              if (canWriteNoResp) {
+                await new Promise((r) => setTimeout(r, 4));
+              }
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
