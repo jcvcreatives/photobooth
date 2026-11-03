@@ -460,7 +460,12 @@ export function applyThermalPhotoToneCurve(
   height: number,
   brightness: number = 45
 ) {
-  const imgData = ctx.getImageData(x, y, width, height);
+  const rx = Math.max(0, Math.round(x));
+  const ry = Math.max(0, Math.round(y));
+  const rw = Math.max(1, Math.round(width));
+  const rh = Math.max(1, Math.round(height));
+
+  const imgData = ctx.getImageData(rx, ry, rw, rh);
   const data = imgData.data;
 
   const clampedBrightness = Math.max(-40, Math.min(100, Number(brightness ?? 45)));
@@ -476,44 +481,57 @@ export function applyThermalPhotoToneCurve(
   }
   const avgLum = sampleCount > 0 ? sumLum / sampleCount : 128;
 
-  // Automatic low-light compensation if the original camera capture is dark (avgLum < 120)
-  const autoLowLightBoost = avgLum < 120 ? Math.min(0.28, ((120 - avgLum) / 120) * 0.34) : 0;
-  const effectiveBNorm = Math.max(-0.4, Math.min(1.15, bNorm + autoLowLightBoost));
+  // Automatic low-light compensation if the original camera capture is dark (avgLum < 125)
+  const autoLowLightBoost = avgLum < 125 ? Math.min(0.32, ((125 - avgLum) / 125) * 0.38) : 0;
+  const effectiveBNorm = Math.max(-0.25, Math.min(1.15, bNorm + autoLowLightBoost));
 
-  // 2. Gamma < 1.0 opens up dark shadows and midtones without blowing out facial details
-  const gamma = Math.max(0.25, Math.min(1.15, 0.66 - effectiveBNorm * 0.40));
+  // 2. Smooth gamma (< 1.0) opens up dark hair and shadows while preserving strand-to-strand gradient
+  const gamma = Math.max(0.32, Math.min(0.95, 0.58 - effectiveBNorm * 0.24));
 
-  // 3. Shadow floor prevents 100% solid black thermal burn in dark hair, beards, and shirts
-  const shadowFloor = Math.max(10, Math.min(110, Math.round(34 + effectiveBNorm * 58)));
+  // 3. Soft shadow toe: keeps dark hair above the 82..98 luminance threshold (~52-60% thermal dot density)
+  // so 58mm battery thermal printers (like KPrinter_461a at 3.67V) never suffer voltage sag or row-lock banding
+  const shadowToe = Math.max(82, Math.min(122, Math.round(88 + effectiveBNorm * 28)));
 
-  // 4. White point cleans up light walls/backgrounds so they don't get peppered with gray dots
-  const whitePoint = Math.max(185, Math.min(248, Math.round(235 - Math.max(0, effectiveBNorm) * 28)));
+  // 4. Clean white point so light backgrounds stay crisp paper-white
+  const whitePoint = Math.max(195, Math.min(248, Math.round(236 - Math.max(0, effectiveBNorm) * 24)));
 
-  const lut = new Uint8Array(256);
+  const lut = new Float32Array(256);
   for (let v = 0; v < 256; v++) {
     const n = v / 255;
-    let mapped = Math.pow(n, gamma) * 255;
-    // Gentle midtone definition around 148 so eyes and smiles remain sharp
-    mapped = (mapped - 148) * 1.05 + 148;
-    mapped += effectiveBNorm * 25;
+    // Combine smooth power curve with linear slope in deepest shadows so v=0..35 never flattens into a constant plateau
+    const curved = Math.pow(n, gamma) * 0.85 + n * 0.15;
+    let mapped = curved * 255;
+    mapped = (mapped - 148) * 1.04 + 148;
     if (mapped >= whitePoint) {
-      mapped = 255;
+      lut[v] = 255;
     } else {
       const ratio = Math.max(0, mapped) / whitePoint;
-      mapped = shadowFloor + ratio * (255 - shadowFloor);
+      lut[v] = shadowToe + ratio * (255 - shadowToe);
     }
-    lut[v] = Math.max(0, Math.min(255, Math.round(mapped)));
   }
 
-  for (let i = 0; i < data.length; i += 4) {
-    const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
-    const out = lut[Math.max(0, Math.min(255, gray))];
-    data[i] = out;
-    data[i + 1] = out;
-    data[i + 2] = out;
+  for (let py = 0; py < rh; py++) {
+    const rowBase = py * rw;
+    for (let px = 0; px < rw; px++) {
+      const i = (rowBase + px) * 4;
+      const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+      const baseVal = lut[Math.max(0, Math.min(255, gray))];
+
+      // Inject 2D Interleaved Gradient Blue-Noise micro-dither (±4.5 levels) in dark/mid tones
+      // so quantized webcam shadow plateaus in dark hair are completely decorrelated before scaling
+      let out = baseVal;
+      if (baseVal < 245) {
+        const ign = ((52.9829189 * ((0.06711056 * px + 0.00583715 * py) % 1)) % 1 + 1) % 1;
+        out = baseVal + (ign - 0.5) * 9.0;
+      }
+      const clamped = Math.max(0, Math.min(255, Math.round(out)));
+      data[i] = clamped;
+      data[i + 1] = clamped;
+      data[i + 2] = clamped;
+    }
   }
 
-  ctx.putImageData(imgData, x, y);
+  ctx.putImageData(imgData, rx, ry);
 }
 
 /**
@@ -715,10 +733,12 @@ export async function renderPhotostripCanvas(options: {
         applyCanvasFilter(ctx, effectiveFilter, margin, slotY, slotWidth, slotHeight);
       }
 
-      // Inner border accent
-      ctx.strokeStyle = effectiveAccentColor;
-      ctx.lineWidth = isThermalMode ? 1.5 : 2;
-      ctx.strokeRect(margin, slotY, slotWidth, slotHeight);
+      // Inner border accent (digital keepsake only; thermal receipt stays clean)
+      if (!isThermalMode) {
+        ctx.strokeStyle = effectiveAccentColor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(margin, slotY, slotWidth, slotHeight);
+      }
     });
 
     // Footer text
@@ -770,9 +790,11 @@ export async function renderPhotostripCanvas(options: {
         applyCanvasFilter(ctx, effectiveFilter, x, y, slotWidth, slotHeight);
       }
 
-      ctx.strokeStyle = effectiveAccentColor;
-      ctx.lineWidth = isThermalMode ? 1.5 : 2;
-      ctx.strokeRect(x, y, slotWidth, slotHeight);
+      if (!isThermalMode) {
+        ctx.strokeStyle = effectiveAccentColor;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, slotWidth, slotHeight);
+      }
     });
 
     // Footer
@@ -864,6 +886,9 @@ function drawImageProp(
   offsetX = 0.5,
   offsetY = 0.5
 ) {
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
   let nw = img.naturalWidth || img.width;
   let nh = img.naturalHeight || img.height;
   if (!nw || !nh) {

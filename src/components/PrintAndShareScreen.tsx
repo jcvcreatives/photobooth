@@ -113,7 +113,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       setIsPrinting(true);
       thermalPrinterService
         .print(canvas, autoPrintConfig, (_pct, status) => {
-          setPrintStatusText(status);
+          setPrintStatusText((prev) => (prev === status ? prev : status));
         })
         .then((res) => {
           setIsPrinting(false);
@@ -124,21 +124,20 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             }
             setSilentBridgeReady(thermalPrinterService.isSilentBridgeActive());
           }
+          try {
+            confetti({
+              particleCount: 60,
+              spread: 75,
+              origin: { x: 0.5, y: 0.4 },
+              colors: ['#0f172a', '#71717a', '#a1a1aa', '#cbd5e1'],
+            });
+          } catch {
+            // ignore
+          }
         })
         .catch(() => {
           setIsPrinting(false);
         });
-    }
-
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 80,
-        origin: { x: 0.5, y: 0.4 },
-        colors: ['#0f172a', '#71717a', '#a1a1aa', '#cbd5e1'],
-      });
-    } catch {
-      // ignore
     }
 
     return () => {

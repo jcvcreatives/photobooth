@@ -894,8 +894,11 @@ class ThermalPrinterService {
   }
 
   /**
-   * Floyd-Steinberg error diffusion dithering with calibrated neutral contrast and optional brightness lift.
-   * Pads height to a multiple of 24 so both 8-row GS v 0 micro-bands and 24-dot ESC * 33 column bands align cleanly.
+   * 2D Box-Filter Area-Averaging Downsampler + 100% Conserved Serpentine Error Diffusion
+   * with 2D Interleaved Gradient Blue-Noise Threshold Modulation.
+   * - Eliminates 25:12 bilinear downscaling beat lines when resizing 800x1000 photostrips to 384x480.
+   * - Eliminates horizontal phase-locked oscillation stripes in dark hair while keeping text razor-sharp.
+   * - Pads height to a multiple of 24 so both 8-row GS v 0 micro-bands and 24-dot ESC * 33 column bands align cleanly.
    */
   public generateDitheredRaster(
     sourceCanvas: HTMLCanvasElement,
@@ -908,42 +911,87 @@ class ThermalPrinterService {
     height: number;
     previewDataUrl: string;
   } {
-    const ratio = sourceCanvas.height / sourceCanvas.width;
+    const srcW = Math.max(1, sourceCanvas.width);
+    const srcH = Math.max(1, sourceCanvas.height);
+    const ratio = srcH / srcW;
     const width = targetWidth;
-    let height = Math.round(width * ratio);
+    const rawTargetHeight = Math.max(1, Math.round(width * ratio));
+    let height = rawTargetHeight;
     if (height % 24 !== 0) {
       height += 24 - (height % 24);
     }
 
-    const offCanvas = document.createElement('canvas');
-    offCanvas.width = width;
-    offCanvas.height = height;
-    const ctx = offCanvas.getContext('2d', { willReadFrequently: true })!;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(sourceCanvas, 0, 0, width, height);
-
-    const imgData = ctx.getImageData(0, 0, width, height);
-    const data = imgData.data;
-
+    const srcCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
     const gray = new Float32Array(width * height);
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      if (brightnessDelta !== 0 && lum > 12 && lum < 252) {
-        // Lift or lower midtones/shadows while keeping solid black text/borders (#000000) intact
-        lum = lum + brightnessDelta * 0.7;
+    gray.fill(255);
+
+    if (srcCtx) {
+      const srcData = srcCtx.getImageData(0, 0, srcW, srcH).data;
+      const scaleX = srcW / width;
+      const scaleY = srcH / rawTargetHeight;
+
+      for (let y = 0; y < rawTargetHeight; y++) {
+        const sy0 = y * scaleY;
+        const sy1 = (y + 1) * scaleY;
+        const iy0 = Math.floor(sy0);
+        const iy1 = Math.min(srcH - 1, Math.floor(sy1));
+
+        for (let x = 0; x < width; x++) {
+          const sx0 = x * scaleX;
+          const sx1 = (x + 1) * scaleX;
+          const ix0 = Math.floor(sx0);
+          const ix1 = Math.min(srcW - 1, Math.floor(sx1));
+
+          // Exact 2D box-filter area average over source pixels [sx0..sx1, sy0..sy1]
+          let sumLum = 0;
+          let totalWeight = 0;
+
+          for (let sy = iy0; sy <= iy1; sy++) {
+            const wy = Math.min(sy + 1, sy1) - Math.max(sy, sy0);
+            if (wy <= 0) continue;
+            const srcRowOffset = sy * srcW;
+            for (let sx = ix0; sx <= ix1; sx++) {
+              const wx = Math.min(sx + 1, sx1) - Math.max(sx, sx0);
+              if (wx <= 0) continue;
+              const weight = wx * wy;
+              const pIdx = (srcRowOffset + sx) * 4;
+              const lum =
+                0.299 * srcData[pIdx] +
+                0.587 * srcData[pIdx + 1] +
+                0.114 * srcData[pIdx + 2];
+              sumLum += lum * weight;
+              totalWeight += weight;
+            }
+          }
+
+          let lum = totalWeight > 0 ? sumLum / totalWeight : 255;
+
+          // Keep pure black typography (#000000) and pure white paper (#ffffff) crisp,
+          // while keeping photo shadows above the row-lock oscillation threshold (>= 84)
+          if (lum <= 14) {
+            lum = 0;
+          } else if (lum >= 248) {
+            lum = 255;
+          } else {
+            if (brightnessDelta !== 0) {
+              lum = lum + brightnessDelta * 0.65;
+            }
+            lum = (lum - 140) * contrastMultiplier + 140;
+            // Soft shadow toe prevents >=70% black row saturation and horizontal row-locking in dark hair
+            if (lum < 84) {
+              lum = 84 + (lum / 84) * 14;
+            }
+          }
+
+          gray[y * width + x] = Math.max(0, Math.min(255, lum));
+        }
       }
-      lum = (lum - 135) * contrastMultiplier + 135;
-      gray[i / 4] = Math.max(0, Math.min(255, lum));
     }
 
     const mono = new Uint8Array(width * height);
 
-    // Serpentine (boustrophedon) error-diffusion dithering with gentle damping (0.90)
-    // Eliminates horizontal "worm" / bar lines in dark hair and smooth tonal transitions
+    // 100% Error-Conserving Serpentine Dithering with 2D Interleaved Gradient Blue-Noise Threshold Modulation.
+    // Decorrelates adjacent columns in dark hair so rows never synchronize into horizontal white lines.
     for (let y = 0; y < height; y++) {
       const reverse = (y & 1) === 1;
       const startX = reverse ? width - 1 : 0;
@@ -953,11 +1001,20 @@ class ThermalPrinterService {
       for (let x = startX; x !== endX; x += stepX) {
         const idx = y * width + x;
         const oldPixel = gray[idx];
-        const newPixel = oldPixel < 128 ? 0 : 255;
+
+        // Pure black text/graphics or pure white paper bypasses threshold jitter
+        let threshold = 128;
+        if (oldPixel > 14 && oldPixel < 246) {
+          const ign =
+            (((52.9829189 * ((0.06711056 * x + 0.00583715 * y) % 1)) % 1) + 1) % 1;
+          threshold = 128 + (ign - 0.5) * 46;
+        }
+
+        const newPixel = oldPixel < threshold ? 0 : 255;
         mono[idx] = newPixel === 0 ? 1 : 0;
 
-        // Slightly damped error prevents horizontal oscillation bands in dark hair
-        const err = (oldPixel - newPixel) * 0.9;
+        // 100% conserved quantization error (never damped, preventing multi-row stall/discharge waves)
+        const err = oldPixel - newPixel;
 
         const nextX = x + stepX;
         const prevX = x - stepX;
@@ -1176,7 +1233,7 @@ class ThermalPrinterService {
    * Applies the Admin-configured Printer Printout Darkness (5% = Ultra Light to 100% = Max Dark)
    * and Thermal Head Burn Density ('light' | 'normal' | 'dark') directly to a copy of the canvas.
    * Ensures both the Windows Silent Print Spooler (EPSON TM-T82X / TM-T88V) and ESC/POS rasterizer
-   * obey the exact darkness setting chosen in Admin.
+   * obey the exact darkness setting chosen in Admin without crushing dark hair into banded plateaus.
    */
   public applyDarknessToCanvas(
     sourceCanvas: HTMLCanvasElement,
@@ -1212,8 +1269,8 @@ class ThermalPrinterService {
     // Precompute 256-entry lookup table for fast pixel tone mapping
     const lut = new Uint8ClampedArray(256);
     for (let v = 0; v < 256; v++) {
-      // Keep pure white paper background untouched so margins never turn gray
-      if (v >= 250) {
+      // Keep pure black text/typography (#000000) and pure white background (#ffffff) untouched
+      if (v <= 14 || v >= 250) {
         lut[v] = v;
         continue;
       }
@@ -1222,19 +1279,18 @@ class ThermalPrinterService {
         // Lighter printout requested (e.g. 15% Ultra Light, 35% Light):
         // Lift shadows & midtones so thermal printer burns fewer black dots
         const liftStrength = Math.abs(darknessDelta); // 0 to 1.06
-        const gamma = Math.max(0.42, 1.0 - liftStrength * 0.48);
+        const gamma = Math.max(0.45, 1.0 - liftStrength * 0.42);
         const curved = Math.pow(norm, gamma);
-        // Also raise the darkest shadow floor so hair/dark clothes don't become solid black blobs
-        const shadowFloor = liftStrength * 52;
+        const shadowFloor = liftStrength * 44;
         lut[v] = Math.min(252, Math.round(shadowFloor + curved * (255 - shadowFloor)));
       } else {
         // Darker printout requested (e.g. 70% Dark, 90% Extra Dark):
-        // Deepen midtones and shadows for stronger thermal burn
+        // Deepen midtones while protecting a soft 80-luminance shadow toe so dark hair never bands
         const darkStrength = darknessDelta; // 0 to 1.0
-        const gamma = 1.0 + darkStrength * 0.65;
+        const gamma = 1.0 + darkStrength * 0.42;
         const curved = Math.pow(norm, gamma);
-        const contrastPull = (curved - 0.55) * (1 + darkStrength * 0.35) + 0.55;
-        lut[v] = Math.max(0, Math.min(255, Math.round(contrastPull * 255)));
+        const mapped = Math.round(curved * 255);
+        lut[v] = Math.max(80, Math.min(252, mapped));
       }
     }
 
@@ -1270,8 +1326,8 @@ class ThermalPrinterService {
     const calibratedCanvas = this.applyDarknessToCanvas(canvas, config);
 
     const darknessVal = config.printDarkness ?? 35;
-    const contrast = Math.max(0.72, Math.min(1.45, 0.78 + darknessVal / 160));
-    const brightnessLift = Math.round((50 - darknessVal) * 0.45);
+    const contrast = Math.max(0.78, Math.min(1.22, 0.85 + darknessVal / 240));
+    const brightnessLift = Math.round((50 - darknessVal) * 0.35);
 
     onProgress?.(15, 'Calibrating print darkness & dithering...');
     const dithered = this.generateDitheredRaster(
@@ -1281,7 +1337,7 @@ class ThermalPrinterService {
       brightnessLift
     );
 
-    onProgress?.(35, 'Compiling ESC/POS micro-bands...');
+    onProgress?.(35, 'Compiling ESC/POS raster stream...');
     const commandBands = this.buildEscPosCommandBands(
       dithered.bitmap,
       dithered.width,
@@ -1297,6 +1353,7 @@ class ThermalPrinterService {
     );
 
     const mode = this.currentStatus.connectionType;
+    const progressStep = Math.max(1, Math.floor(pacedPackets.length / 5));
 
     // 1. Universal System / OS Printer Mode (USB Cord or Wireless via Silent Bridge / WebUSB — zero popup)
     if (mode === 'system') {
@@ -1318,7 +1375,7 @@ class ThermalPrinterService {
 
     // 2. USB Cord Flow (Native Android USB Host OR WebUSB)
     if (mode === 'usb') {
-      // A. Native Android USB OTG Host (paced in <=128-byte header-aligned packets so KPrinter_461a never overflows)
+      // A. Native Android USB OTG Host
       if (this.nativeUsbActive && typeof window !== 'undefined' && window.AndroidPrinter?.printUsbBase64) {
         try {
           for (let c = 0; c < copies; c++) {
@@ -1329,10 +1386,12 @@ class ThermalPrinterService {
               if (!res || !res.startsWith('OK')) {
                 throw new Error(res || 'Android USB transfer failed');
               }
-              const progressRatio = (c + p / pacedPackets.length) / copies;
-              const percent = 50 + Math.round(progressRatio * 45);
-              onProgress?.(percent, `Streaming to USB OTG printer${copyLabel}... ${percent}%`);
-              await new Promise((r) => setTimeout(r, 15));
+              if (p % progressStep === 0) {
+                const progressRatio = (c + p / pacedPackets.length) / copies;
+                const percent = 50 + Math.round(progressRatio * 45);
+                onProgress?.(percent, `Streaming to USB OTG printer${copyLabel}... ${percent}%`);
+              }
+              await new Promise((r) => setTimeout(r, 8));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1351,7 +1410,7 @@ class ThermalPrinterService {
         }
       }
 
-      // B. WebUSB Direct Transfer (sends header-aligned packets so 58mm & 80mm USB printers never drop headers or overflow)
+      // B. WebUSB Direct Transfer
       if (this.usbDevice && this.usbEndpointNumber !== null) {
         try {
           for (let c = 0; c < copies; c++) {
@@ -1359,10 +1418,12 @@ class ThermalPrinterService {
             for (let p = 0; p < pacedPackets.length; p++) {
               const packet = pacedPackets[p];
               await this.usbDevice.transferOut(this.usbEndpointNumber, packet as unknown as BufferSource);
-              const progressRatio = (c + p / pacedPackets.length) / copies;
-              const percent = 50 + Math.round(progressRatio * 45);
-              onProgress?.(percent, `Streaming to USB printer${copyLabel}... ${percent}%`);
-              await new Promise((r) => setTimeout(r, 15));
+              if (p % progressStep === 0) {
+                const progressRatio = (c + p / pacedPackets.length) / copies;
+                const percent = 50 + Math.round(progressRatio * 45);
+                onProgress?.(percent, `Streaming to USB printer${copyLabel}... ${percent}%`);
+              }
+              await new Promise((r) => setTimeout(r, 6));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1390,10 +1451,12 @@ class ThermalPrinterService {
           const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
           for (let p = 0; p < pacedPackets.length; p++) {
             await writer.write(pacedPackets[p]);
-            const progressRatio = (c + p / pacedPackets.length) / copies;
-            const percent = 50 + Math.round(progressRatio * 45);
-            onProgress?.(percent, `Writing to Serial USB${copyLabel}... ${percent}%`);
-            await new Promise((r) => setTimeout(r, 25));
+            if (p % progressStep === 0) {
+              const progressRatio = (c + p / pacedPackets.length) / copies;
+              const percent = 50 + Math.round(progressRatio * 45);
+              onProgress?.(percent, `Writing to Serial USB${copyLabel}... ${percent}%`);
+            }
+            await new Promise((r) => setTimeout(r, 10));
           }
           soundEffects.playPaperCut();
           if (c < copies - 1) {
@@ -1414,7 +1477,6 @@ class ThermalPrinterService {
     }
 
     // 4. Wireless Bluetooth Flow (Native Android Classic SPP OR Web Bluetooth BLE)
-    // Strict Bluetooth Packet Pacing: at most 128 bytes per write (never splitting a command header) with a 25ms delay between writes
     if (mode === 'bluetooth') {
       if (
         this.nativeBluetoothActive &&
@@ -1430,10 +1492,12 @@ class ThermalPrinterService {
               if (!res || !res.startsWith('OK')) {
                 throw new Error(res || 'Bluetooth SPP print failed');
               }
-              const progressRatio = (c + p / pacedPackets.length) / copies;
-              const percent = 50 + Math.round(progressRatio * 45);
-              onProgress?.(percent, `Transmitting via Bluetooth SPP${copyLabel}... ${percent}%`);
-              await new Promise((r) => setTimeout(r, 25));
+              if (p % progressStep === 0) {
+                const progressRatio = (c + p / pacedPackets.length) / copies;
+                const percent = 50 + Math.round(progressRatio * 45);
+                onProgress?.(percent, `Transmitting via Bluetooth SPP${copyLabel}... ${percent}%`);
+              }
+              await new Promise((r) => setTimeout(r, 10));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1464,10 +1528,14 @@ class ThermalPrinterService {
               } else {
                 await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
               }
-              const progressRatio = (c + p / pacedPackets.length) / copies;
-              const percent = 50 + Math.round(progressRatio * 45);
-              onProgress?.(percent, `Transmitting via Bluetooth${copyLabel}... ${percent}%`);
-              await new Promise((r) => setTimeout(r, 25));
+              if (p % progressStep === 0) {
+                const progressRatio = (c + p / pacedPackets.length) / copies;
+                const percent = 50 + Math.round(progressRatio * 45);
+                onProgress?.(percent, `Transmitting via Bluetooth${copyLabel}... ${percent}%`);
+              }
+              // Smooth continuous motor feed: writeValue already waits for BLE ACK (~10ms), so 4ms keeps motor moving;
+              // writeValueWithoutResponse uses 8ms per 2-row packet (~250 rows/s = 31mm/s continuous paper feed).
+              await new Promise((r) => setTimeout(r, canWriteNoResp ? 8 : 4));
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
