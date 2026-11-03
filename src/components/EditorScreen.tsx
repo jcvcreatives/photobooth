@@ -293,19 +293,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     }
   };
 
-  const allMatchingThemes = themeMode === 'thermal'
-    ? THERMAL_FRAME_THEMES
-    : (activeCategory === 'all'
-        ? DIGITAL_COLOR_THEMES
-        : DIGITAL_COLOR_THEMES.filter((t) => t.category === activeCategory));
-
-  const ITEMS_PER_PAGE = 6;
-  const totalPages = Math.max(1, Math.ceil(allMatchingThemes.length / ITEMS_PER_PAGE));
-  const safePage = Math.min(themePage, totalPages - 1);
-  const displayedThemes = allMatchingThemes.slice(
-    safePage * ITEMS_PER_PAGE,
-    safePage * ITEMS_PER_PAGE + ITEMS_PER_PAGE
-  );
+  const displayedThemes = themeMode === 'thermal'
+    ? THERMAL_FRAME_THEMES.slice(0, 6)
+    : DIGITAL_COLOR_THEMES.slice(0, 6);
 
   return (
     <div className="flex-1 h-full min-h-0 flex flex-col justify-between p-3 sm:p-4 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-4xl mx-auto w-full">
@@ -331,7 +321,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           Looking great!
         </h1>
         <p className="text-[11px] sm:text-xs text-zinc-500">
-          Pick your frame style, then print
+          Pick your Gobble Haus frame style, then print
         </p>
       </div>
 
@@ -470,7 +460,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Template / Theme Selector Cards (Zero-scroll 3x2 grid) */}
+        {/* Right Column: 6 Exclusive Gobble Haus Frame Cards (Zero-scroll 3x2 grid) */}
         <div className="md:col-span-7 h-full min-h-0 flex flex-col justify-between space-y-1.5 overflow-hidden">
           {/* High-level Mode Switcher */}
           <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-200/60 rounded-2xl border border-zinc-200 text-xs shrink-0">
@@ -479,7 +469,6 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 soundEffects.playTap();
                 setThemeMode('thermal');
                 setPreviewView('thermal');
-                setThemePage(0);
               }}
               className={`py-1.5 px-2 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                 themeMode === 'thermal'
@@ -495,7 +484,6 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 soundEffects.playTap();
                 setThemeMode('digital');
                 setPreviewView('digital');
-                setThemePage(0);
               }}
               className={`py-1.5 px-2 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                 themeMode === 'digital'
@@ -508,84 +496,35 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             </button>
           </div>
 
-          {/* Informational Subtext + Optional Category Chips */}
+          {/* Informational Subtext */}
           <div className="flex items-center justify-between gap-2 px-1 shrink-0">
             <div className="text-[10px] text-zinc-500 truncate">
               {themeMode === 'thermal'
-                ? 'Pure white receipt paper with crisp black ink frames'
-                : 'Vibrant pastel & rich color frames for phone download & GIF'}
+                ? 'Centered photo with crisp black top & bottom frame drawings & texts'
+                : 'Centered photo with colored top & bottom Gobble Haus frame art'}
             </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEffects.playTap();
-                    setThemePage((p) => (p > 0 ? p - 1 : totalPages - 1));
-                  }}
-                  className="px-2 py-0.5 rounded-full bg-zinc-200/80 hover:bg-zinc-300 text-[10px] font-semibold text-zinc-800 cursor-pointer"
-                >
-                  ‹ Prev
-                </button>
-                <span className="text-[10px] font-mono text-zinc-500">
-                  {safePage + 1}/{totalPages}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEffects.playTap();
-                    setThemePage((p) => (p + 1) % totalPages);
-                  }}
-                  className="px-2 py-0.5 rounded-full bg-zinc-200/80 hover:bg-zinc-300 text-[10px] font-semibold text-zinc-800 cursor-pointer"
-                >
-                  Next ›
-                </button>
-              </div>
-            )}
+            <span className="text-[10px] font-mono font-semibold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full shrink-0">
+              6 Gobble Haus Frames
+            </span>
           </div>
 
-          {/* Category Chips (shown in digital color mode, wrapped so no swipe needed) */}
-          {themeMode === 'digital' && (
-            <div className="flex flex-wrap items-center gap-1 text-[10px] shrink-0">
-              {THEME_GROUPS.map((grp) => (
-                <button
-                  key={grp.id}
-                  onClick={() => {
-                    soundEffects.playTap();
-                    setActiveCategory(grp.id);
-                    setThemePage(0);
-                  }}
-                  className={`px-2 py-0.5 rounded-full whitespace-nowrap transition cursor-pointer font-medium ${
-                    activeCategory === grp.id
-                      ? 'bg-black text-white shadow-xs'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                  }`}
-                >
-                  {grp.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Zero-Scroll 3x2 Template Grid (All 6 templates fit simultaneously without vertical scrolling) */}
+          {/* Zero-Scroll 3x2 Template Grid (All 6 Gobble Haus frames fit simultaneously) */}
           <div className="grid grid-cols-3 gap-2 flex-1 min-h-0 overflow-hidden content-center">
             {displayedThemes.map((t) => {
-              const isSelected = themeMode === 'thermal'
-                ? thermalTheme.id === t.id
-                : digitalTheme.id === t.id;
+              const isSelected = thermalTheme.id === t.id || digitalTheme.id === t.id;
 
               return (
                 <button
                   key={t.id}
                   onClick={() => {
                     soundEffects.playTap();
-                    if (themeMode === 'thermal') {
-                      setThermalTheme(t);
-                      setPreviewView('thermal');
-                    } else {
-                      setDigitalTheme(t);
-                      setPreviewView('digital');
-                    }
+                    const matchingThermal =
+                      THERMAL_FRAME_THEMES.find((th) => th.id === t.id) || THERMAL_FRAME_THEMES[0];
+                    const matchingDigital =
+                      DIGITAL_COLOR_THEMES.find((dg) => dg.id === t.id) || DIGITAL_COLOR_THEMES[0];
+                    setThermalTheme(matchingThermal);
+                    setDigitalTheme(matchingDigital);
+                    setPreviewView(themeMode);
                   }}
                   className={`p-2 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
                     isSelected
@@ -594,8 +533,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   }`}
                 >
                   <div className="w-full flex items-center justify-between">
-                    <span className="text-[8px] font-mono text-zinc-400 uppercase">
-                      {themeMode === 'thermal' ? 'THERMAL' : 'COLOR'}
+                    <span className="text-[10px] leading-none">
+                      {t.cornerIcon || '🥡'}
                     </span>
                     {isSelected ? (
                       <div className="w-3.5 h-3.5 rounded-full bg-black text-white flex items-center justify-center">
@@ -606,25 +545,31 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     )}
                   </div>
 
-                  {/* Template graphic preview card */}
+                  {/* Mini graphic preview card showing Top Art + Centered Photo + Bottom Art */}
                   <div
                     style={{
                       backgroundColor: themeMode === 'thermal' ? '#ffffff' : t.background,
                     }}
-                    className={`w-11 h-13 rounded-md border my-0.5 flex flex-col items-center justify-around p-1 shadow-2xs ${
-                      themeMode === 'thermal' ? 'border-zinc-300' : 'border-zinc-200'
+                    className={`w-12 h-14 rounded-md border my-0.5 flex flex-col items-center justify-between p-1 shadow-2xs ${
+                      themeMode === 'thermal' ? 'border-zinc-300' : 'border-zinc-300'
                     }`}
                   >
-                    <div className="text-[5.5px] font-mono text-zinc-500 uppercase truncate w-full text-center">
-                      {t.name}
+                    {/* Top Frame Drawing & Text Indicator */}
+                    <div className="w-full border-b border-zinc-300 pb-0.5 flex items-center justify-center gap-0.5">
+                      <span className="text-[6px] font-mono font-bold text-zinc-700 uppercase truncate">
+                        {t.cornerIcon} TOP ART
+                      </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-0.5 w-full">
-                      <div className="h-3 bg-zinc-800 rounded-2xs" />
-                      <div className="h-3 bg-zinc-800 rounded-2xs" />
-                      <div className="h-3 bg-zinc-800 rounded-2xs" />
-                      <div className="h-3 bg-zinc-800 rounded-2xs" />
+
+                    {/* Centered Photo Slot */}
+                    <div className="w-full h-5 bg-zinc-800 rounded-2xs flex items-center justify-center text-[5.5px] font-mono text-white tracking-tighter">
+                      PHOTO
                     </div>
-                    <div className="text-[5px] text-zinc-400">|||| |||</div>
+
+                    {/* Bottom Frame Drawing & Text Indicator */}
+                    <div className="w-full border-t border-zinc-300 pt-0.5 text-[5px] font-mono font-bold text-zinc-600 truncate">
+                      FRAME TEXT
+                    </div>
                   </div>
 
                   <div className="font-semibold text-[11px] text-zinc-900 leading-tight truncate w-full">

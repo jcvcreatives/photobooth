@@ -12,285 +12,182 @@ export interface ThemeGroup {
 }
 
 export const THEME_GROUPS: ThemeGroup[] = [
-  { id: 'all', label: 'All Themes', icon: '✨' },
-  { id: 'minimal', label: 'Studio Minimal', icon: '✦' },
-  { id: 'wedding', label: 'Weddings & Romance', icon: '💍' },
-  { id: 'floral', label: 'Flowers & Garden', icon: '🌸' },
-  { id: 'passport', label: 'Passport & Travel', icon: '✈️' },
-  { id: 'holiday', label: 'Holidays & Events', icon: '🎉' },
+  { id: 'gobble', label: 'Gobble Haus Frames', icon: '🥡' },
 ];
 
 /**
- * Thermal Printer Frame Themes:
- * Dedicated themes for physical thermal receipt printing.
- * Zero color backgrounds (#ffffff paper) and zero color frames.
- * Features crisp black typography, clean black lines, stamps, and ticket edges
- * so thermal heads produce sharp prints without muddy dithering or blackened blocks.
+ * The 6 Exclusive Gobble Haus Frame Themes (Thermal Print Edition):
+ * Pure white receipt paper (#ffffff) with crisp black (#000000) custom line-art
+ * illustrations and texts at the top and bottom, with the photo(s) centered in the middle.
  */
 export const THERMAL_FRAME_THEMES: FrameTheme[] = [
   {
-    id: 'thermal_mono',
-    name: 'Studio Mono',
-    category: 'minimal',
+    id: 'gobble_pokemon_card',
+    name: 'Poké-Gobble Card',
+    category: 'gobble',
     background: '#ffffff',
-    borderStyle: 'clean_border',
+    borderStyle: 'pokemon_card',
     textColor: '#000000',
     accentColor: '#000000',
-    headerText: 'JCVCREATIVES ARCHIVE',
-    footerText: 'ORIGINAL CAPTURE • SERIES I',
+    headerText: 'GOBBLE-CHU • HP 999',
+    footerText: 'SIZZLING SILOG SLAM • +999 DMG',
     dateVisible: true,
+    cornerIcon: '⚡',
   },
   {
-    id: 'thermal_classic_double',
-    name: 'Classic Double',
-    category: 'wedding',
+    id: 'gobble_rice_box',
+    name: 'Rice in a Box',
+    category: 'gobble',
     background: '#ffffff',
-    borderStyle: 'double_gold',
+    borderStyle: 'rice_box',
     textColor: '#000000',
     accentColor: '#000000',
-    headerText: 'PHOTOBOOTH ARCHIVE',
-    footerText: 'GENUINE THERMAL SOUVENIR',
+    headerText: 'GOBBLE HAUS • RICE IN A BOX',
+    footerText: 'HOT GARLIC RICE • EGG • SAVORY MEAT',
     dateVisible: true,
+    cornerIcon: '🥡',
   },
   {
-    id: 'thermal_vintage_receipt',
-    name: 'Vintage Receipt',
-    category: 'passport',
+    id: 'gobble_hungry',
+    name: 'So Hungry!',
+    category: 'gobble',
     background: '#ffffff',
-    borderStyle: 'airmail_border',
+    borderStyle: 'hungry_theme',
     textColor: '#000000',
     accentColor: '#000000',
-    headerText: 'OFFICIAL RECEIPT',
-    footerText: 'THANK YOU • VISIT AGAIN',
+    headerText: 'WARNING: 100% HUNGRY!',
+    footerText: 'FEED ME GOBBLE HAUS • NO CRUMBS LEFT',
     dateVisible: true,
+    cornerIcon: '🍴',
   },
   {
-    id: 'thermal_passport_stamp',
-    name: 'Official Permit',
-    category: 'passport',
+    id: 'gobble_receipt',
+    name: 'Gobble Receipt',
+    category: 'gobble',
     background: '#ffffff',
-    borderStyle: 'passport_emboss',
+    borderStyle: 'order_receipt',
     textColor: '#000000',
     accentColor: '#000000',
-    headerText: 'BORDER ENTRY PERMIT',
-    footerText: 'PORTRAIT VERIFIED • OFFICIAL ARCHIVE',
+    headerText: 'GOBBLE HAUS • ORDER #088',
+    footerText: '100% FRESH • THANK YOU FOR DINING!',
     dateVisible: true,
+    cornerIcon: '🧾',
   },
   {
-    id: 'thermal_wedding_flourish',
-    name: 'Wedding Cherish',
-    category: 'wedding',
+    id: 'gobble_arcade',
+    name: 'Silog Arcade',
+    category: 'gobble',
     background: '#ffffff',
-    borderStyle: 'wedding_gold',
+    borderStyle: 'arcade_card',
     textColor: '#000000',
     accentColor: '#000000',
-    headerText: 'CELEBRATING LOVE',
-    footerText: 'FOREVER & ALWAYS • BEST WISHES',
+    headerText: 'PLAYER 1 • HIGH SCORE',
+    footerText: 'LEVEL UP! • WINNER EATS RICE BOX',
     dateVisible: true,
+    cornerIcon: '🕹️',
   },
   {
-    id: 'thermal_botanical_clean',
-    name: 'Botanical Leaf',
-    category: 'floral',
+    id: 'gobble_vip_pass',
+    name: 'VIP Foodie Pass',
+    category: 'gobble',
     background: '#ffffff',
-    borderStyle: 'clean_border',
+    borderStyle: 'vip_pass',
     textColor: '#000000',
     accentColor: '#000000',
-    headerText: 'BOTANICAL GARDEN',
-    footerText: 'FRESH FLORA • VERDANT LEAVES',
+    headerText: 'GOBBLE HAUS • VIP PASS',
+    footerText: 'CERTIFIED FOODIE • ALL-ACCESS CLUB',
     dateVisible: true,
-  },
-  {
-    id: 'thermal_editorial',
-    name: 'Editorial Folio',
-    category: 'minimal',
-    background: '#ffffff',
-    borderStyle: 'clean_border',
-    textColor: '#000000',
-    accentColor: '#000000',
-    headerText: 'PORTRAIT FOLIO',
-    footerText: 'CONTEMPORARY EXHIBIT • EDITION 2026',
-    dateVisible: true,
-  },
-  {
-    id: 'thermal_holiday_celebration',
-    name: 'Celebration Confetti',
-    category: 'holiday',
-    background: '#ffffff',
-    borderStyle: 'double_gold',
-    textColor: '#000000',
-    accentColor: '#000000',
-    headerText: 'CELEBRATE TOGETHER',
-    footerText: 'MEMORABLE MOMENTS • POP THE BUBBLY',
-    dateVisible: true,
-  },
-  {
-    id: 'thermal_gobble_haus',
-    name: 'Gobble Haus Receipt',
-    category: 'holiday',
-    background: '#ffffff',
-    borderStyle: 'airmail_border',
-    textColor: '#000000',
-    accentColor: '#000000',
-    headerText: 'GOBBLE HAUS • ORDER #01',
-    footerText: 'ALL-DAY SILOG & RICE BOXES • HOT & FRESH',
-    dateVisible: true,
+    cornerIcon: '👑',
   },
 ];
 
 /**
- * Digital & GIF Color Themes:
- * Full, rich color frames preserved specifically for guests downloading to their
- * smartphone via QR code or receiving via email.
+ * The 6 Exclusive Gobble Haus Frame Themes (Digital & GIF Color Edition):
+ * Matching 6 themes with vibrant colors for phone QR & GIF downloads.
  */
 export const DIGITAL_COLOR_THEMES: FrameTheme[] = [
   {
-    id: 'gobble_haus_special',
-    name: 'Gobble Haus Diner',
-    category: 'holiday',
+    id: 'gobble_pokemon_card',
+    name: 'Poké-Gobble Card',
+    category: 'gobble',
+    background: '#fef9c3',
+    borderStyle: 'pokemon_card',
+    textColor: '#1e1b4b',
+    accentColor: '#d97706',
+    headerText: 'GOBBLE-CHU • HP 999',
+    footerText: 'SIZZLING SILOG SLAM • +999 DMG',
+    dateVisible: true,
+    cornerIcon: '⚡',
+  },
+  {
+    id: 'gobble_rice_box',
+    name: 'Rice in a Box',
+    category: 'gobble',
     background: '#fffbeb',
-    borderStyle: 'double_gold',
+    borderStyle: 'rice_box',
     textColor: '#7c2d12',
     accentColor: '#ea580c',
-    headerText: 'GOBBLE HAUS RICE BOXES',
-    footerText: 'SIZZLING SILOG • GARLIC RICE & EGG',
+    headerText: 'GOBBLE HAUS • RICE IN A BOX',
+    footerText: 'HOT GARLIC RICE • EGG • SAVORY MEAT',
     dateVisible: true,
-    cornerIcon: '🍱',
+    cornerIcon: '🥡',
   },
   {
-    id: 'baby_blue_studio',
-    name: 'Baby Blue Chic',
-    category: 'minimal',
+    id: 'gobble_hungry',
+    name: 'So Hungry!',
+    category: 'gobble',
+    background: '#fff1f2',
+    borderStyle: 'hungry_theme',
+    textColor: '#881337',
+    accentColor: '#e11d48',
+    headerText: 'WARNING: 100% HUNGRY!',
+    footerText: 'FEED ME GOBBLE HAUS • NO CRUMBS LEFT',
+    dateVisible: true,
+    cornerIcon: '🍴',
+  },
+  {
+    id: 'gobble_receipt',
+    name: 'Gobble Receipt',
+    category: 'gobble',
+    background: '#fafaf9',
+    borderStyle: 'order_receipt',
+    textColor: '#18181b',
+    accentColor: '#52525b',
+    headerText: 'GOBBLE HAUS • ORDER #088',
+    footerText: '100% FRESH • THANK YOU FOR DINING!',
+    dateVisible: true,
+    cornerIcon: '🧾',
+  },
+  {
+    id: 'gobble_arcade',
+    name: 'Silog Arcade',
+    category: 'gobble',
     background: '#f0f9ff',
-    borderStyle: 'baby_blue_border',
+    borderStyle: 'arcade_card',
     textColor: '#0c4a6e',
-    accentColor: '#38bdf8',
-    headerText: 'JCVCREATIVES STUDIO',
-    footerText: 'PASTEL ARCHIVE • EDITION 2026',
+    accentColor: '#0284c7',
+    headerText: 'PLAYER 1 • HIGH SCORE',
+    footerText: 'LEVEL UP! • WINNER EATS RICE BOX',
     dateVisible: true,
-    cornerIcon: '🩵',
+    cornerIcon: '🕹️',
   },
   {
-    id: 'sakura_blossom',
-    name: 'Cherry Blossom',
-    category: 'floral',
-    background: '#fff0f5',
-    borderStyle: 'floral_sakura',
-    textColor: '#371825',
-    accentColor: '#db2777',
-    headerText: 'SAKURA BLOSSOM',
-    footerText: 'SPRINGTIME BOTANICAL • IN FULL BLOOM',
-    dateVisible: true,
-    cornerIcon: '🌸',
-  },
-  {
-    id: 'rose_gold_nuptials',
-    name: 'Rose Gold Nuptials',
-    category: 'wedding',
-    background: '#fff5f5',
-    borderStyle: 'rose_gold',
-    textColor: '#2a1719',
-    accentColor: '#b76e79',
-    headerText: 'MR & MRS CELEBRATION',
-    footerText: 'FOREVER & ALWAYS • VERIFIED UNION',
-    dateVisible: true,
-    cornerIcon: '🕊️',
-  },
-  {
-    id: 'eucalyptus_sage',
-    name: 'Botanical Garden',
-    category: 'floral',
-    background: '#f0fdf4',
-    borderStyle: 'floral_sage',
-    textColor: '#142a1b',
-    accentColor: '#166534',
-    headerText: 'BOTANICAL GARDEN',
-    footerText: 'FRESH FLORA • VERDANT LEAVES & GREENERY',
-    dateVisible: true,
-    cornerIcon: '🌿',
-  },
-  {
-    id: 'wedding_elegance',
-    name: 'Wedding Elegance',
-    category: 'wedding',
-    background: '#fefdfa',
-    borderStyle: 'wedding_gold',
-    textColor: '#1c1917',
-    accentColor: '#c5a059',
-    headerText: 'WEDDING CELEBRATION',
-    footerText: 'TOGETHER FOREVER • WITH ALL OUR LOVE',
-    dateVisible: true,
-    cornerIcon: '💍',
-  },
-  {
-    id: 'champagne_monogram',
-    name: 'Champagne Monogram',
-    category: 'wedding',
-    background: '#fcf8f2',
-    borderStyle: 'double_gold',
-    textColor: '#211c15',
-    accentColor: '#967444',
-    headerText: 'THE WEDDING DAY',
-    footerText: 'OUR LOVE STORY • A LIFETIME OF HAPPINESS',
-    dateVisible: true,
-    cornerIcon: '🥂',
-  },
-  {
-    id: 'obsidian_dark',
-    name: 'Obsidian Noir',
-    category: 'minimal',
-    background: '#09090b',
-    borderStyle: 'clean_border',
-    textColor: '#fafafa',
-    accentColor: '#71717a',
-    headerText: 'OBSIDIAN NOIR',
-    footerText: 'PHOTOGRAPHIC ARCHIVE • JCVCREATIVES',
-    dateVisible: true,
-  },
-  {
-    id: 'wildflower_meadow',
-    name: 'Wildflower Meadow',
-    category: 'floral',
-    background: '#faf5ff',
-    borderStyle: 'floral_violet',
-    textColor: '#24123a',
-    accentColor: '#7c3aed',
-    headerText: 'WILDFLOWER MEADOW',
-    footerText: 'HANDPICKED MEMORIES • SWEET PETALS',
-    dateVisible: true,
-    cornerIcon: '💐',
-  },
-  {
-    id: 'birthday_celebration',
-    name: 'Birthday Party',
-    category: 'holiday',
+    id: 'gobble_vip_pass',
+    name: 'VIP Foodie Pass',
+    category: 'gobble',
     background: '#fdf4ff',
-    borderStyle: 'confetti_party',
-    textColor: '#2e1065',
+    borderStyle: 'vip_pass',
+    textColor: '#4a044e',
     accentColor: '#c026d3',
-    headerText: 'HAPPY BIRTHDAY!',
-    footerText: 'MAKE A WISH • ANOTHER YEAR OF JOY',
+    headerText: 'GOBBLE HAUS • VIP PASS',
+    footerText: 'CERTIFIED FOODIE • ALL-ACCESS CLUB',
     dateVisible: true,
-    cornerIcon: '🎂',
-  },
-  {
-    id: 'official_passport',
-    name: 'Official Passport',
-    category: 'passport',
-    background: '#0f172a',
-    borderStyle: 'passport_emboss',
-    textColor: '#f8fafc',
-    accentColor: '#eab308',
-    headerText: 'PASSPORT IDENTIFICATION',
-    footerText: 'BORDER ENTRY PERMIT • OFFICIAL TRAVEL ARCHIVE',
-    dateVisible: true,
-    cornerIcon: '✈️',
+    cornerIcon: '👑',
   },
 ];
 
 export const FRAME_THEMES: FrameTheme[] = [
   ...THERMAL_FRAME_THEMES,
-  ...DIGITAL_COLOR_THEMES,
 ];
 
 export const AVAILABLE_FILTERS: { id: PhotoFilterType; name: string; description: string }[] = [
@@ -535,10 +432,641 @@ export function applyThermalPhotoToneCurve(
 }
 
 /**
+ * Renders custom illustrated line-art drawings and typography in the Top Header Zone
+ * (above the centered photo) and Bottom Footer Zone (below the centered photo)
+ * for each of the 6 Gobble Haus frame themes.
+ * Uses crisp vector line-art so thermal prints (isThermalMode: true) are 100% sharp
+ * with zero horizontal banding across the centered photo.
+ */
+function drawGobbleFrameTopAndBottomArt(
+  ctx: CanvasRenderingContext2D,
+  theme: FrameTheme,
+  canvasWidth: number,
+  canvasHeight: number,
+  headerZoneHeight: number,
+  footerZoneHeight: number,
+  margin: number,
+  dateStr: string,
+  isThermalMode: boolean
+) {
+  const ink = isThermalMode ? '#000000' : theme.textColor;
+  const accent = isThermalMode ? '#000000' : theme.accentColor;
+  const s = canvasWidth / 600; // Scale factor (1.0 for 600px, 1.333 for 800px, 2.0 for 1200px)
+  const leftX = margin;
+  const rightX = canvasWidth - margin;
+  const contentW = rightX - leftX;
+  const centerX = canvasWidth / 2;
+  const bottomStartY = canvasHeight - footerZoneHeight;
+
+  ctx.save();
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const drawStar = (cx: number, cy: number, outerR: number, innerR: number, filled = true) => {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const angle = (i * Math.PI) / 5 - Math.PI / 2;
+      const px = cx + Math.cos(angle) * r;
+      const py = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    if (filled) ctx.fill();
+    else ctx.stroke();
+  };
+
+  const drawEnergyBadge = (cx: number, cy: number, r: number) => {
+    ctx.lineWidth = 2.5 * s;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    drawStar(cx, cy, r * 0.62, r * 0.28, true);
+  };
+
+  const styleId = theme.borderStyle || theme.id;
+
+  // =========================================================================
+  // 1. POKÉMON CARD THEME ('pokemon_card' / 'gobble_pokemon_card')
+  // =========================================================================
+  if (styleId === 'pokemon_card' || theme.id === 'gobble_pokemon_card') {
+    // Top outer card arch & collector header
+    ctx.lineWidth = 3.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(leftX, headerZoneHeight - 8 * s);
+    ctx.lineTo(leftX, 24 * s);
+    ctx.lineTo(rightX, 24 * s);
+    ctx.lineTo(rightX, headerZoneHeight - 8 * s);
+    ctx.stroke();
+
+    // Evolution Stage pill box on top-left
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fef08a';
+    ctx.fillRect(leftX + 14 * s, 36 * s, 145 * s, 32 * s);
+    ctx.strokeRect(leftX + 14 * s, 36 * s, 145 * s, 32 * s);
+    ctx.fillStyle = ink;
+    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('STAGE 2 • GOBBLEMON', leftX + 86 * s, 57 * s);
+
+    // Pokemon Name: GOBBLE-CHU
+    ctx.textAlign = 'left';
+    ctx.font = `900 ${Math.round(30 * s)}px sans-serif`;
+    ctx.fillText('GOBBLE-CHU', leftX + 16 * s, 108 * s);
+
+    // Right side HP 999 + Energy Circle
+    ctx.textAlign = 'right';
+    ctx.font = `900 ${Math.round(16 * s)}px sans-serif`;
+    ctx.fillStyle = accent;
+    ctx.fillText('HP', rightX - 132 * s, 106 * s);
+    ctx.fillStyle = ink;
+    ctx.font = `900 ${Math.round(32 * s)}px sans-serif`;
+    ctx.fillText('999', rightX - 58 * s, 108 * s);
+    drawEnergyBadge(rightX - 32 * s, 96 * s, 16 * s);
+
+    // Pokedex info strip banner right above centered photo
+    const bannerY = headerZoneHeight - 54 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.strokeRect(leftX + 10 * s, bannerY, contentW - 20 * s, 34 * s);
+    ctx.font = `bold ${Math.round(12 * s)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = ink;
+    ctx.fillText(
+      `NO. 088  SIZZLING SILOG POKÉMON  •  HT: 100% FRESH  •  ${dateStr.toUpperCase()}`,
+      centerX,
+      bannerY + 22 * s
+    );
+
+    // Bottom Attack Moves & Collector Stats Box (below centered photo)
+    ctx.lineWidth = 3.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(leftX, bottomStartY + 8 * s);
+    ctx.lineTo(leftX, canvasHeight - 24 * s);
+    ctx.lineTo(rightX, canvasHeight - 24 * s);
+    ctx.lineTo(rightX, bottomStartY + 8 * s);
+    ctx.stroke();
+
+    // Attack 1
+    const atk1Y = bottomStartY + 42 * s;
+    drawEnergyBadge(leftX + 28 * s, atk1Y - 6 * s, 12 * s);
+    drawEnergyBadge(leftX + 56 * s, atk1Y - 6 * s, 12 * s);
+    ctx.textAlign = 'left';
+    ctx.font = `900 ${Math.round(20 * s)}px sans-serif`;
+    ctx.fillText('Garlic Rice Boost', leftX + 80 * s, atk1Y);
+    ctx.textAlign = 'right';
+    ctx.font = `900 ${Math.round(22 * s)}px sans-serif`;
+    ctx.fillText('+100', rightX - 18 * s, atk1Y);
+    ctx.textAlign = 'left';
+    ctx.font = `bold ${Math.round(11.5 * s)}px sans-serif`;
+    ctx.fillText('Restores 100% hunger with hot garlic rice & sunny-side egg.', leftX + 80 * s, atk1Y + 20 * s);
+
+    // Divider line between attacks
+    ctx.lineWidth = 2 * s;
+    ctx.beginPath();
+    ctx.moveTo(leftX + 14 * s, atk1Y + 34 * s);
+    ctx.lineTo(rightX - 14 * s, atk1Y + 34 * s);
+    ctx.stroke();
+
+    // Attack 2
+    const atk2Y = atk1Y + 66 * s;
+    drawEnergyBadge(leftX + 24 * s, atk2Y - 6 * s, 11 * s);
+    drawEnergyBadge(leftX + 49 * s, atk2Y - 6 * s, 11 * s);
+    drawEnergyBadge(leftX + 74 * s, atk2Y - 6 * s, 11 * s);
+    ctx.textAlign = 'left';
+    ctx.font = `900 ${Math.round(21 * s)}px sans-serif`;
+    ctx.fillText('Sizzling Silog Slam', leftX + 96 * s, atk2Y);
+    ctx.textAlign = 'right';
+    ctx.font = `900 ${Math.round(24 * s)}px sans-serif`;
+    ctx.fillText('999', rightX - 18 * s, atk2Y);
+    ctx.textAlign = 'left';
+    ctx.font = `bold ${Math.round(11.5 * s)}px sans-serif`;
+    ctx.fillText('Flip a coin! If heads, double crispy toppings & unlimited smiles.', leftX + 96 * s, atk2Y + 20 * s);
+
+    // Weakness / Resistance / Retreat Bar
+    const statBarY = atk2Y + 36 * s;
+    ctx.lineWidth = 2 * s;
+    ctx.strokeRect(leftX + 14 * s, statBarY, contentW - 28 * s, 30 * s);
+    ctx.font = `bold ${Math.round(11 * s)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      'WEAKNESS: HUNGER ×2   |   RESISTANCE: BAD VIBES -30   |   RETREAT: ★ ★',
+      centerX,
+      statBarY + 19 * s
+    );
+
+    // Collector Card Bottom Signature
+    ctx.font = `bold ${Math.round(11 * s)}px monospace`;
+    ctx.fillText(
+      'ILLUS. GOBBLE HAUS STUDIO  •  © 2026 POKÉ-GOBBLE SERIES  •  001/006 ★',
+      centerX,
+      canvasHeight - 36 * s
+    );
+  }
+
+  // =========================================================================
+  // 2. RICE IN A BOX THEME ('rice_box' / 'gobble_rice_box')
+  // =========================================================================
+  else if (styleId === 'rice_box' || theme.id === 'gobble_rice_box') {
+    // Top Illustration: Open Takeout Box Flaps, Crossed Chopsticks & Rising Steam
+    const boxTopCx = centerX;
+    const boxTopY = 58 * s;
+
+    // Rising steam waves
+    ctx.lineWidth = 3 * s;
+    [-36 * s, 0, 36 * s].forEach((dx) => {
+      ctx.beginPath();
+      ctx.moveTo(boxTopCx + dx, boxTopY - 6 * s);
+      ctx.quadraticCurveTo(boxTopCx + dx - 8 * s, boxTopY - 18 * s, boxTopCx + dx, boxTopY - 28 * s);
+      ctx.quadraticCurveTo(boxTopCx + dx + 8 * s, boxTopY - 38 * s, boxTopCx + dx, boxTopY - 46 * s);
+      ctx.stroke();
+    });
+
+    // Crossed chopsticks drawing at top
+    ctx.lineWidth = 4 * s;
+    ctx.beginPath();
+    ctx.moveTo(boxTopCx - 115 * s, boxTopY - 18 * s);
+    ctx.lineTo(boxTopCx + 115 * s, boxTopY + 14 * s);
+    ctx.moveTo(boxTopCx - 115 * s, boxTopY + 14 * s);
+    ctx.lineTo(boxTopCx + 115 * s, boxTopY - 18 * s);
+    ctx.stroke();
+
+    // Takeout roof badge
+    ctx.lineWidth = 3 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fffbeb';
+    ctx.beginPath();
+    ctx.moveTo(boxTopCx - 70 * s, boxTopY + 26 * s);
+    ctx.lineTo(boxTopCx - 52 * s, boxTopY - 2 * s);
+    ctx.lineTo(boxTopCx + 52 * s, boxTopY - 2 * s);
+    ctx.lineTo(boxTopCx + 70 * s, boxTopY + 26 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = ink;
+    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('HOT & FRESH', boxTopCx, boxTopY + 18 * s);
+
+    // Main Top Headline
+    ctx.font = `900 ${Math.round(32 * s)}px sans-serif`;
+    ctx.fillText('GOBBLE HAUS', centerX, boxTopY + 64 * s);
+
+    // Ribbon Box Subtitle
+    const ribY = boxTopY + 78 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.strokeRect(leftX + 20 * s, ribY, contentW - 40 * s, 34 * s);
+    ctx.font = `900 ${Math.round(15 * s)}px monospace`;
+    ctx.fillText('★  RICE IN A BOX • ALL-DAY SILOG TO-GO  ★', centerX, ribY + 23 * s);
+
+    // Bottom Illustration: Iconic Takeout Rice Box Carton with Sunny-Side Egg & Garlic Rice
+    const cartonCx = centerX;
+    const cartonTopY = bottomStartY + 52 * s;
+    const cartonBotY = bottomStartY + 132 * s;
+
+    // Puffy garlic rice domes & sunny-side-up egg peeking above the box
+    ctx.lineWidth = 3 * s;
+    ctx.beginPath();
+    ctx.arc(cartonCx - 38 * s, cartonTopY, 24 * s, Math.PI, 0, false);
+    ctx.arc(cartonCx, cartonTopY - 8 * s, 30 * s, Math.PI, 0, false);
+    ctx.arc(cartonCx + 38 * s, cartonTopY, 24 * s, Math.PI, 0, false);
+    ctx.stroke();
+
+    // Egg yolk circle inside top dome
+    ctx.beginPath();
+    ctx.arc(cartonCx, cartonTopY - 12 * s, 10 * s, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Open side flaps of the rice box
+    ctx.beginPath();
+    ctx.moveTo(cartonCx - 66 * s, cartonTopY);
+    ctx.lineTo(cartonCx - 94 * s, cartonTopY - 22 * s);
+    ctx.lineTo(cartonCx - 74 * s, cartonTopY + 18 * s);
+    ctx.moveTo(cartonCx + 66 * s, cartonTopY);
+    ctx.lineTo(cartonCx + 94 * s, cartonTopY - 22 * s);
+    ctx.lineTo(cartonCx + 74 * s, cartonTopY + 18 * s);
+    ctx.stroke();
+
+    // Trapezoid Takeout Carton Body
+    ctx.lineWidth = 3.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fef3c7';
+    ctx.beginPath();
+    ctx.moveTo(cartonCx - 66 * s, cartonTopY);
+    ctx.lineTo(cartonCx + 66 * s, cartonTopY);
+    ctx.lineTo(cartonCx + 50 * s, cartonBotY);
+    ctx.lineTo(cartonCx - 50 * s, cartonBotY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Wire handle & label on the rice box
+    ctx.lineWidth = 2.5 * s;
+    ctx.strokeRect(cartonCx - 44 * s, cartonTopY + 18 * s, 88 * s, 44 * s);
+    ctx.fillStyle = ink;
+    ctx.font = `900 ${Math.round(14 * s)}px sans-serif`;
+    ctx.fillText('GOBBLE', cartonCx, cartonTopY + 38 * s);
+    ctx.font = `bold ${Math.round(11 * s)}px monospace`;
+    ctx.fillText('HAUS BOX', cartonCx, cartonTopY + 54 * s);
+
+    // Flanking stars & badges
+    drawStar(leftX + 55 * s, cartonTopY + 40 * s, 18 * s, 8 * s, false);
+    drawStar(rightX - 55 * s, cartonTopY + 40 * s, 18 * s, 8 * s, false);
+    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
+    ctx.fillText('100%', leftX + 55 * s, cartonTopY + 74 * s);
+    ctx.fillText('BUSOG', rightX - 55 * s, cartonTopY + 74 * s);
+
+    // Bottom Text Banner
+    ctx.font = `900 ${Math.round(20 * s)}px sans-serif`;
+    ctx.fillText('HOT GARLIC RICE • FRIED EGG • SAVORY MEAT', centerX, cartonBotY + 34 * s);
+    ctx.font = `bold ${Math.round(13 * s)}px monospace`;
+    ctx.fillText(`PACKED FRESH AT GOBBLE HAUS  •  ${dateStr.toUpperCase()}`, centerX, cartonBotY + 58 * s);
+  }
+
+  // =========================================================================
+  // 3. SO HUNGRY! THEME ('hungry_theme' / 'gobble_hungry')
+  // =========================================================================
+  else if (styleId === 'hungry_theme' || theme.id === 'gobble_hungry') {
+    // Top Illustration: Hunger Fuel Meter / Cravings Gauge + Comic Alert
+    const meterW = contentW - 40 * s;
+    const meterX = leftX + 20 * s;
+    const meterY = 30 * s;
+
+    // Comic Alert Header
+    ctx.font = `900 ${Math.round(31 * s)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('⚡ CERTIFIED HUNGRY! ⚡', centerX, meterY + 26 * s);
+
+    // Hunger Meter Box: [EMPTY] [■][■][■][■][■][■] [100% CRAVING]
+    const gaugeY = meterY + 42 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.strokeRect(meterX, gaugeY, meterW, 38 * s);
+
+    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillText('CRAVING LVL:', meterX + 12 * s, gaugeY + 24 * s);
+
+    // Segmented fuel bars inside gauge
+    const barStartX = meterX + 122 * s;
+    const barEndX = meterX + meterW - 90 * s;
+    const segCount = 6;
+    const segGap = 6 * s;
+    const segW = (barEndX - barStartX - segGap * (segCount - 1)) / segCount;
+    for (let i = 0; i < segCount; i++) {
+      const bx = barStartX + i * (segW + segGap);
+      ctx.lineWidth = 2.5 * s;
+      ctx.strokeRect(bx, gaugeY + 8 * s, segW, 22 * s);
+      // Diagonal hatch lines inside each segment (crisp thermal rendering without heavy black block)
+      ctx.beginPath();
+      ctx.moveTo(bx + 4 * s, gaugeY + 28 * s);
+      ctx.lineTo(bx + segW - 4 * s, gaugeY + 10 * s);
+      ctx.stroke();
+    }
+
+    ctx.textAlign = 'right';
+    ctx.font = `900 ${Math.round(14 * s)}px monospace`;
+    ctx.fillText('MAX!!', meterX + meterW - 12 * s, gaugeY + 24 * s);
+
+    // Sub-banner above photo
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${Math.round(15 * s)}px monospace`;
+    ctx.fillText('WARNING: WILL TRADE POSES FOR GOBBLE HAUS SILOG!', centerX, gaugeY + 64 * s);
+
+    // Bottom Illustration: Steaming Plate + Fork & Knife + Cravings Checklist
+    const plateCy = bottomStartY + 76 * s;
+
+    // Left Fork drawing
+    const forkX = centerX - 110 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.beginPath();
+    ctx.moveTo(forkX, plateCy - 34 * s);
+    ctx.lineTo(forkX, plateCy + 34 * s);
+    ctx.moveTo(forkX - 10 * s, plateCy - 34 * s);
+    ctx.lineTo(forkX - 10 * s, plateCy - 12 * s);
+    ctx.lineTo(forkX + 10 * s, plateCy - 12 * s);
+    ctx.lineTo(forkX + 10 * s, plateCy - 34 * s);
+    ctx.stroke();
+
+    // Right Spoon drawing
+    const spoonX = centerX + 110 * s;
+    ctx.beginPath();
+    ctx.ellipse(spoonX, plateCy - 22 * s, 11 * s, 15 * s, 0, 0, Math.PI * 2);
+    ctx.moveTo(spoonX, plateCy - 7 * s);
+    ctx.lineTo(spoonX, plateCy + 34 * s);
+    ctx.stroke();
+
+    // Center Plate & Dome Cloche / Rice Bowl drawing
+    ctx.lineWidth = 3.5 * s;
+    ctx.beginPath();
+    ctx.arc(centerX, plateCy, 42 * s, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 2 * s;
+    ctx.beginPath();
+    ctx.arc(centerX, plateCy, 30 * s, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.font = `900 ${Math.round(14 * s)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('FEED', centerX, plateCy - 2 * s);
+    ctx.fillText('ME!', centerX, plateCy + 14 * s);
+
+    // Cravings Checklist Boxes
+    const chkY = plateCy + 56 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.strokeRect(leftX + 16 * s, chkY, contentW - 32 * s, 32 * s);
+    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
+    ctx.fillText('[✓] HUNGRY   [✓] RICE BOX SECURED   [✓] 100% HAPPY', centerX, chkY + 21 * s);
+
+    ctx.font = `900 ${Math.round(19 * s)}px sans-serif`;
+    ctx.fillText(`POWERED BY GOBBLE HAUS  •  ${dateStr.toUpperCase()}`, centerX, chkY + 56 * s);
+  }
+
+  // =========================================================================
+  // 4. GOBBLE RECEIPT THEME ('order_receipt' / 'gobble_receipt')
+  // =========================================================================
+  else if (styleId === 'order_receipt' || theme.id === 'gobble_receipt') {
+    // Top Zig-Zag Receipt Tear Edge
+    ctx.lineWidth = 2.5 * s;
+    ctx.beginPath();
+    const zigStep = 18 * s;
+    for (let x = leftX; x <= rightX; x += zigStep) {
+      const y = ((Math.round((x - leftX) / zigStep) & 1) === 0) ? 20 * s : 32 * s;
+      if (x === leftX) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${Math.round(30 * s)}px monospace`;
+    ctx.fillText('GOBBLE HAUS KITCHEN', centerX, 74 * s);
+
+    ctx.font = `bold ${Math.round(14 * s)}px monospace`;
+    ctx.fillText(`OFFICIAL ORDER TICKET #088  •  ${dateStr.toUpperCase()}`, centerX, 100 * s);
+
+    // Dashed receipt divider
+    ctx.lineWidth = 2.5 * s;
+    ctx.setLineDash([8 * s, 6 * s]);
+    ctx.beginPath();
+    ctx.moveTo(leftX, 116 * s);
+    ctx.lineTo(rightX, 116 * s);
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.font = `900 ${Math.round(15 * s)}px monospace`;
+    ctx.fillText('QTY  ITEM DESCRIPTION', leftX + 8 * s, 142 * s);
+    ctx.textAlign = 'right';
+    ctx.fillText('PRICE', rightX - 8 * s, 142 * s);
+
+    ctx.beginPath();
+    ctx.moveTo(leftX, 154 * s);
+    ctx.lineTo(rightX, 154 * s);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.round(13.5 * s)}px monospace`;
+    ctx.fillText('★ VIP CUSTOMER PORTRAIT ATTACHED BELOW ★', centerX, headerZoneHeight - 16 * s);
+
+    // Bottom Itemized Receipt + Barcode
+    const rTop = bottomStartY + 26 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.setLineDash([8 * s, 6 * s]);
+    ctx.beginPath();
+    ctx.moveTo(leftX, rTop);
+    ctx.lineTo(rightX, rTop);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const items = [
+      ['1x  SIGNATURE SILOG RICE BOX', '100% HOT'],
+      ['1x  EXTRA GARLIC RICE & EGG', 'INCLUDED'],
+      ['1x  UNLIMITED GOOD VIBES', 'PRICELESS'],
+    ];
+    ctx.font = `bold ${Math.round(14 * s)}px monospace`;
+    items.forEach(([label, val], idx) => {
+      const iy = rTop + 26 * s + idx * 24 * s;
+      ctx.textAlign = 'left';
+      ctx.fillText(label, leftX + 8 * s, iy);
+      ctx.textAlign = 'right';
+      ctx.fillText(val, rightX - 8 * s, iy);
+    });
+
+    const totalLineY = rTop + 102 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(leftX, totalLineY);
+    ctx.lineTo(rightX, totalLineY);
+    ctx.stroke();
+
+    ctx.font = `900 ${Math.round(18 * s)}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillText('TOTAL SATISFACTION:', leftX + 8 * s, totalLineY + 26 * s);
+    ctx.textAlign = 'right';
+    ctx.fillText('1000% BUSOG', rightX - 8 * s, totalLineY + 26 * s);
+
+    // Crisp Vector Barcode Drawing
+    const bcY = totalLineY + 40 * s;
+    const bcH = 38 * s;
+    const bcW = 280 * s;
+    const bcStartX = centerX - bcW / 2;
+    const pattern = [3, 1, 2, 2, 1, 3, 1, 1, 2, 3, 1, 2, 1, 3, 2, 1, 2, 2, 3, 1, 2, 1, 3];
+    let curX = bcStartX;
+    for (let i = 0; i < pattern.length && curX < bcStartX + bcW; i++) {
+      const barW = pattern[i] * 3.2 * s;
+      if (i % 2 === 0) {
+        ctx.fillRect(curX, bcY, barW, bcH);
+      }
+      curX += barW + 2.5 * s;
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.round(12 * s)}px monospace`;
+    ctx.fillText('* GOBBLE-HAUS-VIP-088 *   •   THANK YOU, COME AGAIN!', centerX, bcY + bcH + 18 * s);
+  }
+
+  // =========================================================================
+  // 5. SILOG ARCADE THEME ('arcade_card' / 'gobble_arcade')
+  // =========================================================================
+  else if (styleId === 'arcade_card' || theme.id === 'gobble_arcade') {
+    // Top Arcade Marquee & Health Hearts
+    ctx.lineWidth = 3 * s;
+    ctx.strokeRect(leftX, 24 * s, contentW, 44 * s);
+    ctx.font = `900 ${Math.round(16 * s)}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillText('1UP: GOBBLE PLAYER', leftX + 14 * s, 52 * s);
+    ctx.textAlign = 'right';
+    ctx.fillText('HI-SCORE: 999,990', rightX - 14 * s, 52 * s);
+
+    // Headline + 5 Star/Heart HP Bar
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${Math.round(28 * s)}px sans-serif`;
+    ctx.fillText('🕹️ SILOG POWER CLUB 🕹️', centerX, 108 * s);
+
+    // Energy Bar
+    const hpW = contentW - 60 * s;
+    const hpX = leftX + 30 * s;
+    const hpY = 124 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.strokeRect(hpX, hpY, hpW, 28 * s);
+    ctx.font = `900 ${Math.round(14 * s)}px monospace`;
+    ctx.fillText('STAMINA: ★ ★ ★ ★ ★  [FULL POWER +99]', centerX, hpY + 19 * s);
+
+    ctx.font = `bold ${Math.round(13 * s)}px monospace`;
+    ctx.fillText(`STAGE 1: GOBBLE HAUS ARENA  •  ${dateStr.toUpperCase()}`, centerX, headerZoneHeight - 16 * s);
+
+    // Bottom Arcade Controller Drawing (D-Pad on Left, Power-Up Box Center, A/B Buttons Right)
+    const ctrlCy = bottomStartY + 78 * s;
+
+    // D-Pad Plus Shape Drawing on Left
+    const dpadX = leftX + 66 * s;
+    const arm = 16 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.beginPath();
+    ctx.moveTo(dpadX - arm, ctrlCy - arm * 2.2);
+    ctx.lineTo(dpadX + arm, ctrlCy - arm * 2.2);
+    ctx.lineTo(dpadX + arm, ctrlCy - arm);
+    ctx.lineTo(dpadX + arm * 2.2, ctrlCy - arm);
+    ctx.lineTo(dpadX + arm * 2.2, ctrlCy + arm);
+    ctx.lineTo(dpadX + arm, ctrlCy + arm);
+    ctx.lineTo(dpadX + arm, ctrlCy + arm * 2.2);
+    ctx.lineTo(dpadX - arm, ctrlCy + arm * 2.2);
+    ctx.lineTo(dpadX - arm, ctrlCy + arm);
+    ctx.lineTo(dpadX - arm * 2.2, ctrlCy + arm);
+    ctx.lineTo(dpadX - arm * 2.2, ctrlCy - arm);
+    ctx.lineTo(dpadX - arm, ctrlCy - arm);
+    ctx.closePath();
+    ctx.stroke();
+
+    // Center Arcade Dialogue Box
+    const dlgW = contentW - 250 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.strokeRect(centerX - dlgW / 2, ctrlCy - 34 * s, dlgW, 68 * s);
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${Math.round(16 * s)}px monospace`;
+    ctx.fillText('LEVEL UP!', centerX, ctrlCy - 8 * s);
+    ctx.font = `bold ${Math.round(12 * s)}px monospace`;
+    ctx.fillText('+1 RICE BOX', centerX, ctrlCy + 12 * s);
+    ctx.fillText('UNLOCKED!', centerX, ctrlCy + 27 * s);
+
+    // Right A & B Arcade Buttons
+    const btnBX = rightX - 82 * s;
+    const btnAX = rightX - 34 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.beginPath();
+    ctx.arc(btnBX, ctrlCy + 8 * s, 18 * s, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(btnAX, ctrlCy - 10 * s, 18 * s, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.font = `900 ${Math.round(16 * s)}px monospace`;
+    ctx.fillText('B', btnBX, ctrlCy + 14 * s);
+    ctx.fillText('A', btnAX, ctrlCy - 4 * s);
+
+    // Bottom Arcade Prompt
+    ctx.font = `900 ${Math.round(19 * s)}px monospace`;
+    ctx.fillText('WINNER EATS GOBBLE HAUS • INSERT COIN TO CONTINUE', centerX, bottomStartY + 168 * s);
+  }
+
+  // =========================================================================
+  // 6. VIP FOODIE PASS THEME ('vip_pass' / 'gobble_vip_pass')
+  // =========================================================================
+  else {
+    // Lanyard Slot Punch Hole at Top Center
+    ctx.lineWidth = 3 * s;
+    ctx.strokeRect(centerX - 48 * s, 22 * s, 96 * s, 18 * s);
+
+    // VIP Badge Top Header Box
+    ctx.lineWidth = 3.5 * s;
+    ctx.strokeRect(leftX, 52 * s, contentW, 88 * s);
+
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${Math.round(28 * s)}px sans-serif`;
+    ctx.fillText('👑 GOBBLE HAUS VIP PASS 👑', centerX, 92 * s);
+
+    ctx.font = `900 ${Math.round(14 * s)}px monospace`;
+    ctx.fillText('OFFICIAL FOODIE CLUB  •  ALL-ACCESS RICE BOX MEMBER', centerX, 122 * s);
+
+    ctx.font = `bold ${Math.round(13.5 * s)}px monospace`;
+    ctx.fillText(`ISSUED: ${dateStr.toUpperCase()}  •  STATUS: CERTIFIED BUSOG`, centerX, headerZoneHeight - 16 * s);
+
+    // Bottom Loyalty Stamp Card (5 Punch Circles) + Approved Stamp
+    const cardY = bottomStartY + 26 * s;
+    const cardH = 96 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.strokeRect(leftX + 10 * s, cardY, contentW - 20 * s, cardH);
+
+    ctx.font = `900 ${Math.round(13 * s)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('GOBBLE HAUS LOYALTY STAMP CARD • 5/5 COMPLETED!', centerX, cardY + 22 * s);
+
+    const stampCount = 5;
+    const stampSpacing = (contentW - 100 * s) / (stampCount - 1);
+    const stampStartX = leftX + 50 * s;
+    const stampCy = cardY + 60 * s;
+
+    for (let i = 0; i < stampCount; i++) {
+      const sx = stampStartX + i * stampSpacing;
+      ctx.lineWidth = 2.5 * s;
+      ctx.beginPath();
+      ctx.arc(sx, stampCy, 22 * s, 0, Math.PI * 2);
+      ctx.stroke();
+      drawStar(sx, stampCy, 13 * s, 6 * s, true);
+    }
+
+    // Bottom Chef Seal & Signature
+    ctx.font = `900 ${Math.round(19 * s)}px sans-serif`;
+    ctx.fillText('★ APPROVED BY CHEF • 100% LEGIT FOODIE ★', centerX, cardY + cardH + 34 * s);
+    ctx.font = `bold ${Math.round(12.5 * s)}px monospace`;
+    ctx.fillText('GOBBLE HAUS SILOG & RICE BOXES • VIP COLLECTOR EDITION', centerX, cardY + cardH + 58 * s);
+  }
+
+  ctx.restore();
+}
+
+/**
  * Composite full photostrip into a high-res printable canvas.
- * When isThermalMode is true, forces pure white background (#ffffff),
- * crisp black text and borders (#000000), and calibrated thermal portrait
- * tone curve so physical receipt printing is bright, detailed, and never overly dark.
+ * Centers the photo(s) vertically in the printout and draws custom Gobble Haus
+ * frame illustrations and texts at the top and bottom.
  */
 export async function renderPhotostripCanvas(options: {
   photos: string[]; // image DataURLs
@@ -550,17 +1078,15 @@ export async function renderPhotostripCanvas(options: {
   stickers?: StickerItem[];
   drawings?: DrawingPath[];
   dateStr?: string;
-  qrShareUrl?: string; // Optional QR rendered in footer
-  isThermalMode?: boolean; // When true: monochrome receipt print without color frames
-  thermalBrightness?: number; // -30 to +100 (default 45 Bright)
+  qrShareUrl?: string;
+  isThermalMode?: boolean;
+  thermalBrightness?: number;
 }): Promise<HTMLCanvasElement> {
   const {
     photos,
     layout,
     theme,
     filter,
-    eventTitle = theme.headerText,
-    eventSubtitle = theme.footerText,
     stickers = [],
     drawings = [],
     dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -568,25 +1094,25 @@ export async function renderPhotostripCanvas(options: {
     thermalBrightness = 45,
   } = options;
 
-  // Dimensions based on layout
+  // Dimensions chosen so the photo(s) sit centered vertically with generous top & bottom drawing zones
   let canvasWidth = 600;
-  let canvasHeight = 1800; // 1:3 ratio for classic 2x6 strip
+  let canvasHeight = 1900; // 3-cut vertical strip
 
   if (layout === 'grid_4') {
     if (photos.length <= 2) {
       // 2-shot vertical strip ("Grid (2 shots)")
       canvasWidth = 600;
-      canvasHeight = 1400;
+      canvasHeight = 1560;
     } else {
       canvasWidth = 1200;
-      canvasHeight = 1800; // 4x6" 2x2 postcard
+      canvasHeight = 1880; // 2x2 grid
     }
   } else if (layout === 'single_polaroid') {
     canvasWidth = 800;
-    canvasHeight = 1000;
+    canvasHeight = 1220; // Centered single portrait with top & bottom frame drawings
   } else if (layout === 'strip_4') {
     canvasWidth = 600;
-    canvasHeight = 2200;
+    canvasHeight = 2280; // 4-cut vertical strip
   }
 
   const canvas = document.createElement('canvas');
@@ -595,7 +1121,6 @@ export async function renderPhotostripCanvas(options: {
   const ctx = canvas.getContext('2d')!;
 
   const effectiveBg = isThermalMode ? '#ffffff' : theme.background;
-  const effectiveTextColor = isThermalMode ? '#000000' : theme.textColor;
   const effectiveAccentColor = isThermalMode ? '#000000' : theme.accentColor;
   const effectiveFilter: PhotoFilterType = isThermalMode ? 'noir' : filter;
 
@@ -603,71 +1128,11 @@ export async function renderPhotostripCanvas(options: {
   ctx.fillStyle = effectiveBg;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // Decorative border styles (only for digital color keepsake; thermal receipt mode stays clean and borderless)
+  // Outer card border in Digital Color mode (in Thermal mode, side margins alongside the photo stay pure white to prevent printhead row-banding)
   if (!isThermalMode) {
-    // Full color digital frame rendering
-    if (theme.borderStyle === 'wedding_gold' || theme.borderStyle === 'double_gold') {
-      ctx.strokeStyle = theme.accentColor;
-      ctx.lineWidth = 3;
-      ctx.strokeRect(16, 16, canvasWidth - 32, canvasHeight - 32);
-      ctx.lineWidth = 1;
-      ctx.strokeRect(22, 22, canvasWidth - 44, canvasHeight - 44);
-      ctx.fillStyle = theme.accentColor;
-      ctx.font = '16px serif';
-      ctx.fillText('❖', 28, 32);
-      ctx.fillText('❖', canvasWidth - 28, 32);
-      ctx.fillText('❖', 28, canvasHeight - 24);
-      ctx.fillText('❖', canvasWidth - 28, canvasHeight - 24);
-    } else if (theme.borderStyle === 'rose_gold') {
-      ctx.strokeStyle = theme.accentColor;
-      ctx.lineWidth = 2.5;
-      ctx.strokeRect(18, 18, canvasWidth - 36, canvasHeight - 36);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(23, 23, canvasWidth - 46, canvasHeight - 46);
-    } else if (theme.borderStyle === 'passport_emboss') {
-      ctx.strokeStyle = theme.accentColor;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(16, 16, canvasWidth - 32, canvasHeight - 32);
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(30, 20); ctx.lineTo(30, 42);
-      ctx.moveTo(20, 30); ctx.lineTo(42, 30);
-      ctx.moveTo(canvasWidth - 30, 20); ctx.lineTo(canvasWidth - 30, 42);
-      ctx.moveTo(canvasWidth - 20, 30); ctx.lineTo(canvasWidth - 42, 30);
-      ctx.stroke();
-    } else if (theme.borderStyle === 'airmail_border') {
-      ctx.lineWidth = 4;
-      ctx.setLineDash([14, 10]);
-      ctx.strokeStyle = '#ef4444';
-      ctx.strokeRect(14, 14, canvasWidth - 28, canvasHeight - 28);
-      ctx.strokeStyle = '#3b82f6';
-      ctx.strokeRect(20, 20, canvasWidth - 40, canvasHeight - 40);
-      ctx.setLineDash([]);
-    } else if (theme.borderStyle === 'baby_blue_border') {
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(16, 16, canvasWidth - 32, canvasHeight - 32);
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(22, 22, canvasWidth - 44, canvasHeight - 44);
-    } else if (theme.cornerIcon) {
-      ctx.strokeStyle = theme.accentColor;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(18, 18, canvasWidth - 36, canvasHeight - 36);
-      ctx.font = '20px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(theme.cornerIcon, 32, 36);
-      ctx.fillText(theme.cornerIcon, canvasWidth - 32, 36);
-      ctx.fillText(theme.cornerIcon, 32, canvasHeight - 24);
-      ctx.fillText(theme.cornerIcon, canvasWidth - 32, canvasHeight - 24);
-    } else {
-      ctx.strokeStyle = theme.textColor === '#fafafa' || theme.textColor === '#f4f4f5'
-        ? 'rgba(255, 255, 255, 0.12)'
-        : 'rgba(0, 0, 0, 0.08)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(18, 18, canvasWidth - 36, canvasHeight - 36);
-    }
+    ctx.strokeStyle = effectiveAccentColor;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(14, 14, canvasWidth - 28, canvasHeight - 28);
   }
 
   // 2. Load Photo Images
@@ -691,94 +1156,80 @@ export async function renderPhotostripCanvas(options: {
     )
   );
 
-  // 3. Layout Slot Calculations
+  // 3. Vertically Centered Photo Slot Calculations + Top & Bottom Frame Drawings
   const photoCount = Math.max(1, loadedImages.length);
 
   if (layout === 'strip_3' || layout === 'strip_4' || (layout === 'grid_4' && photoCount <= 2)) {
     const margin = 36;
-    const headerHeight = 110;
-    const footerHeight = 160;
-    const availableHeight = canvasHeight - headerHeight - footerHeight - margin * 2;
-    const gap = 20;
+    // Symmetric top and bottom zones so the photo block is vertically centered in the printout
+    const headerZoneHeight = 240;
+    const footerZoneHeight = 240;
+    const availableHeight = canvasHeight - headerZoneHeight - footerZoneHeight;
+    const gap = 18;
     const slotHeight = (availableHeight - gap * (photoCount - 1)) / photoCount;
     const slotWidth = canvasWidth - margin * 2;
 
-    // Header text
-    ctx.fillStyle = effectiveTextColor;
-    ctx.font = 'bold 28px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(eventTitle, canvasWidth / 2, headerHeight - 35);
+    // Draw custom Gobble Haus top & bottom frame drawings and texts
+    drawGobbleFrameTopAndBottomArt(
+      ctx,
+      theme,
+      canvasWidth,
+      canvasHeight,
+      headerZoneHeight,
+      footerZoneHeight,
+      margin,
+      dateStr,
+      isThermalMode
+    );
 
-    if (theme.dateVisible) {
-      ctx.font = '14px sans-serif';
-      ctx.fillStyle = effectiveAccentColor;
-      ctx.fillText(dateStr, canvasWidth / 2, headerHeight - 12);
-    }
-
-    // Draw each photo in slot
+    // Draw each photo centered between top and bottom frame art
     loadedImages.forEach((img, idx) => {
-      const slotY = headerHeight + margin + idx * (slotHeight + gap);
+      const slotY = headerZoneHeight + idx * (slotHeight + gap);
 
-      // Photo border & background card
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(margin - 4, slotY - 4, slotWidth + 8, slotHeight + 8);
 
-      // Cover-crop the image to fill the slot perfectly
       drawImageProp(ctx, img, margin, slotY, slotWidth, slotHeight);
 
-      // Apply calibrated thermal tone curve (lifts shadows) or digital color filter
       if (isThermalMode) {
         applyThermalPhotoToneCurve(ctx, margin, slotY, slotWidth, slotHeight, thermalBrightness);
       } else {
         applyCanvasFilter(ctx, effectiveFilter, margin, slotY, slotWidth, slotHeight);
-      }
-
-      // Inner border accent (digital keepsake only; thermal receipt stays clean)
-      if (!isThermalMode) {
         ctx.strokeStyle = effectiveAccentColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.strokeRect(margin, slotY, slotWidth, slotHeight);
       }
     });
-
-    // Footer text
-    const footerY = canvasHeight - 80;
-    ctx.fillStyle = effectiveTextColor;
-    ctx.font = '500 15px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(eventSubtitle, canvasWidth / 2, footerY);
-
-    ctx.font = '500 11px monospace';
-    ctx.fillStyle = effectiveAccentColor;
-    ctx.fillText('JCVCREATIVES • ARCHIVAL PRINT', canvasWidth / 2, footerY + 34);
   } else if (layout === 'grid_4') {
-    // 2x2 grid
-    const margin = 48;
-    const headerHeight = 140;
-    const footerHeight = 180;
+    // 2x2 grid centered vertically
+    const margin = 56;
+    const headerZoneHeight = 360;
+    const footerZoneHeight = 360;
     const cols = 2;
     const rows = 2;
     const gap = 24;
 
     const slotWidth = (canvasWidth - margin * 2 - gap) / cols;
-    const availableHeight = canvasHeight - headerHeight - footerHeight;
+    const availableHeight = canvasHeight - headerZoneHeight - footerZoneHeight;
     const slotHeight = (availableHeight - gap) / rows;
 
-    // Header
-    ctx.fillStyle = effectiveTextColor;
-    ctx.font = 'bold 38px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(eventTitle, canvasWidth / 2, headerHeight - 50);
-
-    ctx.font = '18px sans-serif';
-    ctx.fillStyle = effectiveAccentColor;
-    ctx.fillText(dateStr, canvasWidth / 2, headerHeight - 16);
+    drawGobbleFrameTopAndBottomArt(
+      ctx,
+      theme,
+      canvasWidth,
+      canvasHeight,
+      headerZoneHeight,
+      footerZoneHeight,
+      margin,
+      dateStr,
+      isThermalMode
+    );
 
     loadedImages.slice(0, 4).forEach((img, idx) => {
       const c = idx % 2;
       const r = Math.floor(idx / 2);
       const x = margin + c * (slotWidth + gap);
-      const y = headerHeight + r * (slotHeight + gap);
+      const y = headerZoneHeight + r * (slotHeight + gap);
 
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(x - 6, y - 6, slotWidth + 12, slotHeight + 12);
@@ -788,47 +1239,46 @@ export async function renderPhotostripCanvas(options: {
         applyThermalPhotoToneCurve(ctx, x, y, slotWidth, slotHeight, thermalBrightness);
       } else {
         applyCanvasFilter(ctx, effectiveFilter, x, y, slotWidth, slotHeight);
-      }
-
-      if (!isThermalMode) {
         ctx.strokeStyle = effectiveAccentColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.strokeRect(x, y, slotWidth, slotHeight);
       }
     });
-
-    // Footer
-    ctx.fillStyle = effectiveTextColor;
-    ctx.font = 'bold 20px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(eventSubtitle, canvasWidth / 2, canvasHeight - 90);
   } else if (layout === 'single_polaroid') {
-    const margin = 40;
+    // Single Polaroid: Photo strictly centered vertically so Top & Bottom have rich frame drawings & texts
+    const margin = 48;
+    const headerZoneHeight = 290;
+    const footerZoneHeight = 290;
     const photoWidth = canvasWidth - margin * 2;
-    const photoHeight = photoWidth * 0.9;
-    const photoY = margin;
+    const photoHeight = canvasHeight - headerZoneHeight - footerZoneHeight; // 640px centered vertically
+    const photoY = headerZoneHeight;
 
-    // Polaroid white base
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(20, 20, canvasWidth - 40, canvasHeight - 40);
+    drawGobbleFrameTopAndBottomArt(
+      ctx,
+      theme,
+      canvasWidth,
+      canvasHeight,
+      headerZoneHeight,
+      footerZoneHeight,
+      margin,
+      dateStr,
+      isThermalMode
+    );
 
     if (loadedImages[0]) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(margin - 4, photoY - 4, photoWidth + 8, photoHeight + 8);
+
       drawImageProp(ctx, loadedImages[0], margin, photoY, photoWidth, photoHeight);
       if (isThermalMode) {
         applyThermalPhotoToneCurve(ctx, margin, photoY, photoWidth, photoHeight, thermalBrightness);
       } else {
         applyCanvasFilter(ctx, effectiveFilter, margin, photoY, photoWidth, photoHeight);
+        ctx.strokeStyle = effectiveAccentColor;
+        ctx.lineWidth = 3.5;
+        ctx.strokeRect(margin, photoY, photoWidth, photoHeight);
       }
     }
-
-    ctx.fillStyle = effectiveTextColor;
-    ctx.font = 'italic bold 28px serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(eventTitle, canvasWidth / 2, photoY + photoHeight + 70);
-
-    ctx.font = '16px sans-serif';
-    ctx.fillStyle = effectiveAccentColor;
-    ctx.fillText(dateStr, canvasWidth / 2, photoY + photoHeight + 110);
   }
 
   // 4. Render Hand Drawings (Doodles)
@@ -838,7 +1288,7 @@ export async function renderPhotostripCanvas(options: {
     drawings.forEach((drawing) => {
       if (drawing.points.length < 2) return;
       ctx.strokeStyle = isThermalMode ? '#000000' : drawing.color;
-      ctx.lineWidth = drawing.lineWidth * (canvasWidth / 400); // Scale with resolution
+      ctx.lineWidth = drawing.lineWidth * (canvasWidth / 400);
       ctx.beginPath();
       const startX = drawing.points[0].x * canvasWidth;
       const startY = drawing.points[0].y * canvasHeight;

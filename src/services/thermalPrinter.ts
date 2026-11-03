@@ -966,9 +966,9 @@ class ThermalPrinterService {
 
           let lum = totalWeight > 0 ? sumLum / totalWeight : 255;
 
-          // Keep pure black typography (#000000) and pure white paper (#ffffff) crisp,
-          // while keeping photo shadows above the row-lock oscillation threshold (>= 84)
-          if (lum <= 14) {
+          // Keep black typography and top/bottom frame line-art drawings (lum <= 65) razor-sharp black,
+          // while photo shadows (guaranteed >= 82 by applyThermalPhotoToneCurve) stay above the row-lock threshold
+          if (lum <= 65) {
             lum = 0;
           } else if (lum >= 248) {
             lum = 255;
