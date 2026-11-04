@@ -2097,6 +2097,256 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB 2: Universal USB & Wireless Printer Hub */}
           {activeTab === 'printer' && (
             <div className="space-y-6">
+              {/* DEDICATED XPRINTER 58iiB (USB + BLUETOOTH) HARDWARE PROFILE & QUICK SETUP CARD */}
+              <div className="p-5 bg-gradient-to-br from-slate-900 via-indigo-950/50 to-slate-900 border-2 border-indigo-500/70 rounded-2xl space-y-4 shadow-xl">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-md bg-indigo-500 text-white text-[10px] font-black uppercase tracking-wider">
+                        Primary Booth Printer
+                      </span>
+                      <h3 className="text-base sm:text-lg font-black text-white">
+                        Xprinter 58iiB — 58mm Thermal POS Printer (USB + BT)
+                      </h3>
+                      {(localConfig.thermalPrinter.printerModel || 'xprinter_58iib') === 'xprinter_58iib' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-mono font-bold">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Xprinter 58iiB Profile Active</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Pre-calibrated for your <strong>Xprinter 58iiB</strong>: <strong>58mm Paper Width (384 dots/line)</strong> • <strong>203 DPI (8 dots/mm)</strong> • <strong>Up to 90mm/s High-Speed AC Thermal Head</strong> • <strong>USB + Dual Bluetooth</strong> • <strong>5-Line Tear-Bar Advance</strong>.
+                    </p>
+                  </div>
+
+                  {/* 1-Tap Apply Optimal Xprinter 58iiB Settings Button */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      soundEffects.playTap();
+                      const updated: RemoteKioskConfig = {
+                        ...localConfig,
+                        thermalPrinter: {
+                          ...localConfig.thermalPrinter,
+                          printerModel: 'xprinter_58iib',
+                          paperWidthMm: 58,
+                          dotsPerLine: 384,
+                          contrast: 40,
+                          brightness: 45,
+                          printDarkness: 38,
+                          density: 'normal',
+                          escPosCommandMode: 'gs_v_0',
+                          feedLines: 5,
+                          autoCut: false,
+                        },
+                      };
+                      setLocalConfig(updated);
+                      await remoteConfigService.updateConfig(updated);
+                      onUpdateConfig(updated);
+                      setTestPrintFeedback(
+                        '✓ Xprinter 58iiB optimal settings applied (58mm / 384px, 203 DPI, 90mm/s AC head heating, 5 tear-bar feed lines, 38% balanced darkness).'
+                      );
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer shrink-0 flex items-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Apply Xprinter 58iiB Optimal Settings</span>
+                  </button>
+                </div>
+
+                {/* Spec Badges & Hardware Model Selector */}
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-1">
+                  {[
+                    { label: 'Model', val: 'Xprinter 58iiB' },
+                    { label: 'Paper Width', val: '58mm (384 dots)' },
+                    { label: 'Resolution', val: '203 DPI (8 dots/mm)' },
+                    { label: 'Print Speed', val: 'Up to 90mm/s' },
+                    { label: 'Interface', val: 'USB + Bluetooth' },
+                    { label: 'Roll / Tear', val: '60mm Roll • 5-Line Tear' },
+                  ].map((spec) => (
+                    <div
+                      key={spec.label}
+                      className="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800/90 flex flex-col justify-between"
+                    >
+                      <span className="text-[9px] uppercase font-mono text-slate-400">{spec.label}</span>
+                      <span className="text-xs font-bold text-indigo-200 mt-0.5">{spec.val}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Quick Connect Buttons for Xprinter 58iiB (Bluetooth + USB + Test Print) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      soundEffects.playTap();
+                      const updated: RemoteKioskConfig = {
+                        ...localConfig,
+                        thermalPrinter: {
+                          ...localConfig.thermalPrinter,
+                          printerModel: 'xprinter_58iib',
+                          paperWidthMm: 58,
+                          dotsPerLine: 384,
+                          feedLines: 5,
+                          autoCut: false,
+                          escPosCommandMode: 'gs_v_0',
+                        },
+                      };
+                      setLocalConfig(updated);
+                      await remoteConfigService.updateConfig(updated);
+                      onUpdateConfig(updated);
+                      await thermalPrinterService.connectBluetooth();
+                    }}
+                    className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
+                      printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                        ? 'bg-emerald-950/60 border-emerald-400 text-emerald-200'
+                        : 'bg-indigo-600/20 border-indigo-500/50 hover:bg-indigo-600/30 text-white'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm">1. Pair Xprinter 58iiB Bluetooth</div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        Wireless BT connection (PIN: <strong>0000</strong> or <strong>1234</strong>)
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-indigo-300 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      soundEffects.playTap();
+                      const updated: RemoteKioskConfig = {
+                        ...localConfig,
+                        thermalPrinter: {
+                          ...localConfig.thermalPrinter,
+                          printerModel: 'xprinter_58iib',
+                          paperWidthMm: 58,
+                          dotsPerLine: 384,
+                          feedLines: 5,
+                          autoCut: false,
+                          escPosCommandMode: 'gs_v_0',
+                        },
+                      };
+                      setLocalConfig(updated);
+                      await remoteConfigService.updateConfig(updated);
+                      onUpdateConfig(updated);
+                      await thermalPrinterService.connectUSB();
+                    }}
+                    className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
+                      printerStatus.connectionType === 'usb' && printerStatus.isConnected
+                        ? 'bg-emerald-950/60 border-emerald-400 text-emerald-200'
+                        : 'bg-emerald-600/20 border-emerald-500/50 hover:bg-emerald-600/30 text-white'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm">2. Connect Xprinter 58iiB USB Cord</div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        Direct USB Type-B cable / USB OTG adapter
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-emerald-300 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isTestPrinting}
+                    onClick={handleTestPrint}
+                    className="p-3.5 rounded-xl border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500/25 text-left transition cursor-pointer flex items-center justify-between text-white disabled:opacity-50"
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm">
+                        {isTestPrinting ? 'Printing Xprinter 58iiB Test...' : '3. Test Print on Xprinter 58iiB'}
+                      </div>
+                      <div className="text-[11px] text-amber-200/90 mt-0.5">
+                        Verify 58mm alignment, darkness &amp; tear bar
+                      </div>
+                    </div>
+                    <Printer className="w-4 h-4 text-amber-300 shrink-0" />
+                  </button>
+                </div>
+
+                {/* Printer Hardware Model Profile & Tear-Bar Feed Lines */}
+                <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-slate-400 font-mono">Hardware Profile:</span>
+                    {(
+                      [
+                        { id: 'xprinter_58iib', label: 'Xprinter 58iiB (USB + BT) ★' },
+                        { id: 'kprinter_461a', label: 'KPrinter_461a / MP58-09' },
+                        { id: 'epson_80mm', label: '80mm Desktop POS' },
+                      ] as const
+                    ).map((modelItem) => {
+                      const activeModel =
+                        (localConfig.thermalPrinter.printerModel || 'xprinter_58iib') === modelItem.id;
+                      return (
+                        <button
+                          key={modelItem.id}
+                          type="button"
+                          onClick={async () => {
+                            soundEffects.playTap();
+                            const is80 = modelItem.id === 'epson_80mm';
+                            const updated: RemoteKioskConfig = {
+                              ...localConfig,
+                              thermalPrinter: {
+                                ...localConfig.thermalPrinter,
+                                printerModel: modelItem.id,
+                                paperWidthMm: is80 ? 80 : 58,
+                                dotsPerLine: is80 ? 576 : 384,
+                                feedLines: modelItem.id === 'xprinter_58iib' ? 5 : 4,
+                                autoCut: is80,
+                              },
+                            };
+                            setLocalConfig(updated);
+                            await remoteConfigService.updateConfig(updated);
+                            onUpdateConfig(updated);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
+                            activeModel
+                              ? 'bg-indigo-600 border-indigo-400 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {modelItem.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Tear-Bar Paper Advance Lines */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400 font-mono">Tear-Bar Advance:</span>
+                    {[3, 4, 5, 6, 7].map((lines) => (
+                      <button
+                        key={lines}
+                        type="button"
+                        onClick={async () => {
+                          soundEffects.playTap();
+                          const updated: RemoteKioskConfig = {
+                            ...localConfig,
+                            thermalPrinter: {
+                              ...localConfig.thermalPrinter,
+                              feedLines: lines,
+                            },
+                          };
+                          setLocalConfig(updated);
+                          await remoteConfigService.updateConfig(updated);
+                          onUpdateConfig(updated);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
+                          (localConfig.thermalPrinter.feedLines ?? 5) === lines
+                            ? 'bg-emerald-600 border-emerald-400 text-white'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {lines}L
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               {/* #1 TOP CARD: Printer Printout Darkness & Thermal Head Ink Burn Control */}
               <div className="p-5 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/30 border-2 border-amber-500/60 rounded-2xl space-y-4 shadow-xl">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">

@@ -361,17 +361,39 @@ class ThermalPrinterService {
 
       const server = await device.gatt.connect();
       let writeChar: BluetoothRemoteGATTCharacteristic | null = null;
+      let fallbackChar: BluetoothRemoteGATTCharacteristic | null = null;
+
+      // Preferred Xprinter 58iiB / POS-58 BLE data write characteristic UUID substrings
+      const preferredCharPrefixes = [
+        '00002af1',
+        '49535343-8841',
+        '49535343-1e4d',
+        'bef8d6c9',
+        '0000ffe1',
+        '0000ff02',
+        '6e400002',
+      ];
 
       const services = await server.getPrimaryServices().catch(() => []);
       for (const service of services) {
         const characteristics = await service.getCharacteristics().catch(() => []);
         for (const char of characteristics) {
           if (char.properties.writeWithoutResponse || char.properties.write) {
-            writeChar = char;
-            break;
+            const uuidLower = (char.uuid || '').toLowerCase();
+            if (preferredCharPrefixes.some((p) => uuidLower.includes(p))) {
+              writeChar = char;
+              break;
+            }
+            if (!fallbackChar) {
+              fallbackChar = char;
+            }
           }
         }
         if (writeChar) break;
+      }
+
+      if (!writeChar) {
+        writeChar = fallbackChar;
       }
 
       if (!writeChar) {
@@ -1077,14 +1099,21 @@ class ThermalPrinterService {
     config: ThermalPrinterConfig
   ): Uint8Array[] {
     const commandMode = config.escPosCommandMode || 'gs_v_0';
+    const isXprinter58iiB = (config.printerModel || 'xprinter_58iib') === 'xprinter_58iib';
+    // Xprinter 58iiB is AC-powered (up to 90mm/s, 203 DPI): 15 max heating dots ((15+1)*8=128 dots), 800us heat time, 20us interval
+    // Pocket battery printers (KPrinter_461a) use 11 max heating dots ((11+1)*8=96 dots), 700us heat time, 20us interval
+    const maxHeatingDots = isXprinter58iiB ? 15 : 11;
+    const heatingTime = isXprinter58iiB ? 80 : 70;
+    const heatingInterval = 2;
+    const feedLinesCount = Math.max(1, Math.min(12, config.feedLines ?? (isXprinter58iiB ? 5 : 4)));
     const bands: Uint8Array[] = [];
 
     if (commandMode === 'esc_star_33') {
-      // Initialize printer, set fast printhead strobe heating (ESC 7 11 70 2), center align, and set 24-dot line spacing
+      // Initialize printer, set printhead strobe heating, center align, and set 24-dot line spacing
       bands.push(
         new Uint8Array([
           0x1b, 0x40,
-          0x1b, 0x37, 11, 70, 2,
+          0x1b, 0x37, maxHeatingDots, heatingTime, heatingInterval,
           0x1b, 0x61, 0x01,
           0x1b, 0x33, 24,
         ])
@@ -1119,21 +1148,20 @@ class ThermalPrinterService {
         bands.push(band);
       }
 
-      // Restore default line spacing (ESC 2), feed lines, and optional cut
-      const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, config.feedLines || 0x04];
-      if (config.autoCut !== false) {
+      // Restore default line spacing (ESC 2), feed lines past tear bar, and optional cut
+      const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, feedLinesCount];
+      if (config.autoCut === true) {
         footer.push(0x1d, 0x56, 0x42, 0x00);
       }
       bands.push(new Uint8Array(footer));
       return bands;
     }
 
-    // Initialize printer (ESC @), configure thermal head heating (ESC 7 11 70 2: 96 dots/strobe, 700us heat, 20us interval
-    // so photo rows print at the same continuous motor speed as top/bottom frame art), center align (ESC a 1), and zero line-spacing (ESC 3 0)
+    // Initialize printer (ESC @), configure thermal head heating, center align (ESC a 1), and zero line-spacing (ESC 3 0)
     bands.push(
       new Uint8Array([
         0x1b, 0x40,
-        0x1b, 0x37, 11, 70, 2,
+        0x1b, 0x37, maxHeatingDots, heatingTime, heatingInterval,
         0x1b, 0x61, 0x01,
         0x1b, 0x33, 0x00,
       ])
@@ -1180,9 +1208,9 @@ class ThermalPrinterService {
       bands.push(band);
     }
 
-    // Restore default line spacing (ESC 2), feed lines, and optional cut
-    const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, config.feedLines || 0x04];
-    if (config.autoCut !== false) {
+    // Restore default line spacing (ESC 2), feed lines past tear bar, and optional cut
+    const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, feedLinesCount];
+    if (config.autoCut === true) {
       footer.push(0x1d, 0x56, 0x42, 0x00);
     }
     bands.push(new Uint8Array(footer));
@@ -1325,10 +1353,14 @@ class ThermalPrinterService {
     soundEffects.playPrintingMotor();
 
     const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
-    // KPrinter_461a / MP58-09 and 58mm printers strictly require 384px (48 bytes) width
-    const is58mmHardware = /kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210|mobile\s*printer/i.test(
-      this.currentStatus.deviceName || ''
-    );
+    // Xprinter 58iiB, KPrinter_461a / MP58-09, and 58mm printers strictly require 384px (48 bytes) width
+    const is58mmHardware =
+      config.printerModel === 'xprinter_58iib' ||
+      config.printerModel === 'kprinter_461a' ||
+      config.printerModel === 'generic_58mm' ||
+      /xprinter|xp-?58|58iib|58iih|kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210|mobile\s*printer/i.test(
+        this.currentStatus.deviceName || ''
+      );
     const targetWidth = is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
 
     // Apply Admin Printer Printout Darkness & Density calibration to the canvas (once, without duplicate lifting)

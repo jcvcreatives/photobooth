@@ -28,15 +28,16 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
   allowedLayouts: ['strip_3', 'grid_4', 'single_polaroid', 'strip_4'],
   thermalPrinter: {
     connectionType: 'virtual',
+    printerModel: 'xprinter_58iib',
     paperWidthMm: 58,
     dotsPerLine: 384,
     contrast: 40,
     brightness: 45,
-    printDarkness: 35,
-    autoCut: true,
+    printDarkness: 38,
+    autoCut: false,
     printCopies: 1,
-    feedLines: 4,
-    density: 'light',
+    feedLines: 5,
+    density: 'normal',
     escPosCommandMode: 'gs_v_0',
   },
   frontScreenMedia: {
@@ -51,7 +52,7 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
   },
   remoteSyncUrl: 'https://api.snapkiosk.io/v1/kiosks/KIOSK-TAB-01/config',
   autoUpdateEnabled: true,
-  version: '2.6.0-kiosk',
+  version: '2.7.0-kiosk',
   lastSyncTimestamp: Date.now(),
 };
 
@@ -109,18 +110,21 @@ class RemoteConfigService {
         needsSave = true;
       }
       if (this.config.thermalPrinter && this.config.thermalPrinter.printDarkness === undefined) {
-        this.config.thermalPrinter.printDarkness = 35;
-        this.config.thermalPrinter.density = 'light';
+        this.config.thermalPrinter.printDarkness = 38;
+        this.config.thermalPrinter.density = 'normal';
         needsSave = true;
       }
       if (
         this.config.thermalPrinter &&
-        (!this.config.thermalPrinter.escPosCommandMode || this.config.version !== '2.6.0-kiosk')
+        (!this.config.thermalPrinter.printerModel || this.config.version !== '2.7.0-kiosk')
       ) {
+        this.config.thermalPrinter.printerModel = 'xprinter_58iib';
         this.config.thermalPrinter.escPosCommandMode = 'gs_v_0';
         this.config.thermalPrinter.paperWidthMm = 58;
         this.config.thermalPrinter.dotsPerLine = 384;
-        this.config.version = '2.6.0-kiosk';
+        this.config.thermalPrinter.feedLines = 5;
+        this.config.thermalPrinter.autoCut = false;
+        this.config.version = '2.7.0-kiosk';
         needsSave = true;
       }
       if (needsSave) {

@@ -150,6 +150,7 @@ export type PrinterConnectionType =
 
 export interface ThermalPrinterConfig {
   connectionType: PrinterConnectionType;
+  printerModel?: 'xprinter_58iib' | 'kprinter_461a' | 'epson_80mm' | 'generic_58mm';
   deviceName?: string;
   paperWidthMm: 58 | 80;
   dotsPerLine: 384 | 576;
