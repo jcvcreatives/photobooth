@@ -187,6 +187,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const [showRetakeConfirm, setShowRetakeConfirm] = useState(false);
 
   const stripContainerRef = useRef<HTMLDivElement | null>(null);
+  const stickerGridScrollRef = useRef<HTMLDivElement | null>(null);
   const activeStickerDragRef = useRef<{ id: string; startX: number; startY: number; stickerX: number; stickerY: number } | null>(null);
 
   const selectedSticker = stickers.find((s) => s.id === selectedStickerId) || null;
@@ -766,91 +767,29 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             </span>
           </div>
 
-          {/* Zero-Scroll 3x2 Template Grid (All 6 Gobble Haus frames fit simultaneously) */}
-          <div className="grid grid-cols-3 gap-2 flex-1 min-h-0 overflow-hidden content-center">
-            {displayedThemes.map((t) => {
-              const isSelected = thermalTheme.id === t.id || digitalTheme.id === t.id;
+          {/* MAIN RIGHT PANEL CONTENT: Either Full-Size Stickers Menu, Custom Text Menu, or 6 Gobble Haus Frames */}
+          {showStickersDrawer ? (
+            /* LARGE FULL-HEIGHT SCROLLABLE STICKERS MENU */
+            <div
+              data-kiosk-scrollable="true"
+              data-admin-scrollable="true"
+              className="flex-1 min-h-0 p-3 sm:p-4 bg-white rounded-2xl border-2 border-zinc-900/15 shadow-md animate-fadeIn flex flex-col gap-2.5 overflow-hidden"
+            >
+              {/* Top Header: Title + Sticker Size Controls + Scroll Up/Down + Done Button */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-zinc-200 shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm sm:text-base font-extrabold text-zinc-900 flex items-center gap-1.5">
+                    <Smile className="w-4 h-4 text-amber-500" />
+                    <span>Tap Stickers to Add</span>
+                  </span>
 
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    soundEffects.playTap();
-                    const matchingThermal =
-                      THERMAL_FRAME_THEMES.find((th) => th.id === t.id) || THERMAL_FRAME_THEMES[0];
-                    const matchingDigital =
-                      DIGITAL_COLOR_THEMES.find((dg) => dg.id === t.id) || DIGITAL_COLOR_THEMES[0];
-                    setThermalTheme(matchingThermal);
-                    setDigitalTheme(matchingDigital);
-                    setPreviewView(themeMode);
-                  }}
-                  className={`p-2 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
-                    isSelected
-                      ? 'border-black bg-white ring-2 ring-black/10 shadow-sm'
-                      : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
-                  }`}
-                >
-                  <div className="w-full flex items-center justify-between">
-                    <span className="text-[10px] leading-none">
-                      {t.cornerIcon || '🥡'}
-                    </span>
-                    {isSelected ? (
-                      <div className="w-3.5 h-3.5 rounded-full bg-black text-white flex items-center justify-center">
-                        <Check className="w-2 h-2 stroke-[3]" />
-                      </div>
-                    ) : (
-                      <div className="w-3.5 h-3.5" />
-                    )}
-                  </div>
-
-                  {/* Mini graphic preview card showing Top Art + Centered Photo + Bottom Art */}
-                  <div
-                    style={{
-                      backgroundColor: themeMode === 'thermal' ? '#ffffff' : t.background,
-                    }}
-                    className={`w-12 h-14 rounded-md border my-0.5 flex flex-col items-center justify-between p-1 shadow-2xs ${
-                      themeMode === 'thermal' ? 'border-zinc-300' : 'border-zinc-300'
-                    }`}
-                  >
-                    {/* Top Frame Drawing & Text Indicator */}
-                    <div className="w-full border-b border-zinc-300 pb-0.5 flex items-center justify-center gap-0.5">
-                      <span className="text-[6px] font-mono font-bold text-zinc-700 uppercase truncate">
-                        {t.cornerIcon} TOP ART
-                      </span>
-                    </div>
-
-                    {/* Centered Photo Slot */}
-                    <div className="w-full h-5 bg-zinc-800 rounded-2xs flex items-center justify-center text-[5.5px] font-mono text-white tracking-tighter">
-                      PHOTO
-                    </div>
-
-                    {/* Bottom Frame Drawing & Text Indicator */}
-                    <div className="w-full border-t border-zinc-300 pt-0.5 text-[5px] font-mono font-bold text-zinc-600 truncate">
-                      FRAME TEXT
-                    </div>
-                  </div>
-
-                  <div className="font-semibold text-[11px] text-zinc-900 leading-tight truncate w-full">
-                    {t.name}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Expanded Stickers Drawer with Categories & Size Control */}
-          {showStickersDrawer && (
-            <div className="p-2.5 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn shrink-0 space-y-1.5">
-              <div className="flex items-center justify-between pb-1 border-b border-zinc-100 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-zinc-900">Stickers</span>
-                  {/* Size control right inside drawer */}
-                  <div className="flex items-center gap-1 bg-zinc-100 px-2 py-0.5 rounded-full text-[10px]">
-                    <span className="text-zinc-500">Size:</span>
+                  {/* Adjustable Sticker Size Bar */}
+                  <div className="flex items-center gap-1.5 bg-zinc-100 px-2.5 py-1 rounded-full text-xs border border-zinc-200">
+                    <span className="text-zinc-600 font-semibold">Size:</span>
                     <button
                       type="button"
                       onClick={() => handleUpdateSelectedScale(currentScaleVal - 0.15)}
-                      className="w-4 h-4 rounded-full bg-white hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                      className="w-6 h-6 rounded-full bg-white hover:bg-zinc-200 border border-zinc-300 flex items-center justify-center font-bold cursor-pointer active:scale-90"
                     >
                       -
                     </button>
@@ -861,30 +800,65 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       step="0.05"
                       value={currentScaleVal}
                       onChange={(e) => handleUpdateSelectedScale(Number(e.target.value))}
-                      className="w-14 h-1 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-black"
+                      className="w-20 sm:w-24 h-1.5 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-black"
                     />
                     <button
                       type="button"
                       onClick={() => handleUpdateSelectedScale(currentScaleVal + 0.15)}
-                      className="w-4 h-4 rounded-full bg-white hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                      className="w-6 h-6 rounded-full bg-white hover:bg-zinc-200 border border-zinc-300 flex items-center justify-center font-bold cursor-pointer active:scale-90"
                     >
                       +
                     </button>
-                    <span className="font-mono text-zinc-700 w-7 text-right">
+                    <span className="font-mono font-bold text-zinc-900 w-9 text-right">
                       {Math.round(currentScaleVal * 100)}%
                     </span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowStickersDrawer(false)}
-                  className="text-zinc-400 hover:text-zinc-900 cursor-pointer px-1"
-                >
-                  ✕
-                </button>
+
+                {/* Scroll Up / Down Helper Buttons + Close Button */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEffects.playTap();
+                      stickerGridScrollRef.current?.scrollBy({ top: -150, behavior: 'smooth' });
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 border border-zinc-300 text-zinc-800 text-xs font-bold cursor-pointer active:scale-95"
+                    title="Scroll Up"
+                  >
+                    ▲ Up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEffects.playTap();
+                      stickerGridScrollRef.current?.scrollBy({ top: 150, behavior: 'smooth' });
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 border border-zinc-300 text-zinc-800 text-xs font-bold cursor-pointer active:scale-95"
+                    title="Scroll Down"
+                  >
+                    ▼ Down
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEffects.playTap();
+                      setShowStickersDrawer(false);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-black hover:bg-zinc-800 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Done ✕
+                  </button>
+                </div>
               </div>
 
-              {/* Category Tabs */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+              {/* Large Category Tabs (Horizontal Touch Scrollable) */}
+              <div
+                data-kiosk-scrollable="true"
+                data-admin-scrollable="true"
+                style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
+                className="flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0"
+              >
                 {EMOJI_CATEGORIES.map((cat) => (
                   <button
                     key={cat.id}
@@ -892,47 +866,132 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     onClick={() => {
                       soundEffects.playTap();
                       setActiveStickerCategory(cat.id);
+                      if (stickerGridScrollRef.current) {
+                        stickerGridScrollRef.current.scrollTop = 0;
+                      }
                     }}
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition cursor-pointer flex items-center gap-1 ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
                       activeStickerCategory === cat.id
-                        ? 'bg-black text-white'
-                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                        ? 'bg-black text-white shadow-xs'
+                        : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 border border-zinc-200/80'
                     }`}
                   >
-                    <span>{cat.icon}</span>
+                    <span className="text-sm">{cat.icon}</span>
                     <span>{cat.label}</span>
                   </button>
                 ))}
               </div>
 
-              {/* Emoji Grid for Active Category */}
-              <div className="grid grid-cols-10 gap-1 max-h-20 overflow-y-auto pr-0.5 text-lg">
+              {/* Large Touch-Scrollable Sticker Grid */}
+              <div
+                ref={stickerGridScrollRef}
+                data-kiosk-scrollable="true"
+                data-admin-scrollable="true"
+                style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 grid grid-cols-6 sm:grid-cols-7 gap-2 content-start"
+              >
                 {activeCategoryObj.emojis.map((emojiStr, i) => (
                   <button
                     key={`${activeCategoryObj.id}-${i}`}
                     type="button"
                     onClick={() => handleAddSticker(emojiStr)}
-                    className="p-0.5 hover:scale-125 active:scale-95 transition cursor-pointer flex items-center justify-center rounded hover:bg-zinc-100"
+                    className="h-12 sm:h-14 text-2xl sm:text-3xl rounded-2xl border border-zinc-200/80 bg-zinc-50/90 hover:bg-amber-50 hover:border-amber-300 active:scale-90 transition cursor-pointer flex items-center justify-center shadow-2xs"
                   >
                     {emojiStr}
                   </button>
                 ))}
               </div>
             </div>
+          ) : (
+            /* Zero-Scroll 3x2 Template Grid (All 6 Gobble Haus frames fit simultaneously) */
+            <div className="grid grid-cols-3 gap-2 flex-1 min-h-0 overflow-hidden content-center">
+              {displayedThemes.map((t) => {
+                const isSelected = thermalTheme.id === t.id || digitalTheme.id === t.id;
+
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      soundEffects.playTap();
+                      const matchingThermal =
+                        THERMAL_FRAME_THEMES.find((th) => th.id === t.id) || THERMAL_FRAME_THEMES[0];
+                      const matchingDigital =
+                        DIGITAL_COLOR_THEMES.find((dg) => dg.id === t.id) || DIGITAL_COLOR_THEMES[0];
+                      setThermalTheme(matchingThermal);
+                      setDigitalTheme(matchingDigital);
+                      setPreviewView(themeMode);
+                    }}
+                    className={`p-2 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
+                      isSelected
+                        ? 'border-black bg-white ring-2 ring-black/10 shadow-sm'
+                        : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
+                    }`}
+                  >
+                    <div className="w-full flex items-center justify-between">
+                      <span className="text-[10px] leading-none">
+                        {t.cornerIcon || '🥡'}
+                      </span>
+                      {isSelected ? (
+                        <div className="w-3.5 h-3.5 rounded-full bg-black text-white flex items-center justify-center">
+                          <Check className="w-2 h-2 stroke-[3]" />
+                        </div>
+                      ) : (
+                        <div className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+
+                    {/* Mini graphic preview card showing Top Art + Centered Photo + Bottom Art */}
+                    <div
+                      style={{
+                        backgroundColor: themeMode === 'thermal' ? '#ffffff' : t.background,
+                      }}
+                      className={`w-12 h-14 rounded-md border my-0.5 flex flex-col items-center justify-between p-1 shadow-2xs ${
+                        themeMode === 'thermal' ? 'border-zinc-300' : 'border-zinc-300'
+                      }`}
+                    >
+                      {/* Top Frame Drawing & Text Indicator */}
+                      <div className="w-full border-b border-zinc-300 pb-0.5 flex items-center justify-center gap-0.5">
+                        <span className="text-[6px] font-mono font-bold text-zinc-700 uppercase truncate">
+                          {t.cornerIcon} TOP ART
+                        </span>
+                      </div>
+
+                      {/* Centered Photo Slot */}
+                      <div className="w-full h-5 bg-zinc-800 rounded-2xs flex items-center justify-center text-[5.5px] font-mono text-white tracking-tighter">
+                        PHOTO
+                      </div>
+
+                      {/* Bottom Frame Drawing & Text Indicator */}
+                      <div className="w-full border-t border-zinc-300 pt-0.5 text-[5px] font-mono font-bold text-zinc-600 truncate">
+                        FRAME TEXT
+                      </div>
+                    </div>
+
+                    <div className="font-semibold text-[11px] text-zinc-900 leading-tight truncate w-full">
+                      {t.name}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           )}
 
           {/* Add Custom Text Drawer with Style, Color & Size Control */}
           {showTextDrawer && (
-            <div className="p-2.5 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn shrink-0 space-y-1.5">
-              <div className="flex items-center justify-between pb-1 border-b border-zinc-100 text-xs">
+            <div
+              data-kiosk-scrollable="true"
+              data-admin-scrollable="true"
+              className="p-3 bg-white rounded-2xl border-2 border-zinc-900/15 shadow-md animate-fadeIn shrink-0 space-y-2"
+            >
+              <div className="flex items-center justify-between pb-1.5 border-b border-zinc-100 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-zinc-900">Add Custom Text</span>
-                  <div className="flex items-center gap-1 bg-zinc-100 px-2 py-0.5 rounded-full text-[10px]">
+                  <span className="font-extrabold text-zinc-900">Add Custom Text</span>
+                  <div className="flex items-center gap-1 bg-zinc-100 px-2.5 py-0.5 rounded-full text-xs border border-zinc-200">
                     <span className="text-zinc-500">Size:</span>
                     <button
                       type="button"
                       onClick={() => handleUpdateSelectedScale(currentScaleVal - 0.15)}
-                      className="w-4 h-4 rounded-full bg-white hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                      className="w-5 h-5 rounded-full bg-white hover:bg-zinc-200 border border-zinc-300 flex items-center justify-center font-bold cursor-pointer"
                     >
                       -
                     </button>
@@ -943,25 +1002,25 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       step="0.05"
                       value={currentScaleVal}
                       onChange={(e) => handleUpdateSelectedScale(Number(e.target.value))}
-                      className="w-14 h-1 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-black"
+                      className="w-16 h-1.5 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-black"
                     />
                     <button
                       type="button"
                       onClick={() => handleUpdateSelectedScale(currentScaleVal + 0.15)}
-                      className="w-4 h-4 rounded-full bg-white hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                      className="w-5 h-5 rounded-full bg-white hover:bg-zinc-200 border border-zinc-300 flex items-center justify-center font-bold cursor-pointer"
                     >
                       +
                     </button>
-                    <span className="font-mono text-zinc-700 w-7 text-right">
+                    <span className="font-mono font-bold text-zinc-800 w-8 text-right">
                       {Math.round(currentScaleVal * 100)}%
                     </span>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowTextDrawer(false)}
-                  className="text-zinc-400 hover:text-zinc-900 cursor-pointer px-1"
+                  className="px-2.5 py-1 rounded-lg bg-black text-white text-xs font-bold cursor-pointer"
                 >
-                  ✕
+                  Done ✕
                 </button>
               </div>
 
@@ -989,12 +1048,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     }
                   }}
                   placeholder="Type caption, name, or message..."
-                  className="flex-1 px-2.5 py-1 text-xs rounded-xl border border-zinc-300 focus:outline-none focus:ring-1 focus:ring-black bg-zinc-50"
+                  className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-zinc-300 focus:outline-none focus:ring-1 focus:ring-black bg-zinc-50"
                 />
                 <button
                   type="submit"
                   disabled={!customTextInput.trim()}
-                  className="px-3 py-1 rounded-xl bg-black hover:bg-zinc-800 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer shrink-0"
+                  className="px-3.5 py-1.5 rounded-xl bg-black hover:bg-zinc-800 disabled:opacity-40 text-white text-xs font-bold cursor-pointer shrink-0"
                 >
                   + Add Text
                 </button>
@@ -1025,7 +1084,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                           );
                         }
                       }}
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
                         customTextStyle === stOpt.id
                           ? 'bg-black text-white border-black'
                           : 'bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-200'
@@ -1036,7 +1095,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   ))}
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5">
                   {TEXT_COLOR_SWATCHES.map((hex) => (
                     <button
                       key={hex}
@@ -1053,7 +1112,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                         }
                       }}
                       style={{ backgroundColor: hex }}
-                      className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                      className={`w-5 h-5 rounded-full border transition cursor-pointer ${
                         customTextColor === hex
                           ? 'ring-2 ring-black scale-110 border-white'
                           : 'border-zinc-300 opacity-80 hover:opacity-100'
@@ -1065,13 +1124,18 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               </div>
 
               {/* Quick Text Presets */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+              <div
+                data-kiosk-scrollable="true"
+                data-admin-scrollable="true"
+                style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
+                className="flex items-center gap-1.5 overflow-x-auto pb-0.5"
+              >
                 {QUICK_TEXT_PRESETS.map((preset) => (
                   <button
                     key={preset}
                     type="button"
                     onClick={() => handleAddCustomText(preset)}
-                    className="px-2 py-0.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-950 text-[10px] font-bold whitespace-nowrap transition cursor-pointer"
+                    className="px-2.5 py-1 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-950 text-xs font-bold whitespace-nowrap transition cursor-pointer"
                   >
                     + {preset}
                   </button>

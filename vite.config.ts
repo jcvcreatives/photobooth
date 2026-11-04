@@ -255,7 +255,6 @@ export default defineConfig(() => {
       android7CompatPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
-        injectRegister: null,
         includeAssets: [
           'icon.svg',
           'apple-touch-icon.png',
@@ -263,63 +262,139 @@ export default defineConfig(() => {
           'pwa-512x512.png',
           'pwa-maskable-512x512.png',
           'JCV-AutoPrint-Setup.bat',
-          'stickers/gobble-haus/*.png',
+          'assets/aistudio/*.png',
         ],
         manifest: {
-          id: './',
+          id: '/',
           name: 'JCVcreatives Photobooth',
           short_name: 'JCV Booth',
-          description: 'Offline-capable photo booth kiosk with thermal printing, voucher system, and custom frames',
+          description:
+            'Offline-capable photo booth kiosk with Bluetooth/USB thermal printing, voucher system, and custom frames.',
           theme_color: '#faf8f5',
           background_color: '#faf8f5',
           display: 'standalone',
           orientation: 'any',
-          start_url: './',
-          scope: './',
+          start_url: '/',
+          scope: '/',
           icons: [
             {
-              src: './pwa-192x192.png',
+              src: '/pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: './pwa-512x512.png',
+              src: '/pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: './pwa-maskable-512x512.png',
+              src: '/pwa-maskable-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
-            },
-            {
-              src: './icon.svg',
-              sizes: 'any',
-              type: 'image/svg+xml',
-              purpose: 'any',
             },
           ],
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json,webmanifest,bat}'],
-          globIgnores: ['**/*.apk', '**/downloads/**', '**/assets/aistudio/*.PNG', '**/assets/aistudio/*.jpeg', '**/assets/aistudio/*.mov'],
-          maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+          globIgnores: ['**/*.apk', '**/downloads/**', '**/*.mov', '**/*.mp4'],
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
           navigateFallback: 'index.html',
+          navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
             {
+              // 1. App Navigation & HTML Routes — NetworkFirst with 3s timeout fallback to cached shell
+              urlPattern: ({ request }) => request.mode === 'navigate',
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'jcv-pages-navigation-cache',
+                networkTimeoutSeconds: 3,
+                expiration: {
+                  maxEntries: 25,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // 2. JS, CSS & Web Worker Bundles — StaleWhileRevalidate for instant offline boot
+              urlPattern: ({ request }) =>
+                request.destination === 'script' ||
+                request.destination === 'style' ||
+                request.destination === 'worker',
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'jcv-static-assets-cache',
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 60, // 60 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // 3. Stickers, Frames, Logos & UI Images — CacheFirst for zero-latency 9–12h booth rendering
               urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'jcv-images-cache',
                 expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                  maxEntries: 250,
+                  maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // 4. Google Fonts Stylesheets
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-cache',
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // 5. Google Fonts Webfont Files
+              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'gstatic-fonts-cache',
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // 6. Front-Screen Loop Media & Audio Assets
+              urlPattern: /\.(?:mp4|webm|ogg|mp3|wav)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'jcv-media-cache',
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 90, // 90 days
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
@@ -329,7 +404,9 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: false,
+          enabled: true,
+          type: 'module',
+          navigateFallback: 'index.html',
         },
       }),
     ],

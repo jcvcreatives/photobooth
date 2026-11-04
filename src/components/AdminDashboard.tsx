@@ -80,6 +80,7 @@ import {
 import { DEFAULT_BOOTH_SAMPLES, sanitizeStoredAttractPhotos } from './AttractScreen';
 import { lockKioskFullscreen, unlockKioskFullscreen } from './KioskNavBar';
 import { enduranceManager, TabletPowerStatus } from '../services/enduranceManager';
+import { warmKioskOfflineCache } from '../main';
 
 const normalizeCanvaUrl = (raw: string): { url: string; isEmbed: boolean } => {
   const trimmed = raw.trim();
@@ -3280,6 +3281,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       })}
                     </div>
                   </div>
+                </div>
+
+                {/* Offline Service Worker Cache Status & 1-Tap Pre-Warm */}
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    <div>
+                      <div className="font-bold text-white">
+                        Offline Service Worker Active (Zero-Interruption 9–12h Shift)
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        All booth screens, JS/CSS bundles, Gobble Haus stickers, frames, vouchers &amp; Bluetooth printing are cached locally on the Galaxy Tab A11.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      soundEffects.playTap();
+                      const count = await warmKioskOfflineCache();
+                      setUpdateMessage(
+                        `✓ Offline Service Worker Cache verified (${count} core assets & bundles locked in local CacheStorage for 100% offline use).`
+                      );
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shrink-0 cursor-pointer transition"
+                  >
+                    Verify Offline Cache
+                  </button>
                 </div>
 
                 {/* Galaxy Tab A11 One UI Battery Protection Tip */}

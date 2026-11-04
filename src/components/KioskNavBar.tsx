@@ -273,12 +273,14 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     const handleTouchMove = (e: TouchEvent) => {
       const target = e.target as HTMLElement | null;
 
-      // Allow range sliders (e.g. exposure slider) and Admin modal scroll containers to work
+      // Allow range sliders (e.g. exposure/size slider) and scrollable drawers/modals (Stickers, Admin, etc.) to scroll freely
       const isRangeInput =
         target?.tagName === 'INPUT' && (target as HTMLInputElement).type === 'range';
-      const isAdminScrollable = Boolean(target?.closest('[data-admin-scrollable="true"]'));
+      const isScrollableContainer = Boolean(
+        target?.closest('[data-admin-scrollable="true"], [data-kiosk-scrollable="true"]')
+      );
 
-      if (!isRangeInput && !isAdminScrollable) {
+      if (!isRangeInput && !isScrollableContainer) {
         // CRITICAL for iPadOS Chrome / Safari (WKFullScreenWindowController):
         // Calling e.preventDefault() on the VERY FIRST touchmove event in capture phase
         // prevents WebKit's native "Swipe down to exit fullscreen" gesture recognizer from firing.
