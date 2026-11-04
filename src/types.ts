@@ -84,6 +84,10 @@ export interface StickerItem {
   y: number; // percentage 0-100
   scale: number;
   rotation: number;
+  isText?: boolean;
+  text?: string;
+  textColor?: string;
+  textStyle?: 'white_pill' | 'black_pill' | 'outline' | 'plain';
 }
 
 export interface DrawingPath {

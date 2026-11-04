@@ -207,28 +207,54 @@ export interface EmojiCategory {
 
 export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
+    id: 'gobble',
+    label: 'Gobble Haus',
+    icon: '🍗',
+    emojis: [
+      '🍗', '🍦', '🥤', '🥡', '🍚', '🔥', '⚡', '😋', '🤤', '🍴',
+      '🥄', '🧋', '🍟', '🍔', '🍕', '🌭', '🌮', '🍩', '🍪', '🧁',
+      '🍰', '🍿', '🍫', '🍬', '🍭', '🍮', '🍓', '🍒', '🍉', '🍍',
+    ],
+  },
+  {
     id: 'booth',
-    label: 'Party & Kiosk',
+    label: 'Party & Booth',
     icon: '📸',
-    emojis: ['📸', '🎞️', '✨', '🪩', '🎉', '🥳', '🕶️', '👑', '🎀', '🎈', '🎂', '🍸', '🥂', '🍾', '🍰', '🍿', '🎊', '🎁', '🕺', '💃'],
+    emojis: [
+      '📸', '🎞️', '✨', '🪩', '🎉', '🥳', '🕶️', '👑', '🎀', '🎈',
+      '🎂', '🥂', '🎊', '🎁', '🕺', '💃', '🏆', '🥇', '🎖️', '🎫',
+      '🎮', '🕹️', '🎸', '🎤', '🎧', '🎬', '🎨', '🎯', '🚀', '🛸',
+    ],
   },
   {
     id: 'love',
     label: 'Love & Cute',
-    icon: '🩵',
-    emojis: ['🩵', '💖', '💕', '🤍', '🖤', '🫶', '💌', '💋', '🌸', '💐', '🌹', '🕊️', '💍', '🧸', '🌷', '🌺', '🫰', '💞', '🧁', '🍒'],
+    icon: '💖',
+    emojis: [
+      '💖', '🩵', '💕', '🤍', '🖤', '🫶', '💌', '💋', '🌸', '💐',
+      '🌹', '🕊️', '💍', '🧸', '🌷', '🌺', '🫰', '💞', '💝', '💘',
+      '💓', '💗', '💟', '❣️', '👼', '🧚', '🧜‍♀️', '🐰', '🐣', '🐾',
+    ],
   },
   {
     id: 'vibes',
     label: 'Vibes & Smiles',
     icon: '😎',
-    emojis: ['😎', '🥰', '✌️', '🤘', '🤩', '💫', '⭐', '🌟', '🦄', '🐱', '🐶', '🦋', '🌈', '⚡', '☕', '🔥', '🍓', '🍦', '🍕', '🥑'],
+    emojis: [
+      '😎', '🥰', '🤩', '😂', '🤣', '😜', '🤪', '😇', '🤠', '🥳',
+      '✌️', '🤘', '🤙', '👍', '👏', '🙌', '💪', '💫', '⭐', '🌟',
+      '🦄', '🐱', '🐶', '🐼', '🦊', '🐸', '🦋', '🌈', '☀️', '🌙',
+    ],
   },
   {
     id: 'minimal',
-    label: 'Minimal & Chic',
+    label: 'Badges & Retro',
     icon: '✦',
-    emojis: ['✦', '★', '♥', '✧', '✿', '●', '▲', '✒️', '🪽', '🫧', '◈', '◇', '☾', '☀', '☘', '∞', '✢', '✺', '🪞', '🏷️'],
+    emojis: [
+      '✦', '★', '☆', '♥', '♡', '✧', '✿', '❀', '●', '▲',
+      '◆', '❖', '👑', '💎', '⚡', '🔥', '💥', '💯', '💢', '💤',
+      '💬', '💭', '🗯️', '♠️', '♥️', '♦️', '♣️', '🎵', '🎶', '♾️',
+    ],
   },
 ];
 
@@ -1321,20 +1347,81 @@ export async function renderPhotostripCanvas(options: {
     });
   }
 
-  // 5. Render Stickers & Emojis
+  // 5. Render Stickers, Emojis & Custom Text Items
   if (stickers.length > 0) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     stickers.forEach((st) => {
       const sx = (st.x / 100) * canvasWidth;
       const sy = (st.y / 100) * canvasHeight;
-      const size = Math.round(56 * st.scale * (canvasWidth / 500));
 
       ctx.save();
       ctx.translate(sx, sy);
       ctx.rotate((st.rotation * Math.PI) / 180);
-      ctx.font = `${size}px sans-serif`;
-      ctx.fillText(st.emoji, 0, 0);
+
+      if (st.isText && st.text) {
+        const fontSize = Math.max(14, Math.round(30 * st.scale * (canvasWidth / 500)));
+        ctx.font = `900 ${fontSize}px sans-serif`;
+        const label = st.text;
+        const metrics = ctx.measureText(label);
+        const padX = Math.round(fontSize * 0.55);
+        const padY = Math.round(fontSize * 0.36);
+        const boxW = metrics.width + padX * 2;
+        const boxH = fontSize + padY * 2;
+        const radius = Math.min(boxH / 2, Math.round(fontSize * 0.45));
+        const style = st.textStyle || 'white_pill';
+
+        const drawRoundedPill = (w: number, h: number, r: number) => {
+          const x0 = -w / 2;
+          const y0 = -h / 2;
+          ctx.beginPath();
+          ctx.moveTo(x0 + r, y0);
+          ctx.lineTo(x0 + w - r, y0);
+          ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+          ctx.lineTo(x0 + w, y0 + h - r);
+          ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+          ctx.lineTo(x0 + r, y0 + h);
+          ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+          ctx.lineTo(x0, y0 + r);
+          ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+          ctx.closePath();
+        };
+
+        if (style === 'white_pill') {
+          drawRoundedPill(boxW, boxH, radius);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.lineWidth = Math.max(2.5, Math.round(fontSize * 0.1));
+          ctx.strokeStyle = isThermalMode ? '#000000' : st.textColor || '#000000';
+          ctx.stroke();
+          ctx.fillStyle = isThermalMode ? '#000000' : st.textColor || '#000000';
+          ctx.fillText(label, 0, Math.round(fontSize * 0.04));
+        } else if (style === 'black_pill') {
+          drawRoundedPill(boxW, boxH, radius);
+          ctx.fillStyle = isThermalMode ? '#000000' : st.textColor || '#000000';
+          ctx.fill();
+          ctx.lineWidth = Math.max(2, Math.round(fontSize * 0.08));
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(label, 0, Math.round(fontSize * 0.04));
+        } else if (style === 'outline') {
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = Math.max(4, Math.round(fontSize * 0.22));
+          ctx.strokeStyle = '#ffffff';
+          ctx.strokeText(label, 0, 0);
+          ctx.fillStyle = isThermalMode ? '#000000' : st.textColor || '#000000';
+          ctx.fillText(label, 0, 0);
+        } else {
+          ctx.fillStyle = isThermalMode ? '#000000' : st.textColor || '#000000';
+          ctx.fillText(label, 0, 0);
+        }
+      } else {
+        const size = Math.round(56 * st.scale * (canvasWidth / 500));
+        ctx.font = `${size}px sans-serif`;
+        ctx.fillText(st.emoji, 0, 0);
+      }
+
       ctx.restore();
     });
   }

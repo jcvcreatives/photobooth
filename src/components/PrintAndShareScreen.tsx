@@ -395,11 +395,20 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           <span>Save Digital & Motion GIF</span>
         </button>
 
-        {/* Button 4: Print Another Copy (Requires New Single-Use Voucher) */}
+        {/* Button 4: Print Another Copy (Free in Free Play Mode, or Single-Use Voucher in Paid Mode) */}
         <button
           disabled={isPrinting}
           onClick={() => {
             soundEffects.playTap();
+            if (config.freePlayMode) {
+              setActiveCopiesCount((prev) => prev + 1);
+              setCountdownSeconds(60);
+              executePrintJob(activeCanvas, {
+                ...config.thermalPrinter,
+                printCopies: 1,
+              });
+              return;
+            }
             setAnotherCopyVoucherCode('');
             setAnotherCopyError('');
             setAnotherCopySuccess('');
@@ -407,8 +416,18 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           }}
           className="w-full py-2 px-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
         >
-          <Ticket className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
-          <span>{isPrinting ? 'Printing Copy...' : 'Print Another Copy'}</span>
+          {config.freePlayMode ? (
+            <Printer className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
+          ) : (
+            <Ticket className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
+          )}
+          <span>
+            {isPrinting
+              ? 'Printing Copy...'
+              : config.freePlayMode
+              ? 'Print Another Copy (Free)'
+              : 'Print Another Copy'}
+          </span>
         </button>
 
         {/* Button 5: Ready? Let's snap! */}

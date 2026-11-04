@@ -37,6 +37,7 @@ import {
   DIGITAL_COLOR_THEMES,
   FRAME_THEMES,
   AVAILABLE_FILTERS,
+  EMOJI_CATEGORIES,
   FUN_STICKERS,
   THEME_GROUPS,
   THERMAL_BRIGHTNESS_PRESETS,
@@ -44,6 +45,25 @@ import {
 } from '../services/frameTemplates';
 import { thermalPrinterService } from '../services/thermalPrinter';
 import { soundEffects } from '../services/soundEffects';
+
+const QUICK_TEXT_PRESETS = [
+  'GOBBLE HAUS',
+  'CHICKEN INASAL 🍗',
+  'ICE CREAM FLOAT 🍦',
+  'RICE IN A BOX 🥡',
+  'SO BUSOG! 🔥',
+  'BESTIES ♥',
+  'VIP PASS ★',
+];
+
+const TEXT_COLOR_SWATCHES = [
+  '#000000',
+  '#e11d48',
+  '#ea580c',
+  '#0284c7',
+  '#7c3aed',
+  '#15803d',
+];
 
 interface EditorScreenProps {
   photos: string[];
@@ -150,18 +170,26 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const [printBrightness, setPrintBrightness] = useState<number>(brightness ?? 45);
   const [stickers, setStickers] = useState<StickerItem[]>([]);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
+  const [defaultItemScale, setDefaultItemScale] = useState<number>(1.0);
+  const [activeStickerCategory, setActiveStickerCategory] = useState<string>(EMOJI_CATEGORIES[0].id);
   const [previewSrc, setPreviewSrc] = useState<string>('');
   const [isRendering, setIsRendering] = useState(false);
 
-  // Modals for the clean kiosk flows
+  // Modals & Drawers for the clean kiosk flows
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showStickersDrawer, setShowStickersDrawer] = useState(false);
+  const [showTextDrawer, setShowTextDrawer] = useState(false);
+  const [customTextInput, setCustomTextInput] = useState('');
+  const [customTextStyle, setCustomTextStyle] = useState<'white_pill' | 'black_pill' | 'outline' | 'plain'>('white_pill');
+  const [customTextColor, setCustomTextColor] = useState('#000000');
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [retakesLeft, setRetakesLeft] = useState(3);
   const [showRetakeConfirm, setShowRetakeConfirm] = useState(false);
 
   const stripContainerRef = useRef<HTMLDivElement | null>(null);
   const activeStickerDragRef = useRef<{ id: string; startX: number; startY: number; stickerX: number; stickerY: number } | null>(null);
+
+  const selectedSticker = stickers.find((s) => s.id === selectedStickerId) || null;
 
   const handleBrightnessUpdate = (val: number) => {
     const clamped = Math.max(-30, Math.min(100, Math.round(val)));
@@ -207,19 +235,68 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     };
   }, [editablePhotos, currentLayout, thermalTheme, digitalTheme, filter, previewView, printBrightness]);
 
-  // Add Sticker to strip
+  // Add Emoji Sticker to strip
   const handleAddSticker = (emoji: string) => {
     soundEffects.playTap();
     const newSticker: StickerItem = {
       id: `st-${Date.now()}-${Math.random()}`,
       emoji,
-      x: 40 + Math.random() * 20,
-      y: 20 + Math.random() * 50,
-      scale: 1.0,
-      rotation: Math.round((Math.random() - 0.5) * 15),
+      x: 35 + Math.random() * 30,
+      y: 25 + Math.random() * 50,
+      scale: defaultItemScale,
+      rotation: Math.round((Math.random() - 0.5) * 12),
     };
     setStickers((prev) => [...prev, newSticker]);
     setSelectedStickerId(newSticker.id);
+  };
+
+  // Add Custom Text to strip
+  const handleAddCustomText = (rawText?: string) => {
+    const textVal = (rawText ?? customTextInput).trim();
+    if (!textVal) return;
+    soundEffects.playTap();
+
+    const newTextItem: StickerItem = {
+      id: `txt-${Date.now()}-${Math.random()}`,
+      emoji: '🔤',
+      isText: true,
+      text: textVal,
+      textStyle: customTextStyle,
+      textColor: customTextColor,
+      x: 50,
+      y: 35 + Math.random() * 30,
+      scale: defaultItemScale,
+      rotation: 0,
+    };
+    setStickers((prev) => [...prev, newTextItem]);
+    setSelectedStickerId(newTextItem.id);
+    if (!rawText) {
+      setCustomTextInput('');
+    }
+  };
+
+  // Update scale of selected sticker/text (or default scale)
+  const handleUpdateSelectedScale = (newScale: number) => {
+    const clamped = Math.max(0.4, Math.min(2.6, Number(newScale.toFixed(2))));
+    setDefaultItemScale(clamped);
+    if (selectedStickerId) {
+      setStickers((prev) =>
+        prev.map((s) => (s.id === selectedStickerId ? { ...s, scale: clamped } : s))
+      );
+    }
+  };
+
+  // Update rotation of selected sticker/text
+  const handleRotateSelected = (deltaDeg: number) => {
+    soundEffects.playTap();
+    if (!selectedStickerId) return;
+    setStickers((prev) =>
+      prev.map((s) =>
+        s.id === selectedStickerId
+          ? { ...s, rotation: ((s.rotation + deltaDeg + 180) % 360) - 180 }
+          : s
+      )
+    );
   };
 
   const handleDeleteSticker = (id: string) => {
@@ -237,6 +314,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
     const st = stickers.find((s) => s.id === id);
     if (!st || !stripContainerRef.current) return;
+
+    if (st.isText && st.text) {
+      setCustomTextStyle(st.textStyle || 'white_pill');
+      setCustomTextColor(st.textColor || '#000000');
+    }
 
     activeStickerDragRef.current = {
       id,
@@ -347,6 +429,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     ? THERMAL_FRAME_THEMES.slice(0, 6)
     : DIGITAL_COLOR_THEMES.slice(0, 6);
 
+  const activeCategoryObj =
+    EMOJI_CATEGORIES.find((c) => c.id === activeStickerCategory) || EMOJI_CATEGORIES[0];
+
+  const currentScaleVal = selectedSticker ? selectedSticker.scale : defaultItemScale;
+
   return (
     <div className="flex-1 h-full min-h-0 flex flex-col justify-between p-3 sm:p-4 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-4xl mx-auto w-full">
       {/* Top Header */}
@@ -371,7 +458,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           Looking great!
         </h1>
         <p className="text-[11px] sm:text-xs text-zinc-500">
-          Pick your Gobble Haus frame style, then print
+          Pick your Gobble Haus frame, add stickers or custom text, then print
         </p>
       </div>
 
@@ -415,13 +502,13 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           <div
             ref={stripContainerRef}
             onClick={() => setSelectedStickerId(null)}
-            className="relative rounded-2xl shadow-md overflow-hidden max-h-[34vh] sm:max-h-[38vh] flex items-center justify-center bg-white border border-zinc-200 select-none p-1 shrink-0"
+            className="relative rounded-2xl shadow-md overflow-hidden max-h-[32vh] sm:max-h-[36vh] flex items-center justify-center bg-white border border-zinc-200 select-none p-1 shrink-0"
           >
             {previewSrc ? (
               <img
                 src={previewSrc}
                 alt="Photostrip Preview"
-                className="max-h-[32vh] sm:max-h-[36vh] w-auto object-contain rounded-xl select-none pointer-events-none"
+                className="max-h-[30vh] sm:max-h-[34vh] w-auto object-contain rounded-xl select-none pointer-events-none"
               />
             ) : (
               <div className="w-44 h-60 flex items-center justify-center text-zinc-400 font-mono text-xs">
@@ -429,10 +516,14 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               </div>
             )}
 
-            {/* Draggable Stamps Overlay */}
+            {/* Draggable Stickers & Custom Text Overlay */}
             <div className="absolute inset-0 pointer-events-none z-20">
               {stickers.map((st) => {
                 const isSelected = selectedStickerId === st.id;
+                const isThermalPreview = previewView === 'thermal';
+                const activeColor = isThermalPreview ? '#000000' : st.textColor || '#000000';
+                const tStyle = st.textStyle || 'white_pill';
+
                 return (
                   <div
                     key={st.id}
@@ -451,16 +542,52 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       isSelected ? 'ring-2 ring-black bg-black/10' : ''
                     }`}
                   >
-                    <span className="text-2xl sm:text-3xl leading-none select-none pointer-events-none drop-shadow">
-                      {st.emoji}
-                    </span>
+                    {st.isText && st.text ? (
+                      <span
+                        style={
+                          tStyle === 'white_pill'
+                            ? {
+                                backgroundColor: '#ffffff',
+                                color: activeColor,
+                                borderColor: activeColor,
+                              }
+                            : tStyle === 'black_pill'
+                            ? {
+                                backgroundColor: activeColor,
+                                color: '#ffffff',
+                                borderColor: '#ffffff',
+                              }
+                            : tStyle === 'outline'
+                            ? {
+                                color: activeColor,
+                                textShadow:
+                                  '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff',
+                              }
+                            : {
+                                color: activeColor,
+                              }
+                        }
+                        className={`inline-block whitespace-nowrap font-black text-xs sm:text-sm leading-tight select-none pointer-events-none ${
+                          tStyle === 'white_pill' || tStyle === 'black_pill'
+                            ? 'px-2 py-0.5 rounded-full border-2 shadow-2xs'
+                            : ''
+                        }`}
+                      >
+                        {st.text}
+                      </span>
+                    ) : (
+                      <span className="text-2xl sm:text-3xl leading-none select-none pointer-events-none drop-shadow">
+                        {st.emoji}
+                      </span>
+                    )}
+
                     {isSelected && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteSticker(st.id);
                         }}
-                        className="absolute -top-3 -right-3 w-4 h-4 rounded-full bg-black text-white text-[10px] flex items-center justify-center"
+                        className="absolute -top-3 -right-3 w-4 h-4 rounded-full bg-black text-white text-[10px] flex items-center justify-center cursor-pointer"
                       >
                         ✕
                       </button>
@@ -470,6 +597,63 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               })}
             </div>
           </div>
+
+          {/* Quick Size & Rotation Bar when a Sticker or Text item is selected */}
+          {selectedSticker && (
+            <div className="mt-1 px-2.5 py-1 bg-white border border-zinc-300 rounded-full shadow-2xs flex items-center gap-1.5 text-[10px] shrink-0">
+              <span className="font-semibold text-zinc-700">Size:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  handleUpdateSelectedScale(selectedSticker.scale - 0.15);
+                }}
+                className="w-5 h-5 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                title="Smaller"
+              >
+                <Minus className="w-3 h-3" />
+              </button>
+              <input
+                type="range"
+                min="0.4"
+                max="2.6"
+                step="0.05"
+                value={selectedSticker.scale}
+                onChange={(e) => handleUpdateSelectedScale(Number(e.target.value))}
+                className="w-16 h-1 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-black"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  handleUpdateSelectedScale(selectedSticker.scale + 0.15);
+                }}
+                className="w-5 h-5 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                title="Larger"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+              <span className="font-mono text-zinc-500 w-8 text-center">
+                {Math.round(selectedSticker.scale * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => handleRotateSelected(-15)}
+                className="px-1.5 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 font-mono cursor-pointer"
+                title="Rotate Left"
+              >
+                ↺
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRotateSelected(15)}
+                className="px-1.5 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 font-mono cursor-pointer"
+                title="Rotate Right"
+              >
+                ↻
+              </button>
+            </div>
+          )}
 
           {/* Compact Bottom Controls under Preview */}
           <div className="mt-1 text-center space-y-1 shrink-0">
@@ -490,13 +674,37 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               ))}
             </div>
 
-            <div className="flex items-center justify-center gap-2 pt-0.5">
+            <div className="flex items-center justify-center gap-1.5 pt-0.5 flex-wrap">
               <button
-                onClick={() => setShowStickersDrawer((s) => !s)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-medium transition cursor-pointer shadow-2xs"
+                onClick={() => {
+                  soundEffects.playTap();
+                  setShowTextDrawer(false);
+                  setShowStickersDrawer((s) => !s);
+                }}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition cursor-pointer shadow-2xs ${
+                  showStickersDrawer
+                    ? 'border-black bg-black text-white'
+                    : 'border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700'
+                }`}
               >
                 <Smile className="w-3 h-3" />
                 <span>Add stickers</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  soundEffects.playTap();
+                  setShowStickersDrawer(false);
+                  setShowTextDrawer((s) => !s);
+                }}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition cursor-pointer shadow-2xs ${
+                  showTextDrawer
+                    ? 'border-black bg-black text-white'
+                    : 'border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700'
+                }`}
+              >
+                <Type className="w-3 h-3" />
+                <span>Add text</span>
               </button>
 
               <button
@@ -630,26 +838,242 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             })}
           </div>
 
-          {/* Stickers Drawer (if opened) */}
+          {/* Expanded Stickers Drawer with Categories & Size Control */}
           {showStickersDrawer && (
-            <div className="p-2 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn shrink-0">
-              <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 text-xs">
-                <span className="font-semibold text-zinc-900">Tap a Sticker to Add</span>
+            <div className="p-2.5 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn shrink-0 space-y-1.5">
+              <div className="flex items-center justify-between pb-1 border-b border-zinc-100 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-zinc-900">Stickers</span>
+                  {/* Size control right inside drawer */}
+                  <div className="flex items-center gap-1 bg-zinc-100 px-2 py-0.5 rounded-full text-[10px]">
+                    <span className="text-zinc-500">Size:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSelectedScale(currentScaleVal - 0.15)}
+                      className="w-4 h-4 rounded-full bg-white hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="range"
+                      min="0.4"
+                      max="2.6"
+                      step="0.05"
+                      value={currentScaleVal}
+                      onChange={(e) => handleUpdateSelectedScale(Number(e.target.value))}
+                      className="w-14 h-1 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-black"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSelectedScale(currentScaleVal + 0.15)}
+                      className="w-4 h-4 rounded-full bg-white hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                    >
+                      +
+                    </button>
+                    <span className="font-mono text-zinc-700 w-7 text-right">
+                      {Math.round(currentScaleVal * 100)}%
+                    </span>
+                  </div>
+                </div>
                 <button
                   onClick={() => setShowStickersDrawer(false)}
-                  className="text-zinc-400 hover:text-zinc-900"
+                  className="text-zinc-400 hover:text-zinc-900 cursor-pointer px-1"
                 >
                   ✕
                 </button>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 text-lg">
-                {FUN_STICKERS.slice(0, 18).map((emojiStr, i) => (
+
+              {/* Category Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+                {EMOJI_CATEGORIES.map((cat) => (
                   <button
-                    key={i}
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      soundEffects.playTap();
+                      setActiveStickerCategory(cat.id);
+                    }}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition cursor-pointer flex items-center gap-1 ${
+                      activeStickerCategory === cat.id
+                        ? 'bg-black text-white'
+                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                    }`}
+                  >
+                    <span>{cat.icon}</span>
+                    <span>{cat.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Emoji Grid for Active Category */}
+              <div className="grid grid-cols-10 gap-1 max-h-20 overflow-y-auto pr-0.5 text-lg">
+                {activeCategoryObj.emojis.map((emojiStr, i) => (
+                  <button
+                    key={`${activeCategoryObj.id}-${i}`}
+                    type="button"
                     onClick={() => handleAddSticker(emojiStr)}
-                    className="p-0.5 hover:scale-125 transition cursor-pointer shrink-0"
+                    className="p-0.5 hover:scale-125 active:scale-95 transition cursor-pointer flex items-center justify-center rounded hover:bg-zinc-100"
                   >
                     {emojiStr}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Add Custom Text Drawer with Style, Color & Size Control */}
+          {showTextDrawer && (
+            <div className="p-2.5 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn shrink-0 space-y-1.5">
+              <div className="flex items-center justify-between pb-1 border-b border-zinc-100 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-zinc-900">Add Custom Text</span>
+                  <div className="flex items-center gap-1 bg-zinc-100 px-2 py-0.5 rounded-full text-[10px]">
+                    <span className="text-zinc-500">Size:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSelectedScale(currentScaleVal - 0.15)}
+                      className="w-4 h-4 rounded-full bg-white hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="range"
+                      min="0.4"
+                      max="2.6"
+                      step="0.05"
+                      value={currentScaleVal}
+                      onChange={(e) => handleUpdateSelectedScale(Number(e.target.value))}
+                      className="w-14 h-1 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-black"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSelectedScale(currentScaleVal + 0.15)}
+                      className="w-4 h-4 rounded-full bg-white hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
+                    >
+                      +
+                    </button>
+                    <span className="font-mono text-zinc-700 w-7 text-right">
+                      {Math.round(currentScaleVal * 100)}%
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowTextDrawer(false)}
+                  className="text-zinc-400 hover:text-zinc-900 cursor-pointer px-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Input Row */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleAddCustomText();
+                }}
+                className="flex items-center gap-1.5"
+              >
+                <input
+                  type="text"
+                  maxLength={32}
+                  value={customTextInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCustomTextInput(val);
+                    if (selectedSticker && selectedSticker.isText) {
+                      setStickers((prev) =>
+                        prev.map((s) =>
+                          s.id === selectedSticker.id ? { ...s, text: val || s.text } : s
+                        )
+                      );
+                    }
+                  }}
+                  placeholder="Type caption, name, or message..."
+                  className="flex-1 px-2.5 py-1 text-xs rounded-xl border border-zinc-300 focus:outline-none focus:ring-1 focus:ring-black bg-zinc-50"
+                />
+                <button
+                  type="submit"
+                  disabled={!customTextInput.trim()}
+                  className="px-3 py-1 rounded-xl bg-black hover:bg-zinc-800 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer shrink-0"
+                >
+                  + Add Text
+                </button>
+              </form>
+
+              {/* Style & Color Selector Row */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1">
+                  {(
+                    [
+                      { id: 'white_pill', label: 'White Tag' },
+                      { id: 'black_pill', label: 'Black Tag' },
+                      { id: 'outline', label: 'Outline' },
+                      { id: 'plain', label: 'Plain' },
+                    ] as const
+                  ).map((stOpt) => (
+                    <button
+                      key={stOpt.id}
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        setCustomTextStyle(stOpt.id);
+                        if (selectedSticker && selectedSticker.isText) {
+                          setStickers((prev) =>
+                            prev.map((s) =>
+                              s.id === selectedSticker.id ? { ...s, textStyle: stOpt.id } : s
+                            )
+                          );
+                        }
+                      }}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition cursor-pointer ${
+                        customTextStyle === stOpt.id
+                          ? 'bg-black text-white border-black'
+                          : 'bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-200'
+                      }`}
+                    >
+                      {stOpt.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {TEXT_COLOR_SWATCHES.map((hex) => (
+                    <button
+                      key={hex}
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        setCustomTextColor(hex);
+                        if (selectedSticker && selectedSticker.isText) {
+                          setStickers((prev) =>
+                            prev.map((s) =>
+                              s.id === selectedSticker.id ? { ...s, textColor: hex } : s
+                            )
+                          );
+                        }
+                      }}
+                      style={{ backgroundColor: hex }}
+                      className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                        customTextColor === hex
+                          ? 'ring-2 ring-black scale-110 border-white'
+                          : 'border-zinc-300 opacity-80 hover:opacity-100'
+                      }`}
+                      title={`Text color ${hex}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Text Presets */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+                {QUICK_TEXT_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => handleAddCustomText(preset)}
+                    className="px-2 py-0.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-950 text-[10px] font-bold whitespace-nowrap transition cursor-pointer"
+                  >
+                    + {preset}
                   </button>
                 ))}
               </div>
