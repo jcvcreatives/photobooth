@@ -79,6 +79,7 @@ import {
 } from '../services/attractThemes';
 import { DEFAULT_BOOTH_SAMPLES, sanitizeStoredAttractPhotos } from './AttractScreen';
 import { lockKioskFullscreen, unlockKioskFullscreen } from './KioskNavBar';
+import { enduranceManager, TabletPowerStatus } from '../services/enduranceManager';
 
 const normalizeCanvaUrl = (raw: string): { url: string; isEmbed: boolean } => {
   const trimmed = raw.trim();
@@ -228,6 +229,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return false;
     }
   });
+
+  // Galaxy Tab A11 9-12h Power & Endurance status
+  const [powerStatus, setPowerStatus] = useState<TabletPowerStatus>(() =>
+    enduranceManager.getStatus()
+  );
+
+  useEffect(() => {
+    return enduranceManager.subscribe(setPowerStatus);
+  }, []);
 
   useEffect(() => {
     const syncFullscreenState = () => {
@@ -3031,6 +3041,253 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <strong className="text-white">Auto-Lock Full Screen Kiosk Mode on Session Start</strong> — Automatically lock the tablet into fullscreen kiosk display whenever a guest taps to start a session
                     </span>
                   </label>
+                </div>
+              </div>
+
+              {/* SAMSUNG GALAXY TAB A11 — 9 TO 12 HOUR CONTINUOUS ENDURANCE, CHARGER & BLUETOOTH OPTIMIZATION CARD */}
+              <div className="p-5 bg-gradient-to-br from-slate-900 via-emerald-950/35 to-slate-900 border-2 border-emerald-500/60 rounded-2xl space-y-4 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Battery className="w-5 h-5 text-emerald-400" />
+                      <h3 className="text-sm sm:text-base font-black text-white">
+                        Samsung Galaxy Tab A11 — 9 to 12 Hour Continuous Endurance Mode
+                      </h3>
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-wider">
+                        {localConfig.tabletEndurance?.enabled !== false ? 'ACTIVE (9–12 HR SHIFT)' : 'PAUSED'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1">
+                      Optimized for your <strong>Galaxy Tab A11</strong> plugged into charger 9–12 hours/day with Bluetooth connected to your <strong>Xprinter 58iiB</strong>: prevents overheating, keeps Screen WakeLock &amp; Bluetooth GATT alive all day, and auto-cleans RAM after every session.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      soundEffects.playTap();
+                      const currentEnabled = localConfig.tabletEndurance?.enabled !== false;
+                      const updated: RemoteKioskConfig = {
+                        ...localConfig,
+                        tabletEndurance: {
+                          enabled: !currentEnabled,
+                          idleDimTimeoutSec: localConfig.tabletEndurance?.idleDimTimeoutSec ?? 180,
+                          idleDimOpacity: localConfig.tabletEndurance?.idleDimOpacity ?? 45,
+                          bluetoothKeepAlive: localConfig.tabletEndurance?.bluetoothKeepAlive ?? true,
+                          cameraIdleEcoMode: localConfig.tabletEndurance?.cameraIdleEcoMode ?? true,
+                          abandonedSessionResetSec:
+                            localConfig.tabletEndurance?.abandonedSessionResetSec ?? 180,
+                        },
+                      };
+                      setLocalConfig(updated);
+                      await remoteConfigService.updateConfig(updated);
+                      onUpdateConfig(updated);
+                    }}
+                    className={`px-4 py-2 rounded-xl font-bold text-xs cursor-pointer shrink-0 transition ${
+                      localConfig.tabletEndurance?.enabled !== false
+                        ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                        : 'bg-slate-800 text-slate-300 border border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    {localConfig.tabletEndurance?.enabled !== false
+                      ? '✓ 12-Hour Endurance Active'
+                      : 'Enable 12-Hour Endurance'}
+                  </button>
+                </div>
+
+                {/* Live Galaxy Tab A11 Power, WakeLock, Bluetooth & Memory Telemetry Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-[10px] font-mono uppercase text-slate-400">
+                      Charger &amp; Battery
+                    </div>
+                    <div className="text-sm font-black text-emerald-300 mt-0.5">
+                      {powerStatus.batteryLevelPercent !== null
+                        ? `${powerStatus.batteryLevelPercent}% ${
+                            powerStatus.isCharging ? '⚡ Plugged In' : '(On Battery)'
+                          }`
+                        : '⚡ AC Kiosk Mode'}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-[10px] font-mono uppercase text-slate-400">
+                      Screen WakeLock
+                    </div>
+                    <div className="text-sm font-black text-indigo-300 mt-0.5">
+                      {powerStatus.wakeLockActive ? 'Locked Awake (24/7)' : 'Auto-Reacquiring'}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-[10px] font-mono uppercase text-slate-400">
+                      BT Printer Watchdog
+                    </div>
+                    <div className="text-sm font-black text-sky-300 mt-0.5">
+                      45s Auto-Reconnect
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="text-[10px] font-mono uppercase text-slate-400">
+                      Uptime &amp; RAM Hygiene
+                    </div>
+                    <div className="text-sm font-black text-amber-300 mt-0.5">
+                      {powerStatus.uptimeMinutes}m • {powerStatus.memoryFreedCount} Cleans
+                    </div>
+                  </div>
+                </div>
+
+                {/* Configurable Idle Thermal Dimmer & Abandoned Session Reset Timers */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80 text-xs">
+                  {/* 1. Idle Thermal Cooling Dimmer Timeout */}
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                    <div className="font-bold text-white">1. Idle Thermal Cooling Dimmer</div>
+                    <div className="text-[11px] text-slate-400">
+                      Dims screen by {localConfig.tabletEndurance?.idleDimOpacity ?? 45}% when idle to cool the Galaxy Tab A11 while charging (wakes in 0ms on touch).
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {[
+                        { sec: 60, label: '1 Min' },
+                        { sec: 180, label: '3 Min ★' },
+                        { sec: 300, label: '5 Min' },
+                        { sec: 0, label: 'Never Dim' },
+                      ].map((opt) => {
+                        const active =
+                          (localConfig.tabletEndurance?.idleDimTimeoutSec ?? 180) === opt.sec;
+                        return (
+                          <button
+                            key={opt.sec}
+                            type="button"
+                            onClick={async () => {
+                              soundEffects.playTap();
+                              const updated: RemoteKioskConfig = {
+                                ...localConfig,
+                                tabletEndurance: {
+                                  ...(localConfig.tabletEndurance || {
+                                    enabled: true,
+                                    idleDimOpacity: 45,
+                                    bluetoothKeepAlive: true,
+                                    cameraIdleEcoMode: true,
+                                    abandonedSessionResetSec: 180,
+                                  }),
+                                  idleDimTimeoutSec: opt.sec,
+                                },
+                              };
+                              setLocalConfig(updated);
+                              await remoteConfigService.updateConfig(updated);
+                              onUpdateConfig(updated);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] cursor-pointer ${
+                              active
+                                ? 'bg-emerald-600 border-emerald-400 text-white'
+                                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 2. Camera 5fps Idle Eco-Hibernate */}
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                    <div className="font-bold text-white">2. Camera Sensor Eco-Cooling</div>
+                    <div className="text-[11px] text-slate-400">
+                      Drops camera ISP from 30fps to 5fps while idle on the Attract screen so the tablet stays cool on charger without ever losing camera permission.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const curr = localConfig.tabletEndurance?.cameraIdleEcoMode !== false;
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          tabletEndurance: {
+                            ...(localConfig.tabletEndurance || {
+                              enabled: true,
+                              idleDimTimeoutSec: 180,
+                              idleDimOpacity: 45,
+                              bluetoothKeepAlive: true,
+                              abandonedSessionResetSec: 180,
+                            }),
+                            cameraIdleEcoMode: !curr,
+                          },
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                      }}
+                      className={`mt-1 px-3 py-1.5 rounded-lg border font-mono font-bold text-[11px] cursor-pointer ${
+                        localConfig.tabletEndurance?.cameraIdleEcoMode !== false
+                          ? 'bg-emerald-600 border-emerald-400 text-white'
+                          : 'bg-slate-900 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {localConfig.tabletEndurance?.cameraIdleEcoMode !== false
+                        ? '✓ Camera Eco-Cooling ON'
+                        : 'Camera Eco-Cooling OFF'}
+                    </button>
+                  </div>
+
+                  {/* 3. Abandoned Session Auto-Reset */}
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                    <div className="font-bold text-white">3. Auto-Reset Walk-Away Sessions</div>
+                    <div className="text-[11px] text-slate-400">
+                      Automatically frees GPU memory and returns to the Attract screen if a guest walks away mid-session.
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {[
+                        { sec: 120, label: '2 Min' },
+                        { sec: 180, label: '3 Min ★' },
+                        { sec: 300, label: '5 Min' },
+                      ].map((opt) => {
+                        const active =
+                          (localConfig.tabletEndurance?.abandonedSessionResetSec ?? 180) === opt.sec;
+                        return (
+                          <button
+                            key={opt.sec}
+                            type="button"
+                            onClick={async () => {
+                              soundEffects.playTap();
+                              const updated: RemoteKioskConfig = {
+                                ...localConfig,
+                                tabletEndurance: {
+                                  ...(localConfig.tabletEndurance || {
+                                    enabled: true,
+                                    idleDimTimeoutSec: 180,
+                                    idleDimOpacity: 45,
+                                    bluetoothKeepAlive: true,
+                                    cameraIdleEcoMode: true,
+                                  }),
+                                  abandonedSessionResetSec: opt.sec,
+                                },
+                              };
+                              setLocalConfig(updated);
+                              await remoteConfigService.updateConfig(updated);
+                              onUpdateConfig(updated);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] cursor-pointer ${
+                              active
+                                ? 'bg-emerald-600 border-emerald-400 text-white'
+                                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Galaxy Tab A11 One UI Battery Protection Tip */}
+                <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-[11px] text-emerald-200 flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Galaxy Tab A11 Charger Tip (9–12 Hours Plugged In):</strong> On your Galaxy Tab A11, open <strong>Settings → Battery → Battery Protection → Maximum (80%)</strong>. This stops charging at 80% while running directly off the charger cable all day, keeping the tablet cool and preventing battery swelling.
+                  </div>
                 </div>
               </div>
 

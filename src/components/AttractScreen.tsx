@@ -8,6 +8,7 @@ import { Camera, Printer, QrCode, Sparkles } from 'lucide-react';
 import { RemoteKioskConfig } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { storageService, safeStorageGet } from '../services/storage';
+import { enduranceManager } from '../services/enduranceManager';
 import { EMBEDDED_DEFAULT_BOOTH_SAMPLES } from '../services/defaultSamplePhotos';
 import {
   AttractOccasionId,
@@ -253,8 +254,26 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
 
   // Strip shuffle position index (0, 1, 2)
   const [shuffleStep, setShuffleStep] = useState<number>(0);
+  const [isIdleDimmed, setIsIdleDimmed] = useState<boolean>(false);
+  const [pixelShiftIndex, setPixelShiftIndex] = useState<number>(0);
 
   const theme = getAttractThemeById(activeThemeId);
+
+  // Subscribe to Galaxy Tab A11 Endurance Manager for thermal idle dimming
+  useEffect(() => {
+    return enduranceManager.subscribe((status) => {
+      setIsIdleDimmed(status.isIdleDimmed);
+    });
+  }, []);
+
+  // Slow pixel-shift cycle while dimmed so no pixels remain static during 9–12 hour shifts
+  useEffect(() => {
+    if (!isIdleDimmed) return;
+    const t = setInterval(() => {
+      setPixelShiftIndex((i) => (i + 1) % 4);
+    }, 15000);
+    return () => clearInterval(t);
+  }, [isIdleDimmed]);
 
   // Secret multi-tap on title/logo for kiosk operators (4 rapid taps unlocks to minimize & opens Admin)
   const handleLogoTap = (e: React.MouseEvent) => {
@@ -338,16 +357,17 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
     };
   }, []);
 
-  // Automatic gentle shuffling of the 3 strips
+  // Automatic gentle shuffling of the 3 strips (slows down to 9.5s in Thermal Eco Dim mode to cool GPU while charging)
   useEffect(() => {
     const isAutoShuffle = safeStorageGet('jcv_attract_auto_shuffle') !== 'false';
     if (!isAutoShuffle) return;
 
+    const intervalMs = isIdleDimmed ? 9500 : 3800;
     const interval = setInterval(() => {
       setShuffleStep((s) => (s + 1) % 3);
-    }, 3800);
+    }, intervalMs);
     return () => clearInterval(interval);
-  }, []);
+  }, [isIdleDimmed]);
 
   const handleStripTap = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -719,6 +739,37 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
           <span>{theme.bottomFeatures[2]}</span>
         </div>
       </div>
+
+      {/* Galaxy Tab A11 9–12 Hour Thermal Cooling & Anti-Burn-In Dimmer Overlay (wakes & starts session in 0ms on tap) */}
+      {isIdleDimmed && config.tabletEndurance?.enabled !== false && (
+        <div
+          className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center transition-opacity duration-700"
+          style={{
+            backgroundColor: `rgba(9, 9, 11, ${(config.tabletEndurance?.idleDimOpacity ?? 45) / 100})`,
+          }}
+        >
+          <div
+            className="px-6 py-3 rounded-2xl bg-black/75 border border-white/20 text-white shadow-2xl backdrop-blur-md text-center transition-transform duration-1000"
+            style={{
+              transform:
+                pixelShiftIndex === 0
+                  ? 'translate3d(-14px, -18px, 0)'
+                  : pixelShiftIndex === 1
+                  ? 'translate3d(14px, -12px, 0)'
+                  : pixelShiftIndex === 2
+                  ? 'translate3d(12px, 16px, 0)'
+                  : 'translate3d(-12px, 14px, 0)',
+            }}
+          >
+            <div className="text-xs sm:text-sm font-black tracking-widest uppercase">
+              📸 Touch Anywhere to Start Photo Booth
+            </div>
+            <div className="text-[10px] text-zinc-300 font-mono mt-0.5">
+              Instant Thermal Print • Ready
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

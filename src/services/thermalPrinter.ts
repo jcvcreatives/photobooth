@@ -58,6 +58,9 @@ class ThermalPrinterService {
   private bluetoothDevice: BluetoothDevice | null = null;
   private bluetoothCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private nativeBluetoothActive = false;
+  private isPrintingBusy = false;
+  private btKeepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private btReconnecting = false;
 
   private usbDevice: USBDevice | null = null;
   private usbInterfaceNumber: number | null = null;
@@ -116,6 +119,7 @@ class ThermalPrinterService {
     }
 
     this.setupUsbHotplugListeners();
+    this.setupBluetoothKeepAliveWatchdog();
     this.setupSilentBridgeListener();
     this.probeSilentBridge();
   }
@@ -302,6 +306,126 @@ class ThermalPrinterService {
     return true;
   }
 
+  /**
+   * Connects GATT server and resolves the optimal writable characteristic on a BluetoothDevice.
+   * Used for initial pairing AND automatic silent background reconnection during 9–12h Galaxy Tab A11 shifts.
+   */
+  private async openBluetoothGattCharacteristic(
+    device: BluetoothDevice
+  ): Promise<BluetoothRemoteGATTCharacteristic | null> {
+    if (!device.gatt) return null;
+    const server = await device.gatt.connect();
+    let writeChar: BluetoothRemoteGATTCharacteristic | null = null;
+    let fallbackChar: BluetoothRemoteGATTCharacteristic | null = null;
+
+    const preferredCharPrefixes = [
+      '00002af1',
+      '49535343-8841',
+      '49535343-1e4d',
+      'bef8d6c9',
+      '0000ffe1',
+      '0000ff02',
+      '6e400002',
+    ];
+
+    const services = await server.getPrimaryServices().catch(() => []);
+    for (const service of services) {
+      const characteristics = await service.getCharacteristics().catch(() => []);
+      for (const char of characteristics) {
+        if (char.properties.writeWithoutResponse || char.properties.write) {
+          const uuidLower = (char.uuid || '').toLowerCase();
+          if (preferredCharPrefixes.some((p) => uuidLower.includes(p))) {
+            writeChar = char;
+            break;
+          }
+          if (!fallbackChar) {
+            fallbackChar = char;
+          }
+        }
+      }
+      if (writeChar) break;
+    }
+
+    return writeChar || fallbackChar;
+  }
+
+  /**
+   * 12-Hour Continuous Bluetooth Keep-Alive & Auto-Reconnect Watchdog for Galaxy Tab A11:
+   * - Attempts auto-reconnect on boot if Chrome Android has persistent Bluetooth permissions (`getDevices`).
+   * - Periodically checks Bluetooth connection state every 45 seconds when idle and silently
+   *   reconnects if the printer or Android Bluetooth stack dropped the idle link.
+   */
+  private setupBluetoothKeepAliveWatchdog() {
+    if (typeof navigator !== 'undefined' && 'bluetooth' in navigator && navigator.bluetooth) {
+      const btNav = navigator.bluetooth as any;
+      if (typeof btNav.getDevices === 'function') {
+        btNav
+          .getDevices()
+          .then(async (devices: BluetoothDevice[]) => {
+            if (devices && devices.length > 0 && !this.bluetoothDevice) {
+              const savedDevice = devices[0];
+              await this.trySilentBluetoothReconnect(savedDevice);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
+    if (!this.btKeepAliveTimer && typeof window !== 'undefined') {
+      this.btKeepAliveTimer = setInterval(async () => {
+        if (this.isPrintingBusy || this.btReconnecting) return;
+
+        // If Native Android Bluetooth SPP is active, keep it warm
+        if (
+          this.nativeBluetoothActive &&
+          typeof window !== 'undefined' &&
+          window.AndroidPrinter?.connectBluetooth
+        ) {
+          return;
+        }
+
+        // If Web Bluetooth device was paired during this shift, verify GATT is still connected
+        if (this.bluetoothDevice) {
+          if (!this.bluetoothDevice.gatt?.connected || !this.bluetoothCharacteristic) {
+            await this.trySilentBluetoothReconnect(this.bluetoothDevice);
+          }
+        }
+      }, 45000);
+    }
+  }
+
+  public async trySilentBluetoothReconnect(device?: BluetoothDevice | null): Promise<boolean> {
+    const targetDevice = device || this.bluetoothDevice;
+    if (!targetDevice || this.btReconnecting) return false;
+    this.btReconnecting = true;
+
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const writeChar = await this.openBluetoothGattCharacteristic(targetDevice);
+          if (writeChar) {
+            this.bluetoothDevice = targetDevice;
+            this.bluetoothCharacteristic = writeChar;
+            this.currentStatus = {
+              isConnected: true,
+              connectionType: 'bluetooth',
+              deviceName: targetDevice.name || 'Xprinter 58iiB (Bluetooth)',
+              details: '12h Auto-Reconnect & Keep-Alive Active',
+            };
+            safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+            this.notify();
+            return true;
+          }
+        } catch {
+          await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        }
+      }
+      return false;
+    } finally {
+      this.btReconnecting = false;
+    }
+  }
+
   // 4. Wireless Bluetooth (Native Android Classic SPP + Web Bluetooth BLE)
   public async connectBluetooth(): Promise<boolean> {
     this.disconnect();
@@ -317,7 +441,7 @@ class ThermalPrinterService {
             isConnected: true,
             connectionType: 'bluetooth',
             deviceName: devName,
-            details: 'Connected via Native Android Bluetooth SPP',
+            details: 'Connected via Native Android Bluetooth SPP (12h Keep-Alive)',
           };
           safeStorageSet('snapkiosk_printer_type', 'bluetooth');
           this.notify();
@@ -359,42 +483,7 @@ class ThermalPrinterService {
         throw new Error('Selected Bluetooth device does not expose GATT services.');
       }
 
-      const server = await device.gatt.connect();
-      let writeChar: BluetoothRemoteGATTCharacteristic | null = null;
-      let fallbackChar: BluetoothRemoteGATTCharacteristic | null = null;
-
-      // Preferred Xprinter 58iiB / POS-58 BLE data write characteristic UUID substrings
-      const preferredCharPrefixes = [
-        '00002af1',
-        '49535343-8841',
-        '49535343-1e4d',
-        'bef8d6c9',
-        '0000ffe1',
-        '0000ff02',
-        '6e400002',
-      ];
-
-      const services = await server.getPrimaryServices().catch(() => []);
-      for (const service of services) {
-        const characteristics = await service.getCharacteristics().catch(() => []);
-        for (const char of characteristics) {
-          if (char.properties.writeWithoutResponse || char.properties.write) {
-            const uuidLower = (char.uuid || '').toLowerCase();
-            if (preferredCharPrefixes.some((p) => uuidLower.includes(p))) {
-              writeChar = char;
-              break;
-            }
-            if (!fallbackChar) {
-              fallbackChar = char;
-            }
-          }
-        }
-        if (writeChar) break;
-      }
-
-      if (!writeChar) {
-        writeChar = fallbackChar;
-      }
+      const writeChar = await this.openBluetoothGattCharacteristic(device);
 
       if (!writeChar) {
         throw new Error(
@@ -405,20 +494,25 @@ class ThermalPrinterService {
       this.bluetoothDevice = device;
       this.bluetoothCharacteristic = writeChar;
 
-      device.addEventListener('gattserverdisconnected', () => {
-        this.currentStatus = {
-          isConnected: false,
-          connectionType: 'bluetooth',
-          deviceName: device.name || 'Bluetooth Printer',
-          error: 'Bluetooth printer disconnected — tap to reconnect.',
-        };
-        this.notify();
+      device.addEventListener('gattserverdisconnected', async () => {
+        // Immediately attempt automatic silent reconnection so 9–12 hour Galaxy Tab A11 operation never drops
+        const reconnected = await this.trySilentBluetoothReconnect(device);
+        if (!reconnected) {
+          this.currentStatus = {
+            isConnected: false,
+            connectionType: 'bluetooth',
+            deviceName: device.name || 'Bluetooth Printer',
+            error: 'Bluetooth printer sleeping — will auto-reconnect on next print or tap.',
+          };
+          this.notify();
+        }
       });
 
       this.currentStatus = {
         isConnected: true,
         connectionType: 'bluetooth',
         deviceName: device.name || 'Wireless Bluetooth Printer',
+        details: '12h Auto-Reconnect & Keep-Alive Active',
       };
       safeStorageSet('snapkiosk_printer_type', 'bluetooth');
       this.notify();
@@ -1516,96 +1610,110 @@ class ThermalPrinterService {
 
     // 4. Wireless Bluetooth Flow (Native Android Classic SPP OR Web Bluetooth BLE)
     if (mode === 'bluetooth') {
-      if (
-        this.nativeBluetoothActive &&
-        typeof window !== 'undefined' &&
-        window.AndroidPrinter?.printBluetoothBase64
-      ) {
-        try {
-          for (let c = 0; c < copies; c++) {
-            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            for (let p = 0; p < pacedPackets.length; p++) {
-              const b64 = uint8ToBase64(pacedPackets[p]);
-              const res = window.AndroidPrinter.printBluetoothBase64(b64);
-              if (!res || !res.startsWith('OK')) {
-                throw new Error(res || 'Bluetooth SPP print failed');
+      this.isPrintingBusy = true;
+      try {
+        if (
+          this.nativeBluetoothActive &&
+          typeof window !== 'undefined' &&
+          window.AndroidPrinter?.printBluetoothBase64
+        ) {
+          try {
+            for (let c = 0; c < copies; c++) {
+              const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+              for (let p = 0; p < pacedPackets.length; p++) {
+                const b64 = uint8ToBase64(pacedPackets[p]);
+                const res = window.AndroidPrinter.printBluetoothBase64(b64);
+                if (!res || !res.startsWith('OK')) {
+                  throw new Error(res || 'Bluetooth SPP print failed');
+                }
+                if (p % progressStep === 0) {
+                  const progressRatio = (c + p / pacedPackets.length) / copies;
+                  const percent = 50 + Math.round(progressRatio * 45);
+                  onProgress?.(percent, `Transmitting via Bluetooth SPP${copyLabel}... ${percent}%`);
+                }
+                await new Promise((r) => setTimeout(r, 5));
               }
-              if (p % progressStep === 0) {
-                const progressRatio = (c + p / pacedPackets.length) / copies;
-                const percent = 50 + Math.round(progressRatio * 45);
-                onProgress?.(percent, `Transmitting via Bluetooth SPP${copyLabel}... ${percent}%`);
+              soundEffects.playPaperCut();
+              if (c < copies - 1) {
+                await new Promise((r) => setTimeout(r, 900));
               }
-              await new Promise((r) => setTimeout(r, 5));
             }
-            soundEffects.playPaperCut();
-            if (c < copies - 1) {
-              await new Promise((r) => setTimeout(r, 900));
-            }
+            onProgress?.(100, 'Bluetooth Print complete!');
+            return { success: true, previewDataUrl: dithered.previewDataUrl };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+              success: false,
+              previewDataUrl: dithered.previewDataUrl,
+              error: `Bluetooth print failed: ${msg}`,
+            };
           }
-          onProgress?.(100, 'Bluetooth Print complete!');
-          return { success: true, previewDataUrl: dithered.previewDataUrl };
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return {
-            success: false,
-            previewDataUrl: dithered.previewDataUrl,
-            error: `Bluetooth print failed: ${msg}`,
-          };
         }
-      }
 
-      if (this.bluetoothCharacteristic) {
-        try {
-          const canWriteNoResp = this.bluetoothCharacteristic.properties.writeWithoutResponse;
-          const canWriteWithResp = this.bluetoothCharacteristic.properties.write;
-          let activePackets = pacedPackets;
+        // If Bluetooth GATT slept during an idle period on the Galaxy Tab A11, auto-reconnect before printing!
+        if (
+          this.bluetoothDevice &&
+          (!this.bluetoothDevice.gatt?.connected || !this.bluetoothCharacteristic)
+        ) {
+          onProgress?.(42, 'Waking up Bluetooth printer connection...');
+          await this.trySilentBluetoothReconnect(this.bluetoothDevice);
+        }
 
-          for (let c = 0; c < copies; c++) {
-            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            for (let p = 0; p < activePackets.length; p++) {
-              const chunk = activePackets[p];
-              try {
+        if (this.bluetoothCharacteristic) {
+          try {
+            const canWriteNoResp = this.bluetoothCharacteristic.properties.writeWithoutResponse;
+            const canWriteWithResp = this.bluetoothCharacteristic.properties.write;
+            let activePackets = pacedPackets;
+
+            for (let c = 0; c < copies; c++) {
+              const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+              for (let p = 0; p < activePackets.length; p++) {
+                const chunk = activePackets[p];
+                try {
+                  if (canWriteNoResp) {
+                    await this.bluetoothCharacteristic.writeValueWithoutResponse(chunk as unknown as BufferSource);
+                  } else {
+                    await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
+                  }
+                } catch {
+                  // If BLE MTU is smaller than 144 bytes on this device, automatically fall back to 96B (2-row) packets
+                  if (p === 0 && activePackets === pacedPackets) {
+                    activePackets = this.buildPacedPackets(commandBands, 96);
+                    p = -1;
+                    continue;
+                  }
+                  if (canWriteWithResp) {
+                    await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
+                  }
+                }
+                if (p % progressStep === 0) {
+                  const progressRatio = (c + p / activePackets.length) / copies;
+                  const percent = 50 + Math.round(progressRatio * 45);
+                  onProgress?.(percent, `Transmitting via Bluetooth${copyLabel}... ${percent}%`);
+                }
+                // Keep printer receive buffer continuously ahead of stepper motor feed (~45mm/s) so motor never pauses mid-photo
                 if (canWriteNoResp) {
-                  await this.bluetoothCharacteristic.writeValueWithoutResponse(chunk as unknown as BufferSource);
-                } else {
-                  await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
-                }
-              } catch {
-                // If BLE MTU is smaller than 144 bytes on this device, automatically fall back to 96B (2-row) packets
-                if (p === 0 && activePackets === pacedPackets) {
-                  activePackets = this.buildPacedPackets(commandBands, 96);
-                  p = -1;
-                  continue;
-                }
-                if (canWriteWithResp) {
-                  await this.bluetoothCharacteristic.writeValue(chunk as unknown as BufferSource);
+                  await new Promise((r) => setTimeout(r, 4));
                 }
               }
-              if (p % progressStep === 0) {
-                const progressRatio = (c + p / activePackets.length) / copies;
-                const percent = 50 + Math.round(progressRatio * 45);
-                onProgress?.(percent, `Transmitting via Bluetooth${copyLabel}... ${percent}%`);
-              }
-              // Keep printer receive buffer continuously ahead of stepper motor feed (~45mm/s) so motor never pauses mid-photo
-              if (canWriteNoResp) {
-                await new Promise((r) => setTimeout(r, 4));
+              soundEffects.playPaperCut();
+              if (c < copies - 1) {
+                await new Promise((r) => setTimeout(r, 900));
               }
             }
-            soundEffects.playPaperCut();
-            if (c < copies - 1) {
-              await new Promise((r) => setTimeout(r, 900));
-            }
+            onProgress?.(100, 'Print complete!');
+            return { success: true, previewDataUrl: dithered.previewDataUrl };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+              success: false,
+              previewDataUrl: dithered.previewDataUrl,
+              error: `Bluetooth print failed: ${msg}`,
+            };
           }
-          onProgress?.(100, 'Print complete!');
-          return { success: true, previewDataUrl: dithered.previewDataUrl };
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return {
-            success: false,
-            previewDataUrl: dithered.previewDataUrl,
-            error: `Bluetooth print failed: ${msg}`,
-          };
         }
+      } finally {
+        this.isPrintingBusy = false;
       }
     }
 

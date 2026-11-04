@@ -212,6 +212,15 @@ export interface FrontScreenMediaConfig {
   subheadline?: string;
 }
 
+export interface TabletEnduranceConfig {
+  enabled: boolean;
+  idleDimTimeoutSec: number; // Seconds on Attract screen before thermal cooling dim (default 180s = 3m)
+  idleDimOpacity: number; // 20 to 75% dimming veil to cool display while charging (default 45%)
+  bluetoothKeepAlive: boolean; // Auto-reconnect & keep-alive GATT watchdog for 12h shift
+  cameraIdleEcoMode: boolean; // Throttle camera sensor power on idle Attract screen without losing permission
+  abandonedSessionResetSec: number; // Auto-return to Attract if guest walks away mid-session (default 180s)
+}
+
 export interface RemoteKioskConfig {
   kioskId: string;
   locationName: string;
@@ -228,6 +237,7 @@ export interface RemoteKioskConfig {
   autoFullscreenLock?: boolean;
   allowedLayouts: FrameLayoutType[];
   thermalPrinter: ThermalPrinterConfig;
+  tabletEndurance?: TabletEnduranceConfig;
   customWatermarkUrl?: string;
   frontScreenMedia?: FrontScreenMediaConfig;
   remoteSyncUrl?: string;

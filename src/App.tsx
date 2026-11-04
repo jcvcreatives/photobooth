@@ -20,6 +20,7 @@ import { analyticsService } from './services/analytics';
 import { storageService, safeStorageGet } from './services/storage';
 import { soundEffects } from './services/soundEffects';
 import { cameraStreamService } from './services/cameraStreamService';
+import { enduranceManager } from './services/enduranceManager';
 
 // Components
 import {
@@ -61,8 +62,10 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showMobileShareModal, setShowMobileShareModal] = useState(false);
 
-  // Initialize config, telemetry, persistent camera stream, and check URL for direct mobile guest share (?share=...)
+  // Initialize config, telemetry, persistent camera stream, Galaxy Tab A11 12h endurance manager, and check URL for direct mobile guest share (?share=...)
   useEffect(() => {
+    enduranceManager.init();
+
     // Eagerly acquire and keep camera stream alive on boot so permission is granted once
     // before entering fullscreen and never interrupts the kiosk session later.
     cameraStreamService
@@ -104,8 +107,71 @@ export default function App() {
     }
   }, []);
 
+  // Handler: Return to Attract / Reset (frees offscreen GPU canvas textures for 12-hour endurance)
+  const handleResetToAttract = React.useCallback(() => {
+    enduranceManager.releaseCanvasMemory(finalizedCanvas);
+    setCapturedPhotos([]);
+    setFinalizedResult(null);
+    setFinalizedCanvas(null);
+    setActivePayment(null);
+    setSelectedCopies(1);
+    setCurrentScreen('attract');
+  }, [finalizedCanvas]);
+
+  // Galaxy Tab A11 9–12 Hour Endurance Watchdog:
+  // 1. Throttles camera ISP to 5fps eco-mode when sitting idle on Attract screen >35s (without releasing permission).
+  // 2. Activates Smart Thermal Dimmer on Attract screen after idleDimTimeoutSec (default 180s).
+  // 3. Auto-resets abandoned guest sessions back to Attract screen after abandonedSessionResetSec (default 180s).
+  useEffect(() => {
+    const endurance = config.tabletEndurance;
+    if (endurance?.enabled === false) {
+      enduranceManager.setIdleDimmed(false);
+      cameraStreamService.setIdleEcoMode(false);
+      return;
+    }
+
+    if (currentScreen !== 'attract') {
+      enduranceManager.setIdleDimmed(false);
+      cameraStreamService.setIdleEcoMode(false);
+    }
+
+    const watchdogInterval = setInterval(() => {
+      if (showAdminModal || showMobileShareModal) return;
+
+      const idleSec = enduranceManager.getIdleSeconds();
+      const dimTimeout = endurance?.idleDimTimeoutSec ?? 180;
+      const abandonTimeout = endurance?.abandonedSessionResetSec ?? 180;
+
+      if (currentScreen === 'attract') {
+        if (endurance?.cameraIdleEcoMode !== false && idleSec >= 35) {
+          cameraStreamService.setIdleEcoMode(true);
+        }
+        if (dimTimeout > 0 && idleSec >= dimTimeout) {
+          enduranceManager.setIdleDimmed(true);
+        }
+      } else if (
+        currentScreen !== 'capture' &&
+        abandonTimeout > 0 &&
+        idleSec >= abandonTimeout
+      ) {
+        // Guest walked away mid-session — reclaim memory and return to Attract screen
+        handleResetToAttract();
+      }
+    }, 5000);
+
+    return () => clearInterval(watchdogInterval);
+  }, [
+    currentScreen,
+    config.tabletEndurance,
+    showAdminModal,
+    showMobileShareModal,
+    handleResetToAttract,
+  ]);
+
   // Handler: Start Session from Attract screen
   const handleStartSession = React.useCallback(() => {
+    enduranceManager.recordTouchActivity();
+    cameraStreamService.setIdleEcoMode(false);
     setSessionStartTime(Date.now());
     setSelectedCopies(1); // 1 Voucher = 1 Print Copy
     setSelectedBrightness(config.thermalPrinter?.brightness ?? 45);
@@ -140,6 +206,7 @@ export default function App() {
 
   // Handler: Payment Succeeded
   const handlePaymentSuccess = (tx: PaymentTransaction) => {
+    enduranceManager.recordTouchActivity();
     setActivePayment(tx);
     setSelectedCopies(1); // 1 Voucher = 1 Print Copy
     if (tx.layoutType) {
@@ -150,17 +217,20 @@ export default function App() {
 
   // Handler: Captures Completed
   const handleCapturesComplete = (photos: string[]) => {
+    enduranceManager.recordTouchActivity();
     setCapturedPhotos(photos);
     setCurrentScreen('editor');
   };
 
   // Handler: Photostrip Finalized in Editor
   const handlePhotostripFinalized = async (result: PhotostripResult, canvas: HTMLCanvasElement) => {
+    enduranceManager.recordTouchActivity();
+    enduranceManager.recordSessionCompleted();
     setFinalizedResult(result);
     setFinalizedCanvas(canvas);
     setCurrentScreen('print_share');
 
-    // Save capture to local IndexedDB
+    // Save capture to local IndexedDB (ring-buffer capped)
     storageService.saveCapture(result).catch(() => {});
 
     // Record session metrics in analytics
@@ -182,18 +252,9 @@ export default function App() {
       .catch(() => {});
   };
 
-  // Handler: Return to Attract / Reset
-  const handleResetToAttract = () => {
-    setCapturedPhotos([]);
-    setFinalizedResult(null);
-    setFinalizedCanvas(null);
-    setActivePayment(null);
-    setSelectedCopies(1);
-    setCurrentScreen('attract');
-  };
-
   // Handler: Undo / Retake photos from Editor without resetting the paid session
   const handleRetakeFromEditor = () => {
+    enduranceManager.releaseCanvasMemory(finalizedCanvas);
     setCapturedPhotos([]);
     setFinalizedResult(null);
     setFinalizedCanvas(null);

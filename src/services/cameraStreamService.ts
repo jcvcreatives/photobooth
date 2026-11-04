@@ -78,6 +78,7 @@ class CameraStreamService {
    */
   public getCachedStream(facingMode: 'user' | 'environment' = 'user'): MediaStream | null {
     if (this.hasLiveStream(facingMode)) {
+      this.setIdleEcoMode(false);
       return this.activeStream;
     }
     return null;
@@ -91,6 +92,38 @@ class CameraStreamService {
   }
 
   /**
+   * Galaxy Tab A11 9–12 Hour Thermal Optimization:
+   * When the kiosk sits idle on the Attract screen, throttle camera frameRate to 5fps
+   * and pause the hidden video decoder sink so the tablet ISP & GPU stay cool while charging,
+   * WITHOUT stopping the MediaStreamTrack (so camera permission and Fullscreen lock are 100% preserved).
+   */
+  public setIdleEcoMode(isIdle: boolean): void {
+    try {
+      if (!this.activeStream) return;
+      const videoTrack = this.activeStream.getVideoTracks()[0];
+      if (!videoTrack || videoTrack.readyState !== 'live') return;
+
+      if (typeof videoTrack.applyConstraints === 'function') {
+        videoTrack
+          .applyConstraints({
+            frameRate: isIdle ? { ideal: 5, max: 10 } : { ideal: 30 },
+          })
+          .catch(() => {});
+      }
+
+      if (this.keepAliveVideoEl) {
+        if (isIdle) {
+          this.keepAliveVideoEl.pause();
+        } else if (this.keepAliveVideoEl.paused) {
+          this.keepAliveVideoEl.play().catch(() => {});
+        }
+      }
+    } catch {
+      // Ignore constraint errors on unsupported mobile WebViews
+    }
+  }
+
+  /**
    * Acquires or reuses the persistent camera stream.
    * Never stops tracks on normal screen navigation; only switches tracks if `facingMode` changes.
    */
@@ -98,6 +131,7 @@ class CameraStreamService {
     facingMode: 'user' | 'environment' = 'user'
   ): Promise<MediaStream | null> {
     if (this.hasLiveStream(facingMode)) {
+      this.setIdleEcoMode(false);
       return this.activeStream;
     }
 

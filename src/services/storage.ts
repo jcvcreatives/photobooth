@@ -190,15 +190,35 @@ export class StorageService {
     });
   }
 
-  // --- Captures ---
+  // --- Captures (Ring-buffer capped for 9–12h continuous Galaxy Tab A11 operation) ---
   public async saveCapture(capture: PhotostripResult): Promise<void> {
     this.memCaptures.set(capture.id, capture);
+    // Keep at most 25 recent captures in RAM so base64 strings never exhaust tablet memory over 12 hours
+    if (this.memCaptures.size > 25) {
+      const oldestKey = this.memCaptures.keys().next().value;
+      if (oldestKey) {
+        this.memCaptures.delete(oldestKey);
+      }
+    }
     const db = await this.dbPromise;
     if (!db) return;
     return new Promise((resolve) => {
       try {
         const tx = db.transaction('captures', 'readwrite');
-        tx.objectStore('captures').put(capture);
+        const store = tx.objectStore('captures');
+        store.put(capture);
+        // Prune IndexedDB captures beyond the latest 60 sessions
+        const getAllReq = store.getAll();
+        getAllReq.onsuccess = () => {
+          const list = (getAllReq.result || []) as PhotostripResult[];
+          if (list.length > 60) {
+            list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+            const toDelete = list.slice(0, list.length - 60);
+            for (const oldItem of toDelete) {
+              if (oldItem?.id) store.delete(oldItem.id);
+            }
+          }
+        };
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
       } catch {

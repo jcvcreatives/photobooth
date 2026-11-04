@@ -40,6 +40,14 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
     density: 'normal',
     escPosCommandMode: 'gs_v_0',
   },
+  tabletEndurance: {
+    enabled: true,
+    idleDimTimeoutSec: 180,
+    idleDimOpacity: 45,
+    bluetoothKeepAlive: true,
+    cameraIdleEcoMode: true,
+    abandonedSessionResetSec: 180,
+  },
   frontScreenMedia: {
     enabled: false,
     mediaType: 'none',
@@ -52,7 +60,7 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
   },
   remoteSyncUrl: 'https://api.snapkiosk.io/v1/kiosks/KIOSK-TAB-01/config',
   autoUpdateEnabled: true,
-  version: '2.7.0-kiosk',
+  version: '2.8.0-kiosk',
   lastSyncTimestamp: Date.now(),
 };
 
@@ -114,9 +122,20 @@ class RemoteConfigService {
         this.config.thermalPrinter.density = 'normal';
         needsSave = true;
       }
+      if (!this.config.tabletEndurance) {
+        this.config.tabletEndurance = {
+          enabled: true,
+          idleDimTimeoutSec: 180,
+          idleDimOpacity: 45,
+          bluetoothKeepAlive: true,
+          cameraIdleEcoMode: true,
+          abandonedSessionResetSec: 180,
+        };
+        needsSave = true;
+      }
       if (
         this.config.thermalPrinter &&
-        (!this.config.thermalPrinter.printerModel || this.config.version !== '2.7.0-kiosk')
+        (!this.config.thermalPrinter.printerModel || this.config.version !== '2.8.0-kiosk')
       ) {
         this.config.thermalPrinter.printerModel = 'xprinter_58iib';
         this.config.thermalPrinter.escPosCommandMode = 'gs_v_0';
@@ -124,7 +143,7 @@ class RemoteConfigService {
         this.config.thermalPrinter.dotsPerLine = 384;
         this.config.thermalPrinter.feedLines = 5;
         this.config.thermalPrinter.autoCut = false;
-        this.config.version = '2.7.0-kiosk';
+        this.config.version = '2.8.0-kiosk';
         needsSave = true;
       }
       if (needsSave) {
