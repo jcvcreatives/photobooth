@@ -359,8 +359,8 @@ class ThermalPrinterService {
           const uuidLower = (char.uuid || '').toLowerCase();
           const prefixIdx = preferredCharPrefixes.findIndex((p) => uuidLower.includes(p));
           let score = prefixIdx >= 0 ? (preferredCharPrefixes.length - prefixIdx) * 10 : 1;
-          // Prefer characteristics supporting GATT Write-With-Response (ACK flow control)
-          if (char.properties.write) {
+          // Prefer characteristics supporting high-speed GATT Write-Without-Response so the stepper motor never pauses
+          if (char.properties.writeWithoutResponse) {
             score += 5;
           }
           candidates.push({ char, score });
@@ -890,79 +890,76 @@ class ThermalPrinterService {
   }
 
   /**
-   * Paces transmission of 8-row (1mm, 392-byte) GS v 0 bands to match the physical thermal head
-   * burn speed of the Xprinter XP-58IIB (~26-30mm/s on dense dithered graphics) so its 4KB (4,096-byte)
-   * internal SRAM receive buffer never overflows and dumps pixel bytes as ASCII garbage text.
+   * High-speed continuous packet pacer for 144-byte (3-row) packets:
+   * - Preloads the first 24 packets (~3.4 KB = 72 rows) at 2ms/packet so the Xprinter XP-58IIB
+   *   immediately exceeds its motor-start threshold and accelerates to full speed.
+   * - Streams remaining packets at a steady 5ms/packet (~28.8 KB/s) with ZERO periodic pauses
+   *   so the stepper motor spins in one uninterrupted motion from top to bottom (eliminating horizontal stop lines).
    */
-  private async waitForThermalHeadBurn(bandIndex: number, extraMs: number = 0): Promise<void> {
-    // Band 0 is the 8-byte ESC @ init header
-    if (bandIndex === 0) {
-      await new Promise((r) => setTimeout(r, 25));
+  private async paceContinuousPacket(packetIndex: number, isUsb: boolean = false): Promise<void> {
+    if (isUsb) {
+      if (packetIndex > 24) {
+        await new Promise((r) => setTimeout(r, 2));
+      }
       return;
     }
-    // Preload the first 4 bands (~1.5 KB) quickly so the stepper motor starts smoothly
-    if (bandIndex <= 4) {
-      await new Promise((r) => setTimeout(r, 18 + extraMs));
+    if (packetIndex < 24) {
+      await new Promise((r) => setTimeout(r, 2));
       return;
     }
-    // Every 8 bands (64 dot-rows = 8mm = 3,136 bytes), pause briefly to let the 4KB buffer drain
-    if (bandIndex % 8 === 0) {
-      await new Promise((r) => setTimeout(r, 75 + extraMs));
-      return;
-    }
-    // Steady-state pacing: 38ms per 8-row (1mm) band (~26mm/s dense photo burn rate)
-    await new Promise((r) => setTimeout(r, 38 + extraMs));
+    await new Promise((r) => setTimeout(r, 5));
   }
 
   /**
-   * Writes a single packet to a Web Bluetooth GATT characteristic with automatic MTU step-down
-   * and GATT ACK flow control so not a single byte of a GS v 0 command is ever dropped or truncated.
+   * Writes a single packet to a Web Bluetooth GATT characteristic using fast writeValueWithoutResponse
+   * when supported (avoiding the 50ms/packet GATT ACK bottleneck that causes motor stop-lines),
+   * with automatic row-aligned MTU step-down (144B -> 96B -> 48B -> 20B) if needed.
    */
-  private bleForceSmallMtu: boolean = false;
+  private bleMaxChunkBytes: number = 144;
 
   private async writeBleChunkSafe(
     char: BluetoothRemoteGATTCharacteristic,
     chunk: Uint8Array
   ): Promise<void> {
-    const canWriteWithResp = Boolean(char.properties.write);
     const canWriteNoResp = Boolean(char.properties.writeWithoutResponse);
+    const canWriteWithResp = Boolean(char.properties.write);
     const anyChar = char as unknown as {
-      writeValueWithResponse?: (value: BufferSource) => Promise<void>;
       writeValueWithoutResponse?: (value: BufferSource) => Promise<void>;
+      writeValueWithResponse?: (value: BufferSource) => Promise<void>;
       writeValue: (value: BufferSource) => Promise<void>;
     };
 
-    const writeSingleSlice = async (slice: Uint8Array) => {
-      // Prefer Write With Response (GATT ACK) whenever supported so the Xprinter XP-58IIB
-      // Bluetooth controller acknowledges each chunk before the next is sent.
-      if (canWriteWithResp) {
-        if (typeof anyChar.writeValueWithResponse === 'function') {
-          await anyChar.writeValueWithResponse(slice as unknown as BufferSource);
-        } else {
-          await anyChar.writeValue(slice as unknown as BufferSource);
-        }
-      } else if (canWriteNoResp && typeof anyChar.writeValueWithoutResponse === 'function') {
+    const writeRaw = async (slice: Uint8Array) => {
+      if (canWriteNoResp && typeof anyChar.writeValueWithoutResponse === 'function') {
         await anyChar.writeValueWithoutResponse(slice as unknown as BufferSource);
-        await new Promise((r) => setTimeout(r, 12));
+      } else if (canWriteWithResp && typeof anyChar.writeValueWithResponse === 'function') {
+        await anyChar.writeValueWithResponse(slice as unknown as BufferSource);
       } else {
         await anyChar.writeValue(slice as unknown as BufferSource);
       }
     };
 
-    if (!this.bleForceSmallMtu && chunk.length <= 104) {
+    if (chunk.length <= this.bleMaxChunkBytes) {
       try {
-        await writeSingleSlice(chunk);
+        await writeRaw(chunk);
         return;
       } catch {
-        // Negotiated BLE ATT MTU is smaller than chunk.length (e.g. 20-byte default BLE 4.0 MTU).
-        // Lock in 20-byte universal BLE sub-slices and immediately send this chunk without losing a byte.
-        this.bleForceSmallMtu = true;
+        // Step down MTU ceiling gracefully (96B = 2 rows, 48B = 1 row, 20B = BLE 4.0 min)
+        this.bleMaxChunkBytes = chunk.length > 96 ? 96 : chunk.length > 48 ? 48 : 20;
       }
     }
 
-    for (let offset = 0; offset < chunk.length; offset += 20) {
-      const subSlice = chunk.slice(offset, offset + 20);
-      await writeSingleSlice(subSlice);
+    const step = this.bleMaxChunkBytes;
+    for (let offset = 0; offset < chunk.length; offset += step) {
+      const subSlice = chunk.slice(offset, offset + step);
+      try {
+        await writeRaw(subSlice);
+      } catch {
+        this.bleMaxChunkBytes = 20;
+        for (let subOff = 0; subOff < subSlice.length; subOff += 20) {
+          await writeRaw(subSlice.slice(subOff, subOff + 20));
+        }
+      }
     }
   }
 
@@ -1002,18 +999,18 @@ class ThermalPrinterService {
         try {
           const bandsToSend =
             commandBands ||
-            (escposBytes ? this.buildPacedPackets([escposBytes], 256) : []);
+            (escposBytes ? this.buildPacedPackets([escposBytes], 512) : []);
           for (let c = 0; c < totalCopies; c++) {
             for (let b = 0; b < bandsToSend.length; b++) {
               const res = window.AndroidPrinter.printUsbBase64(uint8ToBase64(bandsToSend[b]));
               if (!res || !res.startsWith('OK')) throw new Error('USB transfer not ready');
-              await this.waitForThermalHeadBurn(b);
+              await new Promise((r) => setTimeout(r, 4));
             }
             onProgress?.(
               45 + Math.round(((c + 1) / totalCopies) * 50),
               totalCopies > 1 ? `Printing copy ${c + 1} of ${totalCopies}...` : 'Printing via USB...'
             );
-            if (c < totalCopies - 1) await new Promise((r) => setTimeout(r, 900));
+            if (c < totalCopies - 1) await new Promise((r) => setTimeout(r, 700));
           }
           onProgress?.(100, `Printed ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'}!`);
           return { success: true };
@@ -1049,7 +1046,7 @@ class ThermalPrinterService {
         if (this.usbDevice && this.usbEndpointNumber !== null) {
           const bandsToSend =
             commandBands ||
-            (escposBytes ? this.buildPacedPackets([escposBytes], 256) : []);
+            (escposBytes ? this.buildPacedPackets([escposBytes], 512) : []);
           for (let c = 0; c < totalCopies; c++) {
             const copyLabel = totalCopies > 1 ? ` (Copy ${c + 1}/${totalCopies})` : '';
             for (let b = 0; b < bandsToSend.length; b++) {
@@ -1060,11 +1057,11 @@ class ThermalPrinterService {
               const progressRatio = (c + b / bandsToSend.length) / totalCopies;
               const percent = 45 + Math.round(progressRatio * 50);
               onProgress?.(percent, `Printing to USB printer${copyLabel}...`);
-              await this.waitForThermalHeadBurn(b);
+              await new Promise((r) => setTimeout(r, 2));
             }
             soundEffects.playPaperCut();
             if (c < totalCopies - 1) {
-              await new Promise((r) => setTimeout(r, 900));
+              await new Promise((r) => setTimeout(r, 700));
             }
           }
           onProgress?.(100, `Printed ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'} via USB!`);
@@ -1338,9 +1335,9 @@ class ThermalPrinterService {
         bands.push(band);
       }
 
-      // Restore default line spacing (ESC 2), feed lines past tear bar, and optional cut
-      const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, feedLinesCount];
-      if (config.autoCut === true) {
+      // Restore default line spacing (ESC 2), feed lines past cutter/tear bar, and execute automatic paper cut
+      const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, Math.max(5, feedLinesCount)];
+      if (config.autoCut !== false || isXprinter58iiB) {
         footer.push(0x1d, 0x56, 0x42, 0x00);
       }
       bands.push(new Uint8Array(footer));
@@ -1350,7 +1347,7 @@ class ThermalPrinterService {
     // Pure standard Xprinter XP-58IIB ESC/POS initialization:
     // - ESC @ (0x1B, 0x40): Reset printer & clear any stale bytes in SRAM
     // - ESC a 0 (0x1B, 0x61, 0x00): Left alignment so full 384-dot (48-byte) raster rows never wrap
-    // - ESC 3 0 (0x1B, 0x33, 0x00): Zero line-spacing so consecutive 8-row GS v 0 bands stitch seamlessly
+    // - ESC 3 0 (0x1B, 0x33, 0x00): Zero line-spacing so consecutive GS v 0 bands stitch seamlessly
     bands.push(
       new Uint8Array([
         0x1b, 0x40,
@@ -1363,10 +1360,10 @@ class ThermalPrinterService {
     const xL = bytesWidth & 0xff;
     const xH = (bytesWidth >> 8) & 0xff;
 
-    // Emit self-contained 8-row GS v 0 bands (yL = 8, yH = 0, 392 bytes total per band for 58mm).
-    // Never emit a single 480-row (23KB) or 960-row (46KB) GS v 0 command, which overflows the
-    // Xprinter XP-58IIB's 4KB SRAM raster buffer after ~1 inch and dumps pixel bytes as ASCII garbage text.
-    const bandHeight = 8;
+    // Emit 64-row (8mm) GS v 0 bands in default 'gs_v_0' mode (yL = 64, yH = 0, 3,080 bytes < 4KB SRAM buffer).
+    // - Keeps yH = 0 so the Xprinter XP-58IIB 8-bit row counter never overflows into ASCII garbage text.
+    // - Avoids tiny 8-row micro-bands so the thermal printhead and stepper motor sweep smoothly across photos with zero horizontal lines.
+    const bandHeight = commandMode === 'gs_v_0_banded' ? 24 : 64;
 
     for (let startY = 0; startY < height; startY += bandHeight) {
       const currentBandHeight = Math.min(bandHeight, height - startY);
@@ -1401,9 +1398,9 @@ class ThermalPrinterService {
       bands.push(band);
     }
 
-    // Restore default line spacing (ESC 2), feed lines past tear bar, and optional cut
-    const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, feedLinesCount];
-    if (config.autoCut === true) {
+    // Restore default line spacing (ESC 2), advance paper past the cutter/tear bar, and execute automatic paper cut (GS V 66 0)
+    const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, Math.max(5, feedLinesCount)];
+    if (config.autoCut !== false || isXprinter58iiB) {
       footer.push(0x1d, 0x56, 0x42, 0x00);
     }
     bands.push(new Uint8Array(footer));
@@ -1411,13 +1408,13 @@ class ThermalPrinterService {
   }
 
   /**
-   * Splits atomic ESC/POS command bands into Bluetooth/USB write packets of at most `maxBytesPerWrite` (default 104 bytes = 8B header + 2 full 48B rows).
+   * Splits atomic ESC/POS command bands into Bluetooth/USB write packets of at most `maxBytesPerWrite` (default 144 bytes = 3 full 48B rows).
    * For `GS v 0` bands (`band[0] === 0x1d && band[1] === 0x76`), slices packets on EXACT full-row boundaries
    * so every packet ends on a complete dot-row boundary and the `GS v 0` command is never interrupted.
    */
   public buildPacedPackets(
     bands: Uint8Array[],
-    maxBytesPerWrite: number = 104
+    maxBytesPerWrite: number = 144
   ): Uint8Array[] {
     const packets: Uint8Array[] = [];
     for (const band of bands) {
@@ -1428,7 +1425,7 @@ class ThermalPrinterService {
         const firstPacketSize = Math.min(band.length, 8 + firstPacketRows * bytesWidth);
         packets.push(band.slice(0, firstPacketSize));
 
-        // Max complete rows per subsequent packet (for 48B/row 58mm: 2 rows = 96 bytes)
+        // Max complete rows per subsequent packet (for 48B/row 58mm: 3 rows = 144 bytes)
         const rowsPerPacket = Math.max(1, Math.floor(maxBytesPerWrite / bytesWidth));
         const rowAlignedStep = rowsPerPacket * bytesWidth;
 
@@ -1574,6 +1571,8 @@ class ThermalPrinterService {
       dithered.height,
       config
     );
+    // 144 bytes = 3 complete 48-byte rows per packet (keeps printer buffer continuously fed ahead of stepper motor)
+    const pacedPackets = this.buildPacedPackets(commandBands, 144);
     const escposBytes = this.buildEscPosCommands(
       dithered.bitmap,
       dithered.width,
@@ -1582,7 +1581,7 @@ class ThermalPrinterService {
     );
 
     const mode = this.currentStatus.connectionType;
-    const bandProgressStep = Math.max(1, Math.floor(commandBands.length / 6));
+    const packetProgressStep = Math.max(1, Math.floor(pacedPackets.length / 6));
 
     // 1. Universal System / OS Printer Mode (USB Cord or Wireless via Silent Bridge / WebUSB — zero popup)
     if (mode === 'system') {
@@ -1609,22 +1608,22 @@ class ThermalPrinterService {
         try {
           for (let c = 0; c < copies; c++) {
             const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            for (let b = 0; b < commandBands.length; b++) {
-              const b64 = uint8ToBase64(commandBands[b]);
+            for (let p = 0; p < pacedPackets.length; p++) {
+              const b64 = uint8ToBase64(pacedPackets[p]);
               const res = window.AndroidPrinter.printUsbBase64(b64);
               if (!res || !res.startsWith('OK')) {
                 throw new Error(res || 'Android USB transfer failed');
               }
-              if (b % bandProgressStep === 0) {
-                const progressRatio = (c + b / commandBands.length) / copies;
+              if (p % packetProgressStep === 0) {
+                const progressRatio = (c + p / pacedPackets.length) / copies;
                 const percent = 50 + Math.round(progressRatio * 45);
                 onProgress?.(percent, `Streaming to USB OTG printer${copyLabel}... ${percent}%`);
               }
-              await this.waitForThermalHeadBurn(b);
+              await this.paceContinuousPacket(p, true);
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
-              await new Promise((r) => setTimeout(r, 900));
+              await new Promise((r) => setTimeout(r, 700));
             }
           }
           onProgress?.(100, 'USB Print complete!');
@@ -1639,24 +1638,26 @@ class ThermalPrinterService {
         }
       }
 
-      // B. WebUSB Direct Transfer (sends each 392-byte 8-row GS v 0 band as an intact USB bulk transfer)
+      // B. WebUSB Direct Transfer
       if (this.usbDevice && this.usbEndpointNumber !== null) {
         try {
           for (let c = 0; c < copies; c++) {
             const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            for (let b = 0; b < commandBands.length; b++) {
-              const band = commandBands[b];
-              await this.usbDevice.transferOut(this.usbEndpointNumber, band as unknown as BufferSource);
-              if (b % bandProgressStep === 0) {
-                const progressRatio = (c + b / commandBands.length) / copies;
+            for (let p = 0; p < pacedPackets.length; p++) {
+              await this.usbDevice.transferOut(
+                this.usbEndpointNumber,
+                pacedPackets[p] as unknown as BufferSource
+              );
+              if (p % packetProgressStep === 0) {
+                const progressRatio = (c + p / pacedPackets.length) / copies;
                 const percent = 50 + Math.round(progressRatio * 45);
                 onProgress?.(percent, `Streaming to USB printer${copyLabel}... ${percent}%`);
               }
-              await this.waitForThermalHeadBurn(b);
+              await this.paceContinuousPacket(p, true);
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
-              await new Promise((r) => setTimeout(r, 900));
+              await new Promise((r) => setTimeout(r, 700));
             }
           }
           onProgress?.(100, 'Print complete!');
@@ -1678,18 +1679,18 @@ class ThermalPrinterService {
         const writer = this.serialPort.writable.getWriter();
         for (let c = 0; c < copies; c++) {
           const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-          for (let b = 0; b < commandBands.length; b++) {
-            await writer.write(commandBands[b]);
-            if (b % bandProgressStep === 0) {
-              const progressRatio = (c + b / commandBands.length) / copies;
+          for (let p = 0; p < pacedPackets.length; p++) {
+            await writer.write(pacedPackets[p]);
+            if (p % packetProgressStep === 0) {
+              const progressRatio = (c + p / pacedPackets.length) / copies;
               const percent = 50 + Math.round(progressRatio * 45);
               onProgress?.(percent, `Writing to Serial USB${copyLabel}... ${percent}%`);
             }
-            await this.waitForThermalHeadBurn(b);
+            await this.paceContinuousPacket(p, true);
           }
           soundEffects.playPaperCut();
           if (c < copies - 1) {
-            await new Promise((r) => setTimeout(r, 900));
+            await new Promise((r) => setTimeout(r, 700));
           }
         }
         writer.releaseLock();
@@ -1717,22 +1718,22 @@ class ThermalPrinterService {
           try {
             for (let c = 0; c < copies; c++) {
               const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-              for (let b = 0; b < commandBands.length; b++) {
-                const b64 = uint8ToBase64(commandBands[b]);
+              for (let p = 0; p < pacedPackets.length; p++) {
+                const b64 = uint8ToBase64(pacedPackets[p]);
                 const res = window.AndroidPrinter.printBluetoothBase64(b64);
                 if (!res || !res.startsWith('OK')) {
                   throw new Error(res || 'Bluetooth SPP print failed');
                 }
-                if (b % bandProgressStep === 0) {
-                  const progressRatio = (c + b / commandBands.length) / copies;
+                if (p % packetProgressStep === 0) {
+                  const progressRatio = (c + p / pacedPackets.length) / copies;
                   const percent = 50 + Math.round(progressRatio * 45);
                   onProgress?.(percent, `Transmitting via Bluetooth SPP${copyLabel}... ${percent}%`);
                 }
-                await this.waitForThermalHeadBurn(b, 8);
+                await this.paceContinuousPacket(p, false);
               }
               soundEffects.playPaperCut();
               if (c < copies - 1) {
-                await new Promise((r) => setTimeout(r, 950));
+                await new Promise((r) => setTimeout(r, 800));
               }
             }
             onProgress?.(100, 'Bluetooth Print complete!');
@@ -1758,30 +1759,29 @@ class ThermalPrinterService {
 
         if (this.bluetoothCharacteristic) {
           try {
-            this.bleForceSmallMtu = false;
+            this.bleMaxChunkBytes = 144;
             const char = this.bluetoothCharacteristic;
+            const canWriteNoResp = Boolean(char.properties.writeWithoutResponse);
 
             for (let c = 0; c < copies; c++) {
               const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-              for (let b = 0; b < commandBands.length; b++) {
-                // Slice this single 8-row (392B) band into row-aligned <=104B packets (104B + 96B + 96B + 96B)
-                const bandPackets = this.buildPacedPackets([commandBands[b]], 104);
-                for (let p = 0; p < bandPackets.length; p++) {
-                  await this.writeBleChunkSafe(char, bandPackets[p]);
-                }
+              for (let p = 0; p < pacedPackets.length; p++) {
+                await this.writeBleChunkSafe(char, pacedPackets[p]);
 
-                if (b % bandProgressStep === 0) {
-                  const progressRatio = (c + b / commandBands.length) / copies;
+                if (p % packetProgressStep === 0) {
+                  const progressRatio = (c + p / pacedPackets.length) / copies;
                   const percent = 50 + Math.round(progressRatio * 45);
                   onProgress?.(percent, `Transmitting via Bluetooth${copyLabel}... ${percent}%`);
                 }
 
-                // Pace each 8-row band so the Xprinter XP-58IIB 4KB UART receive buffer never overflows
-                await this.waitForThermalHeadBurn(b, 10);
+                // Keep printer receive buffer continuously ahead of stepper motor (~90mm/s) with zero motor stops
+                if (canWriteNoResp) {
+                  await this.paceContinuousPacket(p, false);
+                }
               }
               soundEffects.playPaperCut();
               if (c < copies - 1) {
-                await new Promise((r) => setTimeout(r, 950));
+                await new Promise((r) => setTimeout(r, 800));
               }
             }
             onProgress?.(100, 'Print complete!');

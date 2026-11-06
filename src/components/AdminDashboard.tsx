@@ -2199,8 +2199,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           printerModel: 'xprinter_58iib',
                           paperWidthMm: 58,
                           dotsPerLine: 384,
-                          feedLines: 5,
-                          autoCut: false,
+                          feedLines: 6,
+                          autoCut: true,
                           escPosCommandMode: 'gs_v_0',
                         },
                       };
@@ -2235,8 +2235,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           printerModel: 'xprinter_58iib',
                           paperWidthMm: 58,
                           dotsPerLine: 384,
-                          feedLines: 5,
-                          autoCut: false,
+                          feedLines: 6,
+                          autoCut: true,
                           escPosCommandMode: 'gs_v_0',
                         },
                       };
@@ -2305,8 +2305,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 printerModel: modelItem.id,
                                 paperWidthMm: is80 ? 80 : 58,
                                 dotsPerLine: is80 ? 576 : 384,
-                                feedLines: modelItem.id === 'xprinter_58iib' ? 5 : 4,
-                                autoCut: is80,
+                                feedLines: modelItem.id === 'xprinter_58iib' ? 6 : 4,
+                                autoCut: is80 || modelItem.id === 'xprinter_58iib',
                               },
                             };
                             setLocalConfig(updated);
