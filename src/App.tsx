@@ -285,7 +285,11 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-dvh min-h-screen w-full bg-[#fafaf9] text-zinc-900 overflow-hidden font-sans select-none">
+    <div
+      className={`flex flex-col h-dvh min-h-screen w-full bg-[#fafaf9] text-zinc-900 overflow-hidden font-sans ${
+        showMobileShareModal ? 'select-auto' : 'select-none'
+      }`}
+    >
       {/* Kiosk Status & Hardware Bar */}
       <KioskNavBar
         currentScreen={currentScreen}

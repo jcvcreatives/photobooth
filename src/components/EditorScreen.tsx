@@ -32,6 +32,7 @@ import {
   DrawingPath,
   PhotostripResult,
 } from '../types';
+import { getCurrentAppBaseUrl } from '../services/offlineQrTransfer';
 import {
   THERMAL_FRAME_THEMES,
   DIGITAL_COLOR_THEMES,
@@ -401,7 +402,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
       const fullDataUrl = colorCanvas.toDataURL('image/jpeg', 0.95);
       const shareId = `snap_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      const shareUrl = `${window.location.origin}/?share=${shareId}`;
+      const shareUrl = `${getCurrentAppBaseUrl()}?share=${shareId}`;
 
       const result: PhotostripResult = {
         id: shareId,

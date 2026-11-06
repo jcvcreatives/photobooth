@@ -551,10 +551,10 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             </div>
 
             <h3 className="text-base font-bold text-zinc-950 mb-0.5">
-              Scan Offline QR with Smartphone
+              Scan with iPhone (iOS) or Android
             </h3>
             <p className="text-[11px] text-zinc-500 mb-2.5 leading-snug">
-              Your photo is compressed directly inside this QR code — works with <strong>zero internet</strong>!
+              Your full-color photo is embedded directly inside this QR code — open in <strong>Safari or Chrome</strong> and tap <strong>Save to Photos</strong>!
             </p>
 
             {/* Offline QR Mode Switcher */}
@@ -568,7 +568,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                     : 'text-zinc-500 hover:text-zinc-800'
                 }`}
               >
-                Self-Decoding Link QR
+                📱 iOS &amp; Android Link QR
               </button>
               <button
                 type="button"
@@ -587,20 +587,34 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             {showHotspotSettings && (
               <div className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-2.5 mb-2.5 text-left space-y-1.5">
                 <label className="text-[10px] font-bold text-zinc-700 uppercase tracking-wider block">
-                  Galaxy Tab A11 Hotspot / Local IP (Optional):
+                  Custom Hotspot / App Base URL (Leave blank for Auto):
                 </label>
-                <input
-                  type="text"
-                  value={hotspotOrigin}
-                  onChange={(e) => {
-                    setHotspotOrigin(e.target.value);
-                    setSavedHotspotOrigin(e.target.value);
-                  }}
-                  placeholder={window.location.origin}
-                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded-lg border border-zinc-300 bg-white text-zinc-900 focus:outline-none focus:ring-1 focus:ring-black"
-                />
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    value={hotspotOrigin}
+                    onChange={(e) => {
+                      setHotspotOrigin(e.target.value);
+                      setSavedHotspotOrigin(e.target.value);
+                    }}
+                    placeholder={offlineQrPacket?.resolvedBaseUrl || window.location.href.split('?')[0]}
+                    className="flex-1 px-2.5 py-1.5 text-xs font-mono rounded-lg border border-zinc-300 bg-white text-zinc-900 focus:outline-none focus:ring-1 focus:ring-black"
+                  />
+                  {hotspotOrigin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHotspotOrigin('');
+                        setSavedHotspotOrigin('');
+                      }}
+                      className="px-2 py-1 text-[10px] font-semibold rounded-lg bg-zinc-200 hover:bg-zinc-300 text-zinc-800 cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
                 <p className="text-[10px] text-zinc-500 leading-tight">
-                  The QR embeds the full compressed photo inside <code className="font-mono">#offline-photo=...</code> so phones decode it offline without needing a database.
+                  Active Target: <code className="font-mono text-zinc-700">{offlineQrPacket?.resolvedBaseUrl || 'Auto'}</code>
                 </p>
               </div>
             )}
@@ -620,7 +634,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
               )}
               {offlineQrPacket && (
                 <div className="mt-1 text-[9px] font-mono text-zinc-500">
-                  Embedded Photo Payload • {(offlineQrPacket.byteLength / 1024).toFixed(1)} KB • No Server Needed
+                  iOS &amp; Android Ready • {(offlineQrPacket.byteLength / 1024).toFixed(1)} KB Full-Color Payload
                 </div>
               )}
             </div>

@@ -16,13 +16,38 @@ export interface OfflineQrPacket {
   compactImageDataUrl: string;
   byteLength: number;
   dimensions: { width: number; height: number };
+  resolvedBaseUrl: string;
 }
 
-const HOTSPOT_ORIGIN_KEY = 'jcv_offline_hotspot_origin';
-const PREFERRED_QR_MODE_KEY = 'jcv_offline_qr_mode';
+const HOTSPOT_ORIGIN_KEY = 'jcv_offline_hotspot_origin_v2';
+const PREFERRED_QR_MODE_KEY = 'jcv_offline_qr_mode_v2';
+const CLOUD_FALLBACK_URL =
+  'https://ais-pre-viyeqwfb7gkjv5s5dxi6sd-397788646776.asia-northeast1.run.app/';
+
+/**
+ * Returns the full base URL of the running web app, preserving any GitHub Pages
+ * repository subdirectory path (e.g. https://jcvcreatives.github.io/photobooth/)
+ * so scanning the QR code on iOS/Android never hits a root-domain 404.
+ */
+export function getCurrentAppBaseUrl(): string {
+  if (typeof window === 'undefined') return CLOUD_FALLBACK_URL;
+  const { protocol, origin, pathname } = window.location;
+  if (!origin || origin === 'null' || protocol === 'file:' || protocol === 'content:') {
+    return CLOUD_FALLBACK_URL;
+  }
+  const cleanPath = (pathname || '')
+    .replace(/\/index\.html?$/i, '')
+    .replace(/\/+$/, '');
+  return `${origin}${cleanPath}/`;
+}
 
 export function getSavedHotspotOrigin(): string {
-  return safeStorageGet(HOTSPOT_ORIGIN_KEY) || '';
+  const saved = (safeStorageGet(HOTSPOT_ORIGIN_KEY) || '').trim();
+  // Ignore bare github.io root URLs that lack a repo path or cause 404s
+  if (/^https?:\/\/[^/]+\.github\.io\/?$/i.test(saved)) {
+    return '';
+  }
+  return saved;
 }
 
 export function setSavedHotspotOrigin(origin: string): void {
@@ -42,27 +67,58 @@ export function setSavedOfflineQrMode(mode: OfflineQrMode): void {
 }
 
 /**
- * Compresses a photostrip canvas into an ultra-compact WebP (or JPEG fallback) Data URI
- * guaranteed to fit inside a single Version-40 QR code (<= maxChars characters).
+ * Loads an image Data URL (such as the full-color `result.compositeDataUrl`) into an HTMLCanvasElement.
+ */
+async function loadDataUrlToCanvas(
+  dataUrl: string,
+  fallbackCanvas: HTMLCanvasElement
+): Promise<HTMLCanvasElement> {
+  if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+    return fallbackCanvas;
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth || img.width || 600;
+      c.height = img.naturalHeight || img.height || 1800;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        resolve(c);
+      } else {
+        resolve(fallbackCanvas);
+      }
+    };
+    img.onerror = () => resolve(fallbackCanvas);
+    img.src = dataUrl;
+  });
+}
+
+/**
+ * Compresses a photostrip canvas into an ultra-compact Data URI guaranteed to fit inside
+ * a single Version-40 QR code (<= maxChars characters).
  */
 export function compressCanvasForOfflineQr(
   sourceCanvas: HTMLCanvasElement,
-  maxChars: number = 2150
+  maxChars: number = 2150,
+  forceJpegForIos: boolean = false
 ): { dataUrl: string; width: number; height: number } {
   const srcW = sourceCanvas.width || 600;
   const srcH = sourceCanvas.height || 1800;
   const aspect = srcH / srcW;
 
-  // Candidate widths from highest detail to ultra-compact fallback
-  const candidateWidths = [160, 144, 128, 114, 100, 88, 76, 64];
-  const candidateQualities = [0.52, 0.44, 0.36, 0.28, 0.22, 0.18];
+  const candidateWidths = [168, 152, 136, 122, 108, 96, 84, 72, 64];
+  const candidateQualities = [0.56, 0.48, 0.4, 0.32, 0.25, 0.2];
 
   const scratch = document.createElement('canvas');
   const ctx = scratch.getContext('2d');
 
   let bestDataUrl = '';
-  let bestW = 88;
-  let bestH = Math.round(88 * aspect);
+  let bestW = 96;
+  let bestH = Math.round(96 * aspect);
 
   for (const w of candidateWidths) {
     const h = Math.max(48, Math.round(w * aspect));
@@ -78,9 +134,11 @@ export function compressCanvasForOfflineQr(
     }
 
     for (const q of candidateQualities) {
-      // Prefer image/webp because WebP headers are ~70% smaller than JPEG headers
-      let attempt = scratch.toDataURL('image/webp', q);
-      if (!attempt.startsWith('data:image/webp')) {
+      let attempt = '';
+      if (!forceJpegForIos) {
+        attempt = scratch.toDataURL('image/webp', q);
+      }
+      if (!attempt || !attempt.startsWith('data:image/webp')) {
         attempt = scratch.toDataURL('image/jpeg', q);
       }
 
@@ -102,25 +160,57 @@ export function compressCanvasForOfflineQr(
 }
 
 /**
- * Generates an Offline QR Code that embeds the photo data directly inside the QR payload
- * so no internet or cloud server is needed when scanning.
+ * Verifies that a base URL does not return a 404 (e.g. an unconfigured GitHub Pages root domain).
+ * If it returns 404, falls back to the live Cloud App URL so iPhones can always open the viewer.
+ */
+async function resolveReachableBaseUrl(customHostOrigin?: string): Promise<string> {
+  const custom = (customHostOrigin || '').trim();
+  let candidate = custom ? custom.replace(/\/+$/, '') + '/' : getCurrentAppBaseUrl();
+
+  // If the candidate is a bare *.github.io root without a repo path, check if it 404s
+  if (/^https?:\/\/[^/]+\.github\.io\/$/i.test(candidate)) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 1800);
+      const resp = await fetch(candidate, { method: 'HEAD', signal: controller.signal });
+      clearTimeout(timer);
+      if (resp.status === 404) {
+        return CLOUD_FALLBACK_URL;
+      }
+    } catch {
+      // If offline or blocked by CORS on a custom github.io root, prefer current full path or cloud fallback
+      const currentFull = getCurrentAppBaseUrl();
+      if (!/^https?:\/\/[^/]+\.github\.io\/$/i.test(currentFull)) {
+        return currentFull;
+      }
+      return CLOUD_FALLBACK_URL;
+    }
+  }
+
+  return candidate;
+}
+
+/**
+ * Generates an iOS & Android compatible Offline QR Code that embeds the FULL-COLOR photo data
+ * directly inside the QR payload so no database or backend server lookup is required.
  */
 export async function buildOfflineQrPacket(
-  sourceCanvas: HTMLCanvasElement,
+  fallbackCanvas: HTMLCanvasElement,
   result: PhotostripResult,
   mode: OfflineQrMode,
   customHostOrigin?: string
 ): Promise<OfflineQrPacket> {
-  const rawOrigin = (customHostOrigin || '').trim() || window.location.origin;
-  const cleanOrigin = rawOrigin.replace(/\/+$/, '');
+  const resolvedBaseUrl = await resolveReachableBaseUrl(customHostOrigin);
+
+  // Always prefer the full-color digital photostrip (result.compositeDataUrl) over the monochrome thermal canvas
+  const colorCanvas = await loadDataUrlToCanvas(result.compositeDataUrl, fallbackCanvas);
 
   if (mode === 'direct_data_uri') {
-    // Pure Data URI inside the QR code (zero URL wrapper, pure image data URI)
-    const compressed = compressCanvasForOfflineQr(sourceCanvas, 2350);
+    const compressed = compressCanvasForOfflineQr(colorCanvas, 2300, true);
     const payloadString = compressed.dataUrl;
     const qrDataUrl = await QRCode.toDataURL(payloadString, {
       errorCorrectionLevel: 'L',
-      width: 380,
+      width: 400,
       margin: 2,
       color: { dark: '#18181b', light: '#ffffff' },
     });
@@ -132,28 +222,25 @@ export async function buildOfflineQrPacket(
       compactImageDataUrl: compressed.dataUrl,
       byteLength: payloadString.length,
       dimensions: { width: compressed.width, height: compressed.height },
+      resolvedBaseUrl,
     };
   }
 
-  // 'offline_url_hash': Self-decoding URL hash (#offline-photo=...)
-  // Works offline via cached PWA or when connected to the tablet's local Wi-Fi Hotspot
-  const prefix = `${cleanOrigin}/?share=${encodeURIComponent(result.id)}#offline-photo=`;
-  // Keep total URL length under 2350 chars so Version-40 Low ECC QR encodes cleanly
-  const availableForImage = Math.max(900, 2250 - prefix.length);
-  const compressed = compressCanvasForOfflineQr(sourceCanvas, availableForImage);
+  // 'offline_url_hash': iOS Camera & Android Camera compatible URL with embedded #offline-photo=...
+  const prefix = `${resolvedBaseUrl}?share=${encodeURIComponent(result.id)}#offline-photo=`;
+  const availableForImage = Math.max(900, 2220 - prefix.length);
+  const compressed = compressCanvasForOfflineQr(colorCanvas, availableForImage, false);
 
-  // Strip the "data:image/webp;base64," or "data:image/jpeg;base64," prefix to save ~23 chars & avoid %2F URL-encoding bloat
   const isWebp = compressed.dataUrl.startsWith('data:image/webp;base64,');
   const formatCode = isWebp ? 'w' : 'j';
   const rawBase64 = compressed.dataUrl.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
-  // Convert standard base64 to URL-safe base64 (- and _ instead of + and /) so no percent-encoding expansion occurs
   const urlSafeBase64 = rawBase64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-  const payloadString = `${cleanOrigin}/?share=${encodeURIComponent(result.id)}#offline-photo=${formatCode}.${urlSafeBase64}`;
+  const payloadString = `${prefix}${formatCode}.${urlSafeBase64}`;
 
   const qrDataUrl = await QRCode.toDataURL(payloadString, {
     errorCorrectionLevel: 'L',
-    width: 380,
+    width: 400,
     margin: 2,
     color: { dark: '#18181b', light: '#ffffff' },
   });
@@ -165,23 +252,85 @@ export async function buildOfflineQrPacket(
     compactImageDataUrl: compressed.dataUrl,
     byteLength: payloadString.length,
     dimensions: { width: compressed.width, height: compressed.height },
+    resolvedBaseUrl,
   };
 }
 
 /**
- * Decodes an `#offline-photo=...` hash from `window.location.hash` into a `PhotostripResult`
- * so the guest's phone can view and save the photostrip 100% offline with zero server/DB lookup.
+ * Upscales a compact QR-embedded image into a high-resolution JPEG Data URL (600px wide)
+ * so iOS Safari and iOS Chrome natively support "Save to Photos" (Camera Roll) and long-press save.
+ */
+export async function upscaleToIosCompatibleJpeg(sourceDataUrl: string): Promise<string> {
+  if (!sourceDataUrl || !sourceDataUrl.startsWith('data:image/')) {
+    return sourceDataUrl;
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const srcW = img.naturalWidth || img.width || 120;
+      const srcH = img.naturalHeight || img.height || 360;
+      const targetW = Math.max(600, srcW);
+      const targetH = Math.round(targetW * (srcH / srcW));
+
+      // Two-step progressive bicubic-style canvas upscale for smooth edges
+      const stepCanvas = document.createElement('canvas');
+      stepCanvas.width = Math.round((srcW + targetW) / 2);
+      stepCanvas.height = Math.round((srcH + targetH) / 2);
+      const stepCtx = stepCanvas.getContext('2d');
+      if (stepCtx) {
+        stepCtx.fillStyle = '#ffffff';
+        stepCtx.fillRect(0, 0, stepCanvas.width, stepCanvas.height);
+        stepCtx.imageSmoothingEnabled = true;
+        stepCtx.imageSmoothingQuality = 'high';
+        stepCtx.drawImage(img, 0, 0, stepCanvas.width, stepCanvas.height);
+      }
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = targetW;
+      outCanvas.height = targetH;
+      const outCtx = outCanvas.getContext('2d');
+      if (outCtx) {
+        outCtx.fillStyle = '#ffffff';
+        outCtx.fillRect(0, 0, targetW, targetH);
+        outCtx.imageSmoothingEnabled = true;
+        outCtx.imageSmoothingQuality = 'high';
+        outCtx.drawImage(stepCtx ? stepCanvas : img, 0, 0, targetW, targetH);
+        const jpegDataUrl = outCanvas.toDataURL('image/jpeg', 0.94);
+        stepCanvas.width = 0;
+        outCanvas.width = 0;
+        resolve(jpegDataUrl);
+      } else {
+        resolve(sourceDataUrl);
+      }
+    };
+    img.onerror = () => resolve(sourceDataUrl);
+    img.src = sourceDataUrl;
+  });
+}
+
+/**
+ * Decodes an `#offline-photo=...` hash (or `?offline-photo=...` query param) from `window.location`
+ * into a `PhotostripResult` so the guest's iPhone/Android can view and save the photostrip
+ * with zero server or database lookup.
  */
 export function decodeOfflinePhotoFromLocation(
   search: string,
   hash: string
 ): PhotostripResult | null {
   try {
-    if (!hash || !hash.includes('offline-photo=')) return null;
+    let encodedPhoto: string | null = null;
 
-    const cleanHash = hash.startsWith('#') ? hash.slice(1) : hash;
-    const hashParams = new URLSearchParams(cleanHash);
-    const encodedPhoto = hashParams.get('offline-photo');
+    if (hash && hash.includes('offline-photo=')) {
+      const cleanHash = hash.startsWith('#') ? hash.slice(1) : hash;
+      const hashParams = new URLSearchParams(cleanHash);
+      encodedPhoto = hashParams.get('offline-photo');
+    }
+
+    if (!encodedPhoto && search && search.includes('offline-photo=')) {
+      const searchParams = new URLSearchParams(search);
+      encodedPhoto = searchParams.get('offline-photo');
+    }
+
     if (!encodedPhoto) return null;
 
     let dataUrl = '';
@@ -221,12 +370,12 @@ export function decodeOfflinePhotoFromLocation(
 }
 
 /**
- * Converts a Data URL into a File object for Web Share API Level 2 (Quick Share / Nearby Share / Bluetooth).
+ * Converts a Data URL into a File object for iOS Share Sheet ("Save Image" to Photos) and Android Quick Share.
  */
-function dataUrlToFile(dataUrl: string, filename: string): File {
+export function dataUrlToFile(dataUrl: string, filename: string): File {
   const parts = dataUrl.split(',');
   const mimeMatch = parts[0].match(/:(.*?);/);
-  const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
   const binary = atob(parts[1]);
   const array = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -236,25 +385,34 @@ function dataUrlToFile(dataUrl: string, filename: string): File {
 }
 
 /**
- * Triggers native Android Quick Share / Nearby Share / Bluetooth / AirDrop file transfer
- * directly from the Galaxy Tab A11 at 100% full uncompressed resolution without needing internet.
+ * Detects whether the guest device is an iPhone / iPad (iOS).
+ */
+export function isIosDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/**
+ * Saves or shares the photostrip on iOS (opens native iOS "Save Image" to Camera Roll sheet)
+ * and Android (opens Quick Share / Nearby Share / Downloads).
  */
 export async function shareOfflineViaQuickShare(
   result: PhotostripResult,
   canvas?: HTMLCanvasElement | null
 ): Promise<{ shared: boolean; message: string }> {
   try {
-    const fullDataUrl = canvas
-      ? canvas.toDataURL('image/png', 1.0)
-      : result.compositeDataUrl;
+    // Always convert to high-compatibility JPEG so iOS Photos ("Save Image") accepts it 100% of the time
+    const rawSourceUrl = result.compositeDataUrl || (canvas ? canvas.toDataURL('image/jpeg', 0.95) : '');
+    const iosReadyJpegUrl = await upscaleToIosCompatibleJpeg(rawSourceUrl);
 
     const stripFile = dataUrlToFile(
-      fullDataUrl,
-      `GobbleHaus-Photostrip-${result.id}.png`
+      iosReadyJpegUrl,
+      `GobbleHaus-Photostrip-${result.id}.jpg`
     );
 
     const filesToShare: File[] = [stripFile];
-    if (result.photos && result.photos.length > 1) {
+    if (!isIosDevice() && result.photos && result.photos.length > 1) {
       result.photos.forEach((rawUrl, idx) => {
         if (rawUrl && rawUrl.startsWith('data:image/')) {
           filesToShare.push(
@@ -269,48 +427,62 @@ export async function shareOfflineViaQuickShare(
     };
 
     if (typeof nav.share === 'function') {
-      if (typeof nav.canShare === 'function' && nav.canShare({ files: filesToShare })) {
+      // On iOS Safari & Chrome, sharing a single JPEG file with no extra text/URL
+      // prominently displays "Save Image" at the top of the iOS Share Sheet!
+      if (isIosDevice() && typeof nav.canShare === 'function' && nav.canShare({ files: [stripFile] })) {
         await nav.share({
-          title: 'Gobble Haus Photo Booth',
-          text: `Session #${result.id} — Full Resolution Photostrip`,
-          files: filesToShare,
-        });
-        return {
-          shared: true,
-          message: 'Full-resolution photos shared via Quick Share / Bluetooth!',
-        };
-      } else if (typeof nav.canShare === 'function' && nav.canShare({ files: [stripFile] })) {
-        await nav.share({
-          title: 'Gobble Haus Photo Booth',
-          text: `Session #${result.id} — Full Resolution Photostrip`,
           files: [stripFile],
         });
         return {
           shared: true,
-          message: 'Photostrip shared via Quick Share / Bluetooth!',
+          message: 'Tap "Save Image" in the menu to save to your iPhone Photos!',
+        };
+      }
+
+      if (typeof nav.canShare === 'function' && nav.canShare({ files: filesToShare })) {
+        await nav.share({
+          title: 'Gobble Haus Photo Booth',
+          files: filesToShare,
+        });
+        return {
+          shared: true,
+          message: 'Photo shared successfully!',
+        };
+      } else if (typeof nav.canShare === 'function' && nav.canShare({ files: [stripFile] })) {
+        await nav.share({
+          files: [stripFile],
+        });
+        return {
+          shared: true,
+          message: 'Photo shared successfully!',
         };
       }
     }
 
-    // Fallback if Web Share API Level 2 is not supported on this browser: trigger direct local file download
+    // Fallback: Blob URL download
+    const blob = new Blob([await stripFile.arrayBuffer()], { type: 'image/jpeg' });
+    const blobUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = fullDataUrl;
-    link.download = `GobbleHaus-Photostrip-${result.id}.png`;
+    link.href = blobUrl;
+    link.download = `GobbleHaus-Photostrip-${result.id}.jpg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
 
     return {
       shared: true,
-      message: 'Full-resolution photostrip saved to device Downloads!',
+      message: isIosDevice()
+        ? 'Photo downloaded! Or press & hold the photo above and tap "Save to Photos".'
+        : 'Full-resolution photostrip saved to Downloads!',
     };
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
-      return { shared: false, message: 'Share cancelled.' };
+      return { shared: false, message: '' };
     }
     return {
       shared: false,
-      message: 'Unable to open system share sheet on this browser.',
+      message: 'Press & hold the photo above and tap "Save to Photos".',
     };
   }
 }

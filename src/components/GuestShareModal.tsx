@@ -20,7 +20,11 @@ import {
 import { PhotostripResult } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { emailDeliveryService } from '../services/email';
-import { shareOfflineViaQuickShare } from '../services/offlineQrTransfer';
+import {
+   shareOfflineViaQuickShare,
+  upscaleToIosCompatibleJpeg,
+  isIosDevice,
+} from '../services/offlineQrTransfer';
 
 interface GuestShareModalProps {
   result: PhotostripResult;
@@ -31,12 +35,30 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'strip' | 'gif' | 'email' | 'thermal' | 'individual'>('strip');
   const [gifFrameIndex, setGifFrameIndex] = useState(0);
+  const [iosReadyJpegUrl, setIosReadyJpegUrl] = useState<string>(result.compositeDataUrl);
 
   // Email form states
   const [emailInput, setEmailInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sentMessage, setSentMessage] = useState<string | null>(null);
   const [quickShareMsg, setQuickShareMsg] = useState<string | null>(null);
+
+  const isIos = isIosDevice();
+
+  // Convert photostrip to high-res standard JPEG so iOS Safari & Chrome support "Save to Photos"
+  React.useEffect(() => {
+    let cancelled = false;
+    upscaleToIosCompatibleJpeg(result.compositeDataUrl)
+      .then((jpegUrl) => {
+        if (!cancelled && jpegUrl) {
+          setIosReadyJpegUrl(jpegUrl);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [result.compositeDataUrl]);
 
   // Auto-cycle through photos to create live motion GIF player
   React.useEffect(() => {
@@ -59,7 +81,9 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
   };
 
   const handleSendEmail = async () => {
@@ -72,7 +96,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
       const res = await emailDeliveryService.sendPhotoEmail({
         recipientEmail: emailInput.trim(),
         photostripId: result.id,
-        photostripUrl: result.compositeDataUrl,
+        photostripUrl: iosReadyJpegUrl || result.compositeDataUrl,
         eventTitle: result.eventTitle || 'JCVcreatives Photobooth',
       });
       setSentMessage(res.message);
@@ -85,7 +109,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 select-none animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
       <div className="relative w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="p-4 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
@@ -96,10 +120,10 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
                 <span>Guest Digital Portal</span>
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[9px] font-mono">
                   <WifiOff className="w-2.5 h-2.5" />
-                  OFFLINE READY
+                  iOS &amp; ANDROID READY
                 </span>
               </div>
-              <div className="text-[10px] text-zinc-400">Save directly to phone with zero internet</div>
+              <div className="text-[10px] text-zinc-400">Save directly to iPhone Photos or Android Gallery</div>
             </div>
           </div>
           <button
@@ -186,30 +210,39 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
         <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center">
           {activeTab === 'strip' && (
             <div className="flex flex-col items-center w-full">
-              <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-3 max-h-[44vh]">
-                <img src={result.compositeDataUrl} alt="Photostrip" className="max-h-[42vh] w-auto object-contain" />
+              <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-2 max-h-[42vh] bg-white">
+                <img
+                  src={iosReadyJpegUrl}
+                  alt="Photostrip"
+                  className="max-h-[40vh] w-auto object-contain select-auto pointer-events-auto"
+                />
               </div>
-              <p className="text-[10px] text-zinc-400 mb-2.5 text-center">
-                Full-color archival keepsake photostrip — ready for offline save
+              <p className="text-[10px] text-amber-300 font-medium mb-2.5 text-center">
+                📱 <strong>iPhone / iOS Tip:</strong> Tap the green button below and select <strong>&quot;Save Image&quot;</strong>, or <strong>Press &amp; Hold the photo above</strong> and tap <strong>&quot;Save to Photos&quot;</strong>!
               </p>
               <div className="w-full space-y-2">
                 <button
-                  onClick={() => downloadImage(result.compositeDataUrl, `photostrip_${result.id}.png`)}
-                  className="w-full py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5 text-zinc-950" />
-                  <span>Save Photostrip to Phone</span>
-                </button>
-                <button
                   onClick={async () => {
                     soundEffects.playTap();
-                    const res = await shareOfflineViaQuickShare(result);
-                    setQuickShareMsg(res.message);
+                    const res = await shareOfflineViaQuickShare({
+                      ...result,
+                      compositeDataUrl: iosReadyJpegUrl,
+                    });
+                    if (res.message) {
+                      setQuickShareMsg(res.message);
+                    }
                   }}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                 >
                   <Share2 className="w-3.5 h-3.5 text-white" />
-                  <span>Quick Share / Bluetooth Transfer (Offline)</span>
+                  <span>{isIos ? 'Save to iPhone Photos (Camera Roll)' : 'Save / Quick Share Photo'}</span>
+                </button>
+                <button
+                  onClick={() => downloadImage(iosReadyJpegUrl, `GobbleHaus-Photostrip-${result.id}.jpg`)}
+                  className="w-full py-2 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-zinc-950" />
+                  <span>Download Photostrip (.JPG)</span>
                 </button>
                 {quickShareMsg && (
                   <div className="text-[11px] text-emerald-400 text-center pt-0.5">
