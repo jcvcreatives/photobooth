@@ -7,7 +7,6 @@ import React, { useState } from 'react';
 import {
   Smartphone,
   Download,
-  Copy,
   Check,
   X,
   Mail,
@@ -34,17 +33,22 @@ interface GuestShareModalProps {
 }
 
 export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClose }) => {
-  const [copied, setCopied] = useState(false);
+  const isAlreadyFullHd = Boolean(
+    result.compositeDataUrl && result.compositeDataUrl.length > 45000
+  );
+
   const [activeTab, setActiveTab] = useState<'strip' | 'gif' | 'email' | 'thermal' | 'individual'>('strip');
   const [gifFrameIndex, setGifFrameIndex] = useState(0);
-  const [iosReadyJpegUrl, setIosReadyJpegUrl] = useState<string>(result.compositeDataUrl);
+  // Do NOT initialize with the tiny raw QR thumbnail; wait for HD vector reconstruction or Full-HD stream
+  const [iosReadyJpegUrl, setIosReadyJpegUrl] = useState<string>(
+    isAlreadyFullHd ? result.compositeDataUrl : ''
+  );
   const [thermalReadyUrl, setThermalReadyUrl] = useState<string>(
-    result.thermalRasterDataUrl || result.compositeDataUrl
+    isAlreadyFullHd ? result.thermalRasterDataUrl || result.compositeDataUrl : ''
   );
-  const [hdPhotos, setHdPhotos] = useState<string[]>(result.photos);
-  const [isHdSynced, setIsHdSynced] = useState<boolean>(
-    Boolean(result.compositeDataUrl && result.compositeDataUrl.length > 45000)
-  );
+  const [hdPhotos, setHdPhotos] = useState<string[]>(isAlreadyFullHd ? result.photos : []);
+  const [isHdSynced, setIsHdSynced] = useState<boolean>(isAlreadyFullHd);
+  const [syncProgress, setSyncProgress] = useState<number>(isAlreadyFullHd ? 100 : 12);
 
   // Email form states
   const [emailInput, setEmailInput] = useState('');
@@ -54,15 +58,15 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
 
   const isIos = isIosDevice();
 
-  // 1. Immediately reconstruct 100% HD Vector Frame (GOBBLE-CHU / Gobble Haus typography & borders)
-  //    with deblocked, smoothed portrait on the phone, AND
-  // 2. Simultaneously connect to the Galaxy Tab A11 via WebRTC P2P to stream the 100% uncompressed original HD photo!
+  // 1. Reconstruct 100% HD Vector Frame (768x1152 / 768x1824) locally on the phone, AND
+  // 2. Simultaneously stream the 100% uncompressed original Full-HD photo from the Galaxy Tab A11!
   React.useEffect(() => {
     let cancelled = false;
+    let hdArrived = isAlreadyFullHd;
 
     reconstructVectorHdPhotostripOnPhone(result)
       .then((reconstructed) => {
-        if (!cancelled) {
+        if (!cancelled && !hdArrived) {
           setIosReadyJpegUrl(reconstructed.colorStripJpegUrl);
           setThermalReadyUrl(reconstructed.thermalStripPngUrl);
           setHdPhotos(reconstructed.individualPhotos);
@@ -70,28 +74,44 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
       })
       .catch(() => {});
 
-    const stopPeerFetch = fetchFullHdFromTabletPeer(result.id, async (hdUpdate) => {
-      if (cancelled) return;
-      if (hdUpdate.compositeDataUrl) {
-        const crispJpeg = await upscaleToIosCompatibleJpeg(hdUpdate.compositeDataUrl);
-        if (!cancelled) {
-          setIosReadyJpegUrl(crispJpeg);
-          setIsHdSynced(true);
+    if (!isAlreadyFullHd) {
+      const stopPeerFetch = fetchFullHdFromTabletPeer(
+        result.id,
+        async (hdUpdate) => {
+          if (cancelled) return;
+          hdArrived = true;
+          if (hdUpdate.compositeDataUrl) {
+            const crispJpeg = await upscaleToIosCompatibleJpeg(hdUpdate.compositeDataUrl);
+            if (!cancelled) {
+              setIosReadyJpegUrl(crispJpeg);
+              setIsHdSynced(true);
+              setSyncProgress(100);
+            }
+          }
+          if (hdUpdate.thermalRasterDataUrl && !cancelled) {
+            setThermalReadyUrl(hdUpdate.thermalRasterDataUrl);
+          }
+          if (hdUpdate.photos && hdUpdate.photos.length > 0 && !cancelled) {
+            setHdPhotos(hdUpdate.photos);
+          }
+        },
+        (pct) => {
+          if (!cancelled && !hdArrived) {
+            setSyncProgress((prev) => Math.max(prev, pct));
+          }
         }
-      }
-      if (hdUpdate.thermalRasterDataUrl && !cancelled) {
-        setThermalReadyUrl(hdUpdate.thermalRasterDataUrl);
-      }
-      if (hdUpdate.photos && hdUpdate.photos.length > 0 && !cancelled) {
-        setHdPhotos(hdUpdate.photos);
-      }
-    });
+      );
+
+      return () => {
+        cancelled = true;
+        stopPeerFetch();
+      };
+    }
 
     return () => {
       cancelled = true;
-      stopPeerFetch();
     };
-  }, [result]);
+  }, [result, isAlreadyFullHd]);
 
   // Auto-cycle through photos to create live motion GIF player
   React.useEffect(() => {
@@ -102,14 +122,8 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
     return () => clearInterval(interval);
   }, [activeTab, hdPhotos.length]);
 
-  const handleCopyLink = () => {
-    soundEffects.playTap();
-    navigator.clipboard.writeText(result.shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const downloadImage = (url: string, filename: string) => {
+    if (!url) return;
     soundEffects.playTap();
     const a = document.createElement('a');
     a.href = url;
@@ -150,12 +164,12 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
             <Smartphone className="w-4 h-4 text-sky-400" />
             <div>
               <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
-                <span>Guest Digital Portal</span>
+                <span>Your Photo Strip</span>
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[9px] font-mono">
                   {isHdSynced ? (
                     <>
                       <Sparkles className="w-2.5 h-2.5" />
-                      <span>FULL HD SYNCED</span>
+                      <span>ORIGINAL FULL HD</span>
                     </>
                   ) : (
                     <>
@@ -252,18 +266,38 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
         <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center">
           {activeTab === 'strip' && (
             <div className="flex flex-col items-center w-full">
-              <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-2 max-h-[42vh] bg-white">
-                <img
-                  src={iosReadyJpegUrl}
-                  alt="Photostrip"
-                  className="max-h-[40vh] w-auto object-contain select-auto pointer-events-auto"
-                />
+              {!isHdSynced && syncProgress < 100 && (
+                <div className="w-full mb-2 px-3 py-1.5 rounded-xl bg-sky-950/70 border border-sky-800/70 flex items-center justify-between text-[10px] text-sky-300">
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="w-3 h-3 animate-spin text-sky-400" />
+                    <span>Streaming Original Full-HD from Booth...</span>
+                  </span>
+                  <span className="font-mono font-bold">{syncProgress}%</span>
+                </div>
+              )}
+
+              <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-2 max-h-[44vh] bg-white flex items-center justify-center min-h-[220px] min-w-[160px]">
+                {iosReadyJpegUrl ? (
+                  <img
+                    src={iosReadyJpegUrl}
+                    alt="Photostrip"
+                    className="max-h-[42vh] w-auto object-contain select-auto pointer-events-auto"
+                  />
+                ) : (
+                  <div className="p-6 flex flex-col items-center gap-2 text-zinc-500 text-xs">
+                    <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+                    <span>Rendering HD Photostrip...</span>
+                  </div>
+                )}
               </div>
+
               <p className="text-[10px] text-amber-300 font-medium mb-2.5 text-center">
                 📱 <strong>iPhone / iOS Tip:</strong> Tap the green button below and select <strong>&quot;Save Image&quot;</strong>, or <strong>Press &amp; Hold the photo above</strong> and tap <strong>&quot;Save to Photos&quot;</strong>!
               </p>
+
               <div className="w-full space-y-2">
                 <button
+                  disabled={!iosReadyJpegUrl}
                   onClick={async () => {
                     soundEffects.playTap();
                     const res = await shareOfflineViaQuickShare({
@@ -275,14 +309,15 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
                       setQuickShareMsg(res.message);
                     }
                   }}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                 >
                   <Share2 className="w-3.5 h-3.5 text-white" />
                   <span>{isIos ? 'Save to iPhone Photos (Camera Roll)' : 'Save / Quick Share Photo'}</span>
                 </button>
                 <button
+                  disabled={!iosReadyJpegUrl}
                   onClick={() => downloadImage(iosReadyJpegUrl, `GobbleHaus-Photostrip-${result.id}.jpg`)}
-                  className="w-full py-2 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                  className="w-full py-2 rounded-xl bg-zinc-100 hover:bg-white disabled:opacity-40 text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5 text-zinc-950" />
                   <span>Download Photostrip (.JPG)</span>
@@ -308,7 +343,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
                 )}
                 <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-slate-950/80 backdrop-blur-md text-[9px] font-mono text-sky-300 border border-sky-300/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>ANIMATED REEL ({gifFrameIndex + 1}/{hdPhotos.length})</span>
+                  <span>ANIMATED REEL ({gifFrameIndex + 1}/{Math.max(1, hdPhotos.length)})</span>
                 </div>
               </div>
               <p className="text-[10px] text-slate-400 mb-3 text-center">
@@ -391,11 +426,13 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
           {activeTab === 'thermal' && (
             <div className="flex flex-col items-center w-full">
               <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-3 max-h-[46vh] bg-white">
-                <img
-                  src={thermalReadyUrl}
-                  alt="Thermal Slip"
-                  className="max-h-[44vh] w-auto object-contain select-auto"
-                />
+                {thermalReadyUrl && (
+                  <img
+                    src={thermalReadyUrl}
+                    alt="Thermal Slip"
+                    className="max-h-[44vh] w-auto object-contain select-auto"
+                  />
+                )}
               </div>
               <p className="text-[10px] text-zinc-400 mb-3 text-center">
                 Clean monochrome thermal receipt copy
@@ -430,17 +467,6 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
               </div>
             </div>
           )}
-
-          {/* Share Link Copy */}
-          <div className="w-full mt-3 pt-3 border-t border-zinc-800">
-            <button
-              onClick={handleCopyLink}
-              className="w-full py-2 px-3 rounded-lg border border-zinc-800 bg-zinc-900 text-xs font-medium text-zinc-300 flex items-center justify-center gap-2 hover:border-zinc-700 cursor-pointer"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-zinc-200" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Share Link Copied' : 'Copy Private Share Link'}</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>

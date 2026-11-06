@@ -20,7 +20,6 @@ import {
   Ticket,
   Share2,
   WifiOff,
-  Settings2,
   Scissors,
 } from 'lucide-react';
 import { PhotostripResult, ThermalPrinterConfig, RemoteKioskConfig } from '../types';
@@ -29,13 +28,10 @@ import { emailDeliveryService } from '../services/email';
 import { paymentService, LAYOUT_VOUCHER_META } from '../services/payment';
 import { soundEffects } from '../services/soundEffects';
 import {
-  OfflineQrMode,
   OfflineQrPacket,
   buildOfflineQrPacket,
   getSavedHotspotOrigin,
-  setSavedHotspotOrigin,
   getSavedOfflineQrMode,
-  setSavedOfflineQrMode,
   shareOfflineViaQuickShare,
   startTabletHdPeerHost,
 } from '../services/offlineQrTransfer';
@@ -83,9 +79,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   const [activeCopiesCount, setActiveCopiesCount] = useState<number>(1);
   const [qrShareDataUrl, setQrShareDataUrl] = useState<string>('');
   const [offlineQrPacket, setOfflineQrPacket] = useState<OfflineQrPacket | null>(null);
-  const [offlineQrMode, setOfflineQrMode] = useState<OfflineQrMode>(() => getSavedOfflineQrMode());
-  const [hotspotOrigin, setHotspotOrigin] = useState<string>(() => getSavedHotspotOrigin());
-  const [showHotspotSettings, setShowHotspotSettings] = useState<boolean>(false);
   const [quickShareStatus, setQuickShareStatus] = useState<string | null>(null);
   const [thermalPreviewUrl, setThermalPreviewUrl] = useState<string>(result.thermalRasterDataUrl || '');
   const [countdownSeconds, setCountdownSeconds] = useState(60);
@@ -171,7 +164,12 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   // Generate Self-Contained Offline QR Code (embeds compressed camera portrait + vector frame metadata)
   useEffect(() => {
     let cancelled = false;
-    buildOfflineQrPacket(activeCanvas, result, offlineQrMode, hotspotOrigin)
+    buildOfflineQrPacket(
+      activeCanvas,
+      result,
+      getSavedOfflineQrMode(),
+      getSavedHotspotOrigin()
+    )
       .then((packet) => {
         if (!cancelled) {
           setOfflineQrPacket(packet);
@@ -182,7 +180,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeCanvas, result, offlineQrMode, hotspotOrigin]);
+  }, [activeCanvas, result]);
 
   // Host 100% uncompressed Full-HD photostrip & raw photos via WebRTC P2P for instant iPhone/Android HD sync
   useEffect(() => {
@@ -193,12 +191,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       stopPeerHost();
     };
   }, [result]);
-
-  const handleToggleQrMode = (mode: OfflineQrMode) => {
-    soundEffects.playTap();
-    setOfflineQrMode(mode);
-    setSavedOfflineQrMode(mode);
-  };
 
   const handleQuickShareOffline = async () => {
     soundEffects.playTap();
@@ -537,115 +529,40 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             <div className="w-full flex items-center justify-between mb-1">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
                 <WifiOff className="w-3 h-3" />
-                <span>Offline Photo Transfer</span>
+                <span>Full-HD Photo Transfer</span>
               </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEffects.playTap();
-                    setShowHotspotSettings((v) => !v);
-                  }}
-                  title="Hotspot / Offline QR Settings"
-                  className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
-                >
-                  <Settings2 className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowQrModal(false)}
-                  className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(false)}
+                className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             <h3 className="text-base font-bold text-zinc-950 mb-0.5">
               Scan with iPhone (iOS) or Android
             </h3>
-            <p className="text-[11px] text-zinc-500 mb-2.5 leading-snug">
-              Your full-color photo is embedded directly inside this QR code — open in <strong>Safari or Chrome</strong> and tap <strong>Save to Photos</strong>!
+            <p className="text-[11px] text-zinc-500 mb-3 leading-snug">
+              Scan with your phone camera to receive your <strong>Full-HD Color Photo</strong> and tap <strong>Save to Photos</strong>!
             </p>
 
-            {/* Offline QR Mode Switcher */}
-            <div className="w-full grid grid-cols-2 gap-1 bg-zinc-100 p-1 rounded-xl mb-2.5 text-[10px] font-semibold">
-              <button
-                type="button"
-                onClick={() => handleToggleQrMode('offline_url_hash')}
-                className={`py-1.5 px-2 rounded-lg transition cursor-pointer ${
-                  offlineQrMode === 'offline_url_hash'
-                    ? 'bg-white text-zinc-900 shadow-xs'
-                    : 'text-zinc-500 hover:text-zinc-800'
-                }`}
-              >
-                📱 iOS &amp; Android Link QR
-              </button>
-              <button
-                type="button"
-                onClick={() => handleToggleQrMode('direct_data_uri')}
-                className={`py-1.5 px-2 rounded-lg transition cursor-pointer ${
-                  offlineQrMode === 'direct_data_uri'
-                    ? 'bg-white text-zinc-900 shadow-xs'
-                    : 'text-zinc-500 hover:text-zinc-800'
-                }`}
-              >
-                Direct Data URI QR
-              </button>
-            </div>
-
-            {/* Optional Local Hotspot IP Override for Galaxy Tab A11 Mobile Hotspot */}
-            {showHotspotSettings && (
-              <div className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-2.5 mb-2.5 text-left space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-700 uppercase tracking-wider block">
-                  Custom Hotspot / App Base URL (Leave blank for Auto):
-                </label>
-                <div className="flex gap-1">
-                  <input
-                    type="text"
-                    value={hotspotOrigin}
-                    onChange={(e) => {
-                      setHotspotOrigin(e.target.value);
-                      setSavedHotspotOrigin(e.target.value);
-                    }}
-                    placeholder={offlineQrPacket?.resolvedBaseUrl || window.location.href.split('?')[0]}
-                    className="flex-1 px-2.5 py-1.5 text-xs font-mono rounded-lg border border-zinc-300 bg-white text-zinc-900 focus:outline-none focus:ring-1 focus:ring-black"
-                  />
-                  {hotspotOrigin && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setHotspotOrigin('');
-                        setSavedHotspotOrigin('');
-                      }}
-                      className="px-2 py-1 text-[10px] font-semibold rounded-lg bg-zinc-200 hover:bg-zinc-300 text-zinc-800 cursor-pointer"
-                    >
-                      Reset
-                    </button>
-                  )}
-                </div>
-                <p className="text-[10px] text-zinc-500 leading-tight">
-                  Active Target: <code className="font-mono text-zinc-700">{offlineQrPacket?.resolvedBaseUrl || 'Auto'}</code>
-                </p>
-              </div>
-            )}
-
             {/* High-Contrast Offline QR Code */}
-            <div className="p-2.5 bg-white border-2 border-zinc-900 rounded-2xl shadow-sm mb-2 flex flex-col items-center">
+            <div className="p-3 bg-white border-2 border-zinc-900 rounded-2xl shadow-sm mb-3 flex flex-col items-center">
               {qrShareDataUrl ? (
                 <img
                   src={qrShareDataUrl}
-                  alt="Offline Photo QR Code"
-                  className="w-52 h-52 object-contain"
+                  alt="Photo QR Code"
+                  className="w-56 h-56 object-contain"
                 />
               ) : (
-                <div className="w-52 h-52 flex items-center justify-center text-xs text-zinc-400">
-                  Encoding Offline Photo QR...
+                <div className="w-56 h-56 flex items-center justify-center text-xs text-zinc-400">
+                  Generating Full-HD QR...
                 </div>
               )}
               {offlineQrPacket && (
-                <div className="mt-1 text-[9px] font-mono text-zinc-500">
-                  iOS &amp; Android Ready • {(offlineQrPacket.byteLength / 1024).toFixed(1)} KB Full-Color Payload
+                <div className="mt-1.5 text-[10px] font-semibold text-emerald-700">
+                  ✨ iOS &amp; Android Full-HD Vector + Direct Sync Ready
                 </div>
               )}
             </div>

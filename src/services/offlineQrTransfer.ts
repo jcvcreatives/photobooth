@@ -31,10 +31,35 @@ export interface OfflineQrPacket {
   resolvedBaseUrl: string;
 }
 
-const HOTSPOT_ORIGIN_KEY = 'jcv_offline_hotspot_origin_v2';
-const PREFERRED_QR_MODE_KEY = 'jcv_offline_qr_mode_v2';
+const HOTSPOT_ORIGIN_KEY = 'jcv_offline_hotspot_origin_v3';
+const PREFERRED_QR_MODE_KEY = 'jcv_offline_qr_mode_v3';
 const CLOUD_FALLBACK_URL =
   'https://ais-pre-viyeqwfb7gkjv5s5dxi6sd-397788646776.asia-northeast1.run.app/';
+
+// Safe 12 KB chunk size (well below iOS Safari & Chrome's 64 KB WebRTC SCTP limit)
+const WEBRTC_CHUNK_SIZE = 12288;
+
+// STUN + TURN servers so Galaxy Tab A11 (Wi-Fi/Hotspot) and iPhone (Wi-Fi/5G/LTE) connect across any NAT
+const PEER_ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:global.stun.twilio.com:3478' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
 
 /**
  * Returns the full base URL of the running web app, preserving any GitHub Pages
@@ -82,12 +107,80 @@ export function setSavedOfflineQrMode(mode: OfflineQrMode): void {
  */
 export function getDeterministicPeerId(shareId: string): string {
   const clean = shareId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  return `jcvhd99${clean.slice(0, 28)}`;
+  return `jcvhd3${clean.slice(0, 26)}`;
 }
 
 /**
- * Starts a WebRTC P2P Host on the Galaxy Tab A11 so any iPhone or Android scanning the QR code
- * automatically receives the 100% uncompressed, full-resolution original camera photos & strip.
+ * Uploads the Full-HD photostrip in small chunks to a zero-config HTTPS relay topic
+ * so that even if UDP/WebRTC is blocked by cellular or venue Wi-Fi firewalls,
+ * the iPhone downloads the 100% uncompressed Full-HD photo over HTTPS port 443.
+ */
+async function uploadFullHdToHttpsRelay(result: PhotostripResult): Promise<void> {
+  try {
+    const topic = `jcv_photobooth_hd_${getDeterministicPeerId(result.id)}`;
+    const payloadStr = JSON.stringify({
+      id: result.id,
+      layout: result.layout,
+      themeId: result.themeId,
+      filter: result.filter,
+      compositeDataUrl: result.compositeDataUrl,
+      thermalRasterDataUrl: result.thermalRasterDataUrl,
+      photos: result.photos,
+    });
+
+    await fetch(`https://ntfy.sh/${topic}`, {
+      method: 'PUT',
+      body: payloadStr,
+      headers: {
+        Filename: 'hd_bundle.json',
+      },
+    });
+  } catch {
+    // Ignore when offline
+  }
+}
+
+/**
+ * Fetches the Full-HD photostrip from the HTTPS relay if available.
+ */
+async function fetchFullHdFromHttpsRelay(
+  shareId: string,
+  onProgress?: (pct: number) => void
+): Promise<Partial<PhotostripResult> | null> {
+  const topic = `jcv_photobooth_hd_${getDeterministicPeerId(shareId)}`;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1`);
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.trim().split('\n').filter(Boolean);
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const event = JSON.parse(lines[i]);
+          if (event?.attachment?.url) {
+            onProgress?.(55);
+            const attRes = await fetch(event.attachment.url);
+            if (attRes.ok) {
+              const bundle = await attRes.json();
+              if (bundle && typeof bundle.compositeDataUrl === 'string') {
+                onProgress?.(100);
+                return bundle;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore and retry
+    }
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+  return null;
+}
+
+/**
+ * Starts a Chunked WebRTC P2P Host (12 KB chunks for iOS WebKit compatibility) + HTTPS Relay
+ * on the Galaxy Tab A11 so any iPhone or Android scanning the QR code receives the
+ * 100% uncompressed, full-resolution original camera photos & strip.
  */
 export function startTabletHdPeerHost(
   result: PhotostripResult,
@@ -96,28 +189,78 @@ export function startTabletHdPeerHost(
   let peer: Peer | null = null;
   let destroyed = false;
 
+  // Also push to HTTPS relay in background for instant firewall-proof fallback
+  uploadFullHdToHttpsRelay(result).catch(() => {});
+
+  const sendChunkedBundle = (conn: DataConnection) => {
+    if (destroyed) return;
+    try {
+      onGuestConnected?.();
+      const fullPayload = JSON.stringify({
+        id: result.id,
+        layout: result.layout,
+        themeId: result.themeId,
+        filter: result.filter,
+        eventTitle: result.eventTitle,
+        compositeDataUrl: result.compositeDataUrl,
+        thermalRasterDataUrl: result.thermalRasterDataUrl,
+        photos: result.photos,
+        stickers: result.stickers || [],
+      });
+
+      const totalChunks = Math.ceil(fullPayload.length / WEBRTC_CHUNK_SIZE);
+      conn.send({
+        type: 'JCV_HD_START',
+        totalChunks,
+        totalBytes: fullPayload.length,
+      });
+
+      for (let i = 0; i < totalChunks; i++) {
+        const slice = fullPayload.slice(i * WEBRTC_CHUNK_SIZE, (i + 1) * WEBRTC_CHUNK_SIZE);
+        conn.send({
+          type: 'JCV_HD_CHUNK',
+          index: i,
+          totalChunks,
+          chunk: slice,
+        });
+      }
+
+      conn.send({
+        type: 'JCV_HD_END',
+        totalChunks,
+      });
+    } catch {
+      // Ignore send errors
+    }
+  };
+
   try {
     const peerId = getDeterministicPeerId(result.id);
     peer = new Peer(peerId, {
       debug: 0,
+      config: {
+        iceServers: PEER_ICE_SERVERS,
+      },
     });
 
     peer.on('connection', (conn: DataConnection) => {
+      let sent = false;
+      const triggerSend = () => {
+        if (sent || destroyed) return;
+        sent = true;
+        sendChunkedBundle(conn);
+      };
+
       conn.on('open', () => {
-        if (destroyed) return;
-        onGuestConnected?.();
-        conn.send({
-          type: 'JCV_FULL_HD_PHOTO',
-          id: result.id,
-          layout: result.layout,
-          themeId: result.themeId,
-          filter: result.filter,
-          eventTitle: result.eventTitle,
-          compositeDataUrl: result.compositeDataUrl,
-          thermalRasterDataUrl: result.thermalRasterDataUrl,
-          photos: result.photos,
-          stickers: result.stickers || [],
-        });
+        // Send immediately on open AND whenever guest requests
+        setTimeout(triggerSend, 80);
+      });
+
+      conn.on('data', (data: unknown) => {
+        if (data && typeof data === 'object' && (data as Record<string, unknown>).type === 'JCV_REQUEST_HD') {
+          sent = false;
+          triggerSend();
+        }
       });
     });
 
@@ -139,47 +282,116 @@ export function startTabletHdPeerHost(
 }
 
 /**
- * Connects from the Guest's iPhone/Android to the Galaxy Tab A11's WebRTC P2P Host
- * to pull the 100% uncompressed Full-HD photostrip and raw camera photos.
+ * Connects from the Guest's iPhone/Android to the Galaxy Tab A11's Chunked WebRTC P2P Host
+ * AND HTTPS Relay in parallel to pull the 100% uncompressed Full-HD photostrip.
  */
 export function fetchFullHdFromTabletPeer(
   shareId: string,
-  onReceived: (hdResult: Partial<PhotostripResult>) => void
+  onReceived: (hdResult: Partial<PhotostripResult>) => void,
+  onProgress?: (pct: number) => void
 ): () => void {
   let peer: Peer | null = null;
   let destroyed = false;
+  let resolved = false;
+  let retryTimer: ReturnType<typeof setInterval> | null = null;
 
+  const deliver = (bundle: Partial<PhotostripResult>) => {
+    if (destroyed || resolved) return;
+    resolved = true;
+    if (retryTimer) clearInterval(retryTimer);
+    onProgress?.(100);
+    onReceived(bundle);
+  };
+
+  // 1. Race HTTPS Relay in parallel
+  fetchFullHdFromHttpsRelay(shareId, (p) => {
+    if (!resolved) onProgress?.(p);
+  })
+    .then((relayBundle) => {
+      if (relayBundle && relayBundle.compositeDataUrl) {
+        deliver(relayBundle);
+      }
+    })
+    .catch(() => {});
+
+  // 2. Race Chunked WebRTC P2P DataChannel (12 KB chunks for iOS Safari/Chrome)
   try {
     const hostPeerId = getDeterministicPeerId(shareId);
-    peer = new Peer({ debug: 0 });
+    peer = new Peer({
+      debug: 0,
+      config: {
+        iceServers: PEER_ICE_SERVERS,
+      },
+    });
 
-    peer.on('open', () => {
-      if (destroyed || !peer) return;
+    const connectAttempt = () => {
+      if (destroyed || resolved || !peer || peer.disconnected) return;
       const conn = peer.connect(hostPeerId, { reliable: true });
+      const receivedChunks: string[] = [];
+      let expectedChunks = 0;
+
+      conn.on('open', () => {
+        if (destroyed || resolved) return;
+        onProgress?.(20);
+        conn.send({ type: 'JCV_REQUEST_HD' });
+      });
+
       conn.on('data', (data: unknown) => {
-        if (destroyed || !data || typeof data !== 'object') return;
+        if (destroyed || resolved || !data || typeof data !== 'object') return;
         const msg = data as Record<string, unknown>;
-        if (msg.type === 'JCV_FULL_HD_PHOTO' && typeof msg.compositeDataUrl === 'string') {
-          onReceived({
-            id: String(msg.id || shareId),
-            layout: (msg.layout as FrameLayoutType) || 'single_polaroid',
-            themeId: String(msg.themeId || 'gobble_pokemon_card'),
-            filter: (msg.filter as PhotoFilterType) || 'none',
-            eventTitle: String(msg.eventTitle || 'Gobble Haus Photo Booth'),
-            compositeDataUrl: msg.compositeDataUrl,
-            thermalRasterDataUrl:
-              typeof msg.thermalRasterDataUrl === 'string'
-                ? msg.thermalRasterDataUrl
-                : msg.compositeDataUrl,
-            photos: Array.isArray(msg.photos) ? (msg.photos as string[]) : [msg.compositeDataUrl],
-            stickers: Array.isArray(msg.stickers) ? (msg.stickers as StickerItem[]) : [],
-          });
+
+        if (msg.type === 'JCV_HD_START' && typeof msg.totalChunks === 'number') {
+          expectedChunks = msg.totalChunks;
+          onProgress?.(30);
+        } else if (
+          msg.type === 'JCV_HD_CHUNK' &&
+          typeof msg.index === 'number' &&
+          typeof msg.chunk === 'string'
+        ) {
+          const total = typeof msg.totalChunks === 'number' ? msg.totalChunks : expectedChunks || 1;
+          expectedChunks = total;
+          receivedChunks[msg.index] = msg.chunk;
+          const countSoFar = receivedChunks.filter((c) => typeof c === 'string').length;
+          onProgress?.(Math.min(95, 30 + Math.round((countSoFar / total) * 65)));
+
+          if (countSoFar === total) {
+            try {
+              const fullJson = receivedChunks.join('');
+              const parsed = JSON.parse(fullJson) as Partial<PhotostripResult>;
+              if (parsed && typeof parsed.compositeDataUrl === 'string') {
+                deliver(parsed);
+              }
+            } catch {
+              // wait for JCV_HD_END
+            }
+          }
+        } else if (msg.type === 'JCV_HD_END') {
+          try {
+            const fullJson = receivedChunks.join('');
+            const parsed = JSON.parse(fullJson) as Partial<PhotostripResult>;
+            if (parsed && typeof parsed.compositeDataUrl === 'string') {
+              deliver(parsed);
+            }
+          } catch {
+            // ignore
+          }
+        } else if (msg.type === 'JCV_FULL_HD_PHOTO' && typeof msg.compositeDataUrl === 'string') {
+          deliver(msg as unknown as Partial<PhotostripResult>);
         }
       });
+    };
+
+    peer.on('open', () => {
+      connectAttempt();
+      retryTimer = setInterval(() => {
+        if (!resolved && !destroyed) {
+          connectAttempt();
+        }
+      }, 2200);
     });
 
     peer.on('error', () => {
-      // Silent fallback to offline vector-reconstructed strip
+      // Silent fallback
     });
   } catch {
     // Ignore
@@ -187,6 +399,7 @@ export function fetchFullHdFromTabletPeer(
 
   return () => {
     destroyed = true;
+    if (retryTimer) clearInterval(retryTimer);
     try {
       peer?.destroy();
     } catch {
@@ -198,7 +411,6 @@ export function fetchFullHdFromTabletPeer(
 /**
  * Packs ONLY the raw camera photo(s) into a clean 4:3 vertical contact sheet
  * so 0 bytes of the QR code are wasted on frame borders or text!
- * (The frame, borders, and text like GOBBLE-CHU HP 999 are reconstructed at 100% HD vector quality on the iPhone!)
  */
 async function buildCameraPhotosOnlyCanvas(
   photos: string[],
@@ -230,9 +442,8 @@ async function buildCameraPhotosOnlyCanvas(
     return { canvas: fallbackCanvas, count: 1 };
   }
 
-  // Each slot is 4:3 aspect ratio (e.g. 240 x 180 per photo)
-  const slotW = 240;
-  const slotH = 180;
+  const slotW = 280;
+  const slotH = 210;
   const count = validImgs.length;
   const out = document.createElement('canvas');
   out.width = slotW;
@@ -267,27 +478,25 @@ async function buildCameraPhotosOnlyCanvas(
 
 /**
  * Compresses a camera-only canvas into an ultra-compact Data URI that fits inside a Version-40 QR code.
- * Because there is no text or sharp borders in the camera-only canvas, WebP/JPEG allocates 100% of bits to the face!
  */
 export function compressCanvasForOfflineQr(
   sourceCanvas: HTMLCanvasElement,
-  maxChars: number = 2150,
+  maxChars: number = 2200,
   forceJpegForIos: boolean = false
 ): { dataUrl: string; width: number; height: number } {
-  const srcW = sourceCanvas.width || 240;
-  const srcH = sourceCanvas.height || 180;
+  const srcW = sourceCanvas.width || 280;
+  const srcH = sourceCanvas.height || 210;
   const aspect = srcH / srcW;
 
-  // Higher resolution candidates for smooth 4:3 portraits
-  const candidateWidths = [220, 200, 184, 168, 152, 140, 128, 116, 104, 92];
-  const candidateQualities = [0.68, 0.58, 0.5, 0.42, 0.35, 0.28];
+  const candidateWidths = [240, 220, 200, 184, 168, 152, 140, 128, 116, 104];
+  const candidateQualities = [0.72, 0.62, 0.54, 0.46, 0.38, 0.3];
 
   const scratch = document.createElement('canvas');
   const ctx = scratch.getContext('2d');
 
   let bestDataUrl = '';
-  let bestW = 128;
-  let bestH = Math.round(128 * aspect);
+  let bestW = 140;
+  let bestH = Math.round(140 * aspect);
 
   for (const w of candidateWidths) {
     const h = Math.max(48, Math.round(w * aspect));
@@ -357,10 +566,7 @@ async function resolveReachableBaseUrl(customHostOrigin?: string): Promise<strin
 }
 
 /**
- * Generates an iOS & Android compatible Offline QR Code:
- * - Stores ONLY the camera portrait(s) in the QR bitmap (so 0 bytes are wasted on the frame/text!).
- * - Stores the themeId, layout, filter, and photo count in compact URL parameters so the iPhone
- *   reconstructs the entire Gobble-Chu / Gobble Haus frame in 100% razor-sharp HD vector resolution!
+ * Generates an iOS & Android compatible QR Code.
  */
 export async function buildOfflineQrPacket(
   fallbackCanvas: HTMLCanvasElement,
@@ -396,20 +602,18 @@ export async function buildOfflineQrPacket(
     };
   }
 
-  // Build camera-only contact sheet so 100% of QR bytes go to the portrait(s)
   const { canvas: camCanvas, count: photoCount } = await buildCameraPhotosOnlyCanvas(
     result.photos,
     result.layout,
     fallbackCanvas
   );
 
-  // Compact metadata in hash so the iPhone reconstructs the 100% HD vector frame locally
   const metaPrefix = `t=${encodeURIComponent(result.themeId)}&l=${encodeURIComponent(
     result.layout
   )}&f=${encodeURIComponent(result.filter)}&c=${photoCount}&offline-photo=`;
 
   const prefix = `${resolvedBaseUrl}?share=${encodeURIComponent(result.id)}#${metaPrefix}`;
-  const availableForImage = Math.max(1000, 2320 - prefix.length);
+  const availableForImage = Math.max(1050, 2340 - prefix.length);
   const compressed = compressCanvasForOfflineQr(camCanvas, availableForImage, false);
 
   const isWebp = compressed.dataUrl.startsWith('data:image/webp;base64,');
@@ -448,12 +652,17 @@ export async function reconstructVectorHdPhotostripOnPhone(
   thermalStripPngUrl: string;
   individualPhotos: string[];
 }> {
-  const hash = typeof window !== 'undefined' ? window.location.hash : '';
-  const cleanHash = hash.startsWith('#') ? hash.slice(1) : hash;
-  const hashParams = new URLSearchParams(cleanHash);
-  const packedCount = Math.max(1, parseInt(hashParams.get('c') || '1', 10) || 1);
+  // Store packedCount in result.printCopies or default from layout
+  const packedCount =
+    result.layout === 'single_polaroid'
+      ? 1
+      : result.layout === 'strip_3'
+      ? 3
+      : result.printCopies && result.printCopies > 1
+      ? result.printCopies
+      : 1;
 
-  // If result already has a full-HD composite (> 40KB) from WebRTC or local storage, just ensure it's JPEG
+  // If result already has a full-HD composite (> 45KB) from WebRTC or HTTPS relay, export as crisp JPEG
   if (result.compositeDataUrl && result.compositeDataUrl.length > 45000) {
     const jpegUrl = await upscaleToIosCompatibleJpeg(result.compositeDataUrl);
     return {
@@ -467,32 +676,33 @@ export async function reconstructVectorHdPhotostripOnPhone(
   const individualPhotos: string[] = await new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const w = img.naturalWidth || img.width || 160;
-      const totalH = img.naturalHeight || img.height || 120 * packedCount;
-      const singleH = Math.max(1, Math.floor(totalH / packedCount));
+      const w = img.naturalWidth || img.width || 180;
+      const totalH = img.naturalHeight || img.height || 135 * packedCount;
+      // Automatically infer packed count from aspect ratio if needed
+      const inferredCount = Math.max(1, Math.round(totalH / (w * 0.75)));
+      const count = packedCount > 1 ? packedCount : inferredCount;
+      const singleH = Math.max(1, Math.floor(totalH / count));
 
-      // Upscale each individual 4:3 camera shot to 640x480 with multi-step smoothing + subtle deblocking
-      const targetW = 640;
-      const targetH = 480;
+      const targetW = 720;
+      const targetH = 540;
       const extracted: string[] = [];
 
-      for (let i = 0; i < packedCount; i++) {
-        // Step 1: Intermediate 2x canvas with slight 0.6px blur to erase 8x8 DCT block boundaries
-        const midCanvas = document.createElement('canvas');
-        midCanvas.width = 320;
-        midCanvas.height = 240;
-        const midCtx = midCanvas.getContext('2d');
-        if (midCtx) {
-          midCtx.imageSmoothingEnabled = true;
-          midCtx.imageSmoothingQuality = 'high';
-          if (typeof midCtx.filter === 'string') {
-            midCtx.filter = 'blur(0.55px) contrast(1.04) saturate(1.05)';
+      for (let i = 0; i < count; i++) {
+        // Multi-step progressive upscale + gentle deblocking to eliminate 8x8 macroblocks
+        const step1 = document.createElement('canvas');
+        step1.width = 360;
+        step1.height = 270;
+        const ctx1 = step1.getContext('2d');
+        if (ctx1) {
+          ctx1.imageSmoothingEnabled = true;
+          ctx1.imageSmoothingQuality = 'high';
+          if (typeof ctx1.filter === 'string') {
+            ctx1.filter = 'blur(0.65px) contrast(1.05) saturate(1.06)';
           }
-          midCtx.drawImage(img, 0, i * singleH, w, singleH, 0, 0, 320, 240);
-          midCtx.filter = 'none';
+          ctx1.drawImage(img, 0, i * singleH, w, singleH, 0, 0, 360, 270);
+          ctx1.filter = 'none';
         }
 
-        // Step 2: Final 640x480 high-DPI canvas
         const finalCanvas = document.createElement('canvas');
         finalCanvas.width = targetW;
         finalCanvas.height = targetH;
@@ -500,10 +710,10 @@ export async function reconstructVectorHdPhotostripOnPhone(
         if (finalCtx) {
           finalCtx.imageSmoothingEnabled = true;
           finalCtx.imageSmoothingQuality = 'high';
-          finalCtx.drawImage(midCtx ? midCanvas : img, 0, 0, targetW, targetH);
-          extracted.push(finalCanvas.toDataURL('image/jpeg', 0.92));
+          finalCtx.drawImage(ctx1 ? step1 : img, 0, 0, targetW, targetH);
+          extracted.push(finalCanvas.toDataURL('image/jpeg', 0.94));
         }
-        midCanvas.width = 0;
+        step1.width = 0;
         finalCanvas.width = 0;
       }
 
@@ -513,7 +723,6 @@ export async function reconstructVectorHdPhotostripOnPhone(
     img.src = packedDataUrl;
   });
 
-  // Look up the exact Digital Color Theme and Thermal Theme so all text, borders, and Gobble-Chu art render in 100% HD vector quality!
   const digitalTheme =
     DIGITAL_COLOR_THEMES.find((t) => t.id === result.themeId) ||
     FRAME_THEMES.find((t) => t.id === result.themeId) ||
@@ -578,7 +787,7 @@ export async function upscaleToIosCompatibleJpeg(sourceDataUrl: string): Promise
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const srcW = img.naturalWidth || img.width || 600;
+      const srcW = img.naturalWidth || img.width || 768;
       const srcH = img.naturalHeight || img.height || 1152;
       const targetW = Math.max(768, srcW);
       const targetH = Math.round(targetW * (srcH / srcW));
@@ -607,7 +816,7 @@ export async function upscaleToIosCompatibleJpeg(sourceDataUrl: string): Promise
 
 /**
  * Decodes an `#offline-photo=...` hash (or `?offline-photo=...` query param) from `window.location`
- * into a `PhotostripResult` with full frame theme and layout metadata.
+ * into a `PhotostripResult` AND immediately hides the ugly URL query/hash from the browser bar!
  */
 export function decodeOfflinePhotoFromLocation(
   search: string,
@@ -646,6 +855,16 @@ export function decodeOfflinePhotoFromLocation(
     const themeId = hashParams.get('t') || searchParams.get('t') || 'gobble_pokemon_card';
     const layout = (hashParams.get('l') || searchParams.get('l') || 'single_polaroid') as FrameLayoutType;
     const filter = (hashParams.get('f') || searchParams.get('f') || 'none') as PhotoFilterType;
+    const packedCount = Math.max(1, parseInt(hashParams.get('c') || '1', 10) || 1);
+
+    // Immediately hide the long QR query & hash from the phone's browser address bar!
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch {
+        // ignore
+      }
+    }
 
     return {
       id: shareId,
@@ -658,8 +877,8 @@ export function decodeOfflinePhotoFromLocation(
       filter,
       eventTitle: 'Gobble Haus Photo Booth',
       shareCode: shareId,
-      shareUrl: window.location.href,
-      printCopies: 1,
+      shareUrl: '',
+      printCopies: packedCount,
     };
   } catch {
     return null;
