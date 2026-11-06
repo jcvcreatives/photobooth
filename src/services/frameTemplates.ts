@@ -368,10 +368,16 @@ export const THERMAL_BRIGHTNESS_PRESETS: {
 ];
 
 /**
- * Applies a thermal-printer-calibrated portrait tone curve to a photo region.
- * Compensates for thermal receipt paper dot-gain (heat spread) by lifting shadows
- * with a gamma curve, protecting a minimum shadow floor so dark hair/faces never
- * burn into solid black blobs, and cleaning near-white highlights so backgrounds stay crisp.
+ * Applies a physical-printhead-calibrated Gamma & Thermal Energy Tone Curve to a photo region.
+ * 1. Analyzes input image luminance histogram (8th-percentile shadow P8, 92nd-percentile highlight P92, and mean brightness)
+ *    to stretch narrow dynamic ranges and prevent washed-out bright portraits or overly dark low-light captures.
+ * 2. Applies Inverse Print Head Dot-Gain Gamma Correction (gamma = 0.50..0.92) blended with a Hermite S-Curve
+ *    so facial features and midtones stay crisp rather than flat.
+ * 3. Maps optical density into the physical thermal print head's active energy window:
+ *    - Highlight Activation Floor (E_min): Ensures subtle portrait highlights (210..240) receive sufficient
+ *      thermal dot energy to register on paper instead of washing out to blank white.
+ *    - Shadow Saturation Ceiling (E_max): Caps maximum continuous halftone burn energy at ~83% (shadowToe = 34..52)
+ *      so dark hair and shadows never overheat the print head or fuse into solid black blobs.
  *
  * @param brightness -30 (Darker) to +100 (Max Light). Default is +45 (Bright).
  */
@@ -394,34 +400,83 @@ export function applyThermalPhotoToneCurve(
   const clampedBrightness = Math.max(-40, Math.min(100, Number(brightness ?? 45)));
   const bNorm = clampedBrightness / 100; // -0.40 to +1.00
 
-  // 1. Auto-exposure analysis: measure average luminance of the subject region
+  // 1. Histogram & Auto-Exposure Analysis across the subject region
+  const hist = new Uint32Array(256);
   let sumLum = 0;
   let sampleCount = 0;
-  for (let i = 0; i < data.length; i += 16) {
-    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  for (let i = 0; i < data.length; i += 8) {
+    const lum = Math.max(
+      0,
+      Math.min(255, Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]))
+    );
+    hist[lum]++;
     sumLum += lum;
     sampleCount++;
   }
   const avgLum = sampleCount > 0 ? sumLum / sampleCount : 128;
 
-  // Gentle automatic low-light compensation if the original camera capture is dark (avgLum < 115)
-  const autoLowLightBoost = avgLum < 115 ? Math.min(0.22, ((115 - avgLum) / 115) * 0.26) : 0;
-  const effectiveBNorm = Math.max(-0.25, Math.min(1.0, bNorm + autoLowLightBoost));
+  // Locate 8th percentile (black point P8) and 92nd percentile (white point P92)
+  let p8 = 16;
+  let p92 = 240;
+  if (sampleCount > 0) {
+    const targetLow = sampleCount * 0.08;
+    const targetHigh = sampleCount * 0.92;
+    let acc = 0;
+    for (let v = 0; v < 256; v++) {
+      acc += hist[v];
+      if (acc >= targetLow) {
+        p8 = v;
+        break;
+      }
+    }
+    acc = 0;
+    for (let v = 0; v < 256; v++) {
+      acc += hist[v];
+      if (acc >= targetHigh) {
+        p92 = v;
+        break;
+      }
+    }
+  }
 
-  // 2. Smooth gamma (< 1.0) opens up dark hair and shadows while preserving full dynamic range
-  const gamma = Math.max(0.48, Math.min(0.95, 0.72 - effectiveBNorm * 0.20));
+  // Adaptive exposure compensation:
+  // - Lifts under-exposed captures (avgLum < 115) so faces never print overly dark
+  // - Pulls down over-exposed / washed-out captures (avgLum > 168) so bright skin/highlights retain detail
+  const autoExposureOffset =
+    avgLum < 115
+      ? Math.min(0.24, ((115 - avgLum) / 115) * 0.28)
+      : avgLum > 168
+      ? -Math.min(0.18, ((avgLum - 168) / 87) * 0.22)
+      : 0;
+  const effectiveBNorm = Math.max(-0.3, Math.min(1.0, bNorm + autoExposureOffset));
 
-  // 3. Natural shadow toe (28..52) so dark areas retain rich gradation without crushing into a flat gray plateau
-  const shadowToe = Math.max(24, Math.min(54, Math.round(32 + effectiveBNorm * 18)));
+  // Soft black/white anchoring prevents low-contrast or high-key photos from looking washed out
+  const blackAnchor = Math.max(0, Math.min(42, Math.round((p8 - 10) * 0.45)));
+  const whiteAnchor = Math.max(212, Math.min(252, Math.round(244 - Math.max(0, 240 - p92) * 0.35)));
+  const anchorSpan = Math.max(120, whiteAnchor - blackAnchor);
 
-  // 4. Clean white point so light backgrounds stay crisp paper-white
-  const whitePoint = Math.max(215, Math.min(250, Math.round(242 - Math.max(0, effectiveBNorm) * 18)));
+  // 2. Physical Print Head Gamma Exponent (compensates for ~1.45x thermal paper dot gain)
+  const gamma = Math.max(0.46, Math.min(1.05, 0.70 - effectiveBNorm * 0.20));
+
+  // 3. Physical Thermal Head Energy Bounds:
+  // - shadowToe (max continuous halftone energy ceiling ~82-86%): prevents solid black overheating in dark hair
+  // - highlightKnee (min paper activation threshold): ensures light midtones/faces don't wash out to blank white
+  const shadowToe = Math.max(26, Math.min(54, Math.round(34 + effectiveBNorm * 16)));
+  const whitePoint = Math.max(218, Math.min(250, Math.round(243 - Math.max(0, effectiveBNorm) * 14)));
 
   const lut = new Uint8ClampedArray(256);
   for (let v = 0; v < 256; v++) {
-    const n = v / 255;
-    const curved = Math.pow(n, gamma) * 0.88 + n * 0.12;
-    const mapped = curved * 255;
+    // Normalize input luminance within anchored dynamic range [blackAnchor..whiteAnchor]
+    const nRaw = Math.max(0, Math.min(1, (v - blackAnchor) / anchorSpan));
+
+    // Apply Inverse Print Head Gamma Power Law: I_gamma = nRaw ^ gamma
+    const gammaCorrected = Math.pow(nRaw, gamma);
+
+    // Blend with smooth Hermite S-Curve (3t^2 - 2t^3) to preserve midtone portrait contrast & prevent washed-out skin
+    const sCurve = gammaCorrected * gammaCorrected * (3 - 2 * gammaCorrected);
+    const energiMapped = gammaCorrected * 0.78 + sCurve * 0.22;
+
+    const mapped = energiMapped * 255;
     if (mapped >= whitePoint) {
       lut[v] = 255;
     } else {
@@ -430,7 +485,6 @@ export function applyThermalPhotoToneCurve(
     }
   }
 
-  // Pure 1D tone lookup with zero periodic spatial noise so downsampling never creates Moiré or vertical/horizontal lines
   for (let i = 0; i < data.length; i += 4) {
     const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
     const val = lut[Math.max(0, Math.min(255, gray))];

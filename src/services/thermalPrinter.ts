@@ -1104,23 +1104,331 @@ class ThermalPrinterService {
   }
 
   /**
-   * 2D Box-Filter Area-Averaging Downsampler + 100% Conserved Serpentine Error Diffusion
-   * with 2D Interleaved Gradient Blue-Noise Threshold Modulation.
-   * - Eliminates 25:12 bilinear downscaling beat lines when resizing 800x1000 photostrips to 384x480.
-   * - Uses clean Serpentine Error Diffusion with a fixed 128 threshold (zero periodic IGN wave)
-   *   so photos never develop vertical or horizontal beat/Moiré lines while keeping text razor-sharp.
+   * Analyzes continuous-tone image luminance (excluding pure black line-art <= 20 and pure white margins >= 246)
+   * to detect under-exposed (overly dark) or over-exposed (washed-out) photos and compute adaptive gamma & black/white points.
+   */
+  public analyzeThermalImageExposure(grayValues: Float32Array | Uint8ClampedArray): {
+    meanBrightness: number;
+    shadowP10: number;
+    highlightP90: number;
+    dynamicRange: number;
+    autoGammaFactor: number;
+    exposureState: 'underexposed' | 'balanced' | 'overexposed';
+  } {
+    const hist = new Uint32Array(256);
+    let sum = 0;
+    let count = 0;
+
+    for (let i = 0; i < grayValues.length; i++) {
+      const v = Math.max(0, Math.min(255, Math.round(grayValues[i])));
+      // Exclude pure black frame borders/typography and pure white paper margins
+      if (v <= 20 || v >= 246) continue;
+      hist[v]++;
+      sum += v;
+      count++;
+    }
+
+    if (count < 32) {
+      return {
+        meanBrightness: 136,
+        shadowP10: 36,
+        highlightP90: 224,
+        dynamicRange: 188,
+        autoGammaFactor: 1.0,
+        exposureState: 'balanced',
+      };
+    }
+
+    const meanBrightness = sum / count;
+    let shadowP10 = 32;
+    let highlightP90 = 228;
+    const lowTarget = count * 0.1;
+    const highTarget = count * 0.9;
+
+    let acc = 0;
+    for (let v = 0; v < 256; v++) {
+      acc += hist[v];
+      if (acc >= lowTarget) {
+        shadowP10 = v;
+        break;
+      }
+    }
+
+    acc = 0;
+    for (let v = 0; v < 256; v++) {
+      acc += hist[v];
+      if (acc >= highTarget) {
+        highlightP90 = v;
+        break;
+      }
+    }
+
+    const dynamicRange = Math.max(40, highlightP90 - shadowP10);
+
+    // If photo is too dark (mean < 118), lower gamma (< 1.0) to lift shadows and prevent overly dark prints.
+    // If photo is too bright/washed-out (mean > 168), raise gamma (> 1.0) to deepen midtones and prevent washed-out prints.
+    let autoGammaFactor = 1.0;
+    let exposureState: 'underexposed' | 'balanced' | 'overexposed' = 'balanced';
+
+    if (meanBrightness < 118) {
+      exposureState = 'underexposed';
+      autoGammaFactor = Math.max(0.78, 1.0 - ((118 - meanBrightness) / 118) * 0.24);
+    } else if (meanBrightness > 168) {
+      exposureState = 'overexposed';
+      autoGammaFactor = Math.min(1.26, 1.0 + ((meanBrightness - 168) / 87) * 0.28);
+    }
+
+    return {
+      meanBrightness: Math.round(meanBrightness),
+      shadowP10,
+      highlightP90,
+      dynamicRange,
+      autoGammaFactor,
+      exposureState,
+    };
+  }
+
+  /**
+   * Maps input image brightness [0..255] to the physical thermal print head's energy response curve:
+   * - Accounts for thermal paper activation threshold (E_min) so light faces/highlights never print washed-out.
+   * - Applies Inverse Print Head Dot-Gain Gamma Correction (gamma_eff) + S-curve midtone contrast preservation.
+   * - Enforces a maximum continuous halftone energy ceiling (E_max = 78%..88%) so dark hair and shadows never
+   *   overheat the 203 DPI heating elements or fuse into solid black bands.
+   */
+  public computePrintHeadEnergyProfile(
+    config?: Partial<ThermalPrinterConfig>,
+    exposure?: {
+      meanBrightness: number;
+      shadowP10: number;
+      highlightP90: number;
+      dynamicRange: number;
+      autoGammaFactor: number;
+      exposureState: 'underexposed' | 'balanced' | 'overexposed';
+    },
+    contrastMultiplier: number = 1.0,
+    brightnessDelta: number = 0
+  ): {
+    effectiveGamma: number;
+    minActivationEnergyPct: number;
+    maxSaturationEnergyPct: number;
+    heatingDots: number;
+    heatingTimeUs: number;
+    heatingIntervalUs: number;
+    exposureState: 'underexposed' | 'balanced' | 'overexposed';
+    energyLut: Uint8ClampedArray;
+  } {
+    const baseGamma = Math.max(0.40, Math.min(1.60, Number(config?.gamma ?? 0.68)));
+    const rawDarkness = config?.printDarkness ?? 38;
+    const density = config?.density || 'normal';
+    const densityOffset = density === 'light' ? -6 : density === 'dark' ? 8 : 0;
+    const effectiveDarkness = Math.max(5, Math.min(100, rawDarkness + densityOffset));
+
+    // Darkness delta: negative = lighter print (< 42), positive = darker print (> 42)
+    const darknessDelta = (effectiveDarkness - 42) / 58; // -0.64 to +1.0
+
+    // Combine base gamma, darkness/density adjustment, brightnessDelta, and auto-exposure factor
+    const darknessGammaMultiplier =
+      darknessDelta < 0
+        ? Math.max(0.72, 1.0 + darknessDelta * 0.34)
+        : Math.min(1.42, 1.0 + darknessDelta * 0.42);
+    const brightnessGammaMultiplier = Math.max(
+      0.78,
+      Math.min(1.25, 1.0 - (brightnessDelta / 100) * 0.25)
+    );
+    const autoFactor = exposure?.autoGammaFactor ?? 1.0;
+
+    const effectiveGamma = Math.max(
+      0.42,
+      Math.min(
+        1.55,
+        Number(
+          (baseGamma * darknessGammaMultiplier * brightnessGammaMultiplier * autoFactor).toFixed(2)
+        )
+      )
+    );
+
+    // Physical print head energy limits:
+    // - minActivationEnergyPct (E_min): minimum halftone dot density for subtle highlights (prevents washed-out faces)
+    // - maxSaturationEnergyPct (E_max): maximum continuous halftone dot density for deep shadows (prevents solid black burn)
+    const minActivationEnergyPct = Math.max(
+      4,
+      Math.min(14, Math.round(7 + darknessDelta * 4))
+    );
+    const maxSaturationEnergyPct = Math.max(
+      74,
+      Math.min(90, Math.round(83 + darknessDelta * 6))
+    );
+
+    // Convert energy percentages [E_min..E_max] into target luminance bounds [shadowFloorLum..highlightCeilingLum]
+    // Note: in thermal printing, 0 luminance = 100% thermal energy (black), 255 luminance = 0% energy (white paper)
+    const shadowFloorLum = Math.round(255 * (1 - maxSaturationEnergyPct / 100)); // ~36..52
+    const highlightCeilingLum = Math.round(255 * (1 - minActivationEnergyPct / 100)); // ~232..244
+
+    // Soft dynamic range normalization anchors from image exposure histogram (prevents washed-out flat photos)
+    const p10 = exposure?.shadowP10 ?? 32;
+    const p90 = exposure?.highlightP90 ?? 228;
+    const blackPoint = Math.max(18, Math.min(48, Math.round(20 + (p10 - 24) * 0.35)));
+    const whitePoint = Math.max(210, Math.min(246, Math.round(244 - Math.max(0, 232 - p90) * 0.35)));
+    const rangeSpan = Math.max(120, whitePoint - blackPoint);
+
+    // Midtone S-curve strength (prevents washed-out midtones while keeping shadows open)
+    const sCurveWeight = Math.max(0.12, Math.min(0.45, 0.22 * contrastMultiplier));
+
+    const energyLut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      // Preserve razor-sharp pure black frame typography/borders (<= 20) and pure white paper background (>= 247)
+      if (v <= 20) {
+        energyLut[v] = 0;
+        continue;
+      }
+      if (v >= 247) {
+        energyLut[v] = 255;
+        continue;
+      }
+
+      // 1. Normalize input brightness within the active tonal range
+      const norm = Math.max(0, Math.min(1, (v - blackPoint) / rangeSpan));
+
+      // 2. Apply Inverse Print Head Gamma Correction: I_gamma = norm ^ effectiveGamma
+      const gammaMapped = Math.pow(norm, effectiveGamma);
+
+      // 3. Blend with smooth Hermite S-Curve (3t^2 - 2t^3) so midtones never look flat or washed out
+      const sCurve = gammaMapped * gammaMapped * (3 - 2 * gammaMapped);
+      let blendedBrightness = gammaMapped * (1 - sCurveWeight) + sCurve * sCurveWeight;
+
+      // Apply user contrast multiplier around mid-gray (0.5) if adjusted in Preview Modal
+      if (Math.abs(contrastMultiplier - 1.0) > 0.02) {
+        blendedBrightness = Math.max(
+          0,
+          Math.min(1, (blendedBrightness - 0.5) * contrastMultiplier + 0.5)
+        );
+      }
+
+      // 4. Map desired optical darkness (1 - blendedBrightness) into physical print head energy window [E_min..E_max]
+      if (blendedBrightness >= 0.965) {
+        // Smooth roll-off to pure paper white for near-white backgrounds
+        const t = (blendedBrightness - 0.965) / 0.035;
+        energyLut[v] = Math.round(highlightCeilingLum + t * (255 - highlightCeilingLum));
+      } else {
+        const scaled = blendedBrightness / 0.965;
+        const targetLum =
+          shadowFloorLum + scaled * (highlightCeilingLum - shadowFloorLum);
+        energyLut[v] = Math.max(
+          shadowFloorLum,
+          Math.min(highlightCeilingLum, Math.round(targetLum))
+        );
+      }
+    }
+
+    // Physical ESC/POS printhead strobe parameters (heating dots, heating time in 10us, interval in 10us)
+    const heatingDots = density === 'light' ? 7 : density === 'dark' ? 11 : 9;
+    const heatingTimeUs = Math.max(
+      45,
+      Math.min(110, Math.round(65 + darknessDelta * 25))
+    );
+    const heatingIntervalUs = density === 'light' ? 4 : 2;
+
+    return {
+      effectiveGamma,
+      minActivationEnergyPct,
+      maxSaturationEnergyPct,
+      heatingDots,
+      heatingTimeUs,
+      heatingIntervalUs,
+      exposureState: exposure?.exposureState || 'balanced',
+      energyLut,
+    };
+  }
+
+  /**
+   * Canonical Floyd-Steinberg Error-Diffusion Dithering Algorithm:
+   * Distributes 100% (16/16) of the binary quantization error to neighboring pixels using the
+   * classic Floyd-Steinberg kernel:
+   *   - Forward neighbor (x + stepX, y):            7/16 (43.75%)
+   *   - Bottom-backward neighbor (x - stepX, y + 1): 3/16 (18.75%)
+   *   - Bottom-center neighbor (x, y + 1):           5/16 (31.25%)
+   *   - Bottom-forward neighbor (x + stepX, y + 1):  1/16 ( 6.25%)
+   * Uses serpentine (boustrophedon) alternating row scans and pre-threshold clamping [0..255]
+   * to eliminate directional worm artifacts and edge-overshoot halos while representing continuous
+   * shades and facial gradients accurately with binary thermal dots.
+   */
+  public applyFloydSteinbergDithering(
+    gray: Float32Array,
+    width: number,
+    height: number,
+    serpentine: boolean = true
+  ): Uint8Array {
+    const mono = new Uint8Array(width * height);
+
+    for (let y = 0; y < height; y++) {
+      const reverse = serpentine && (y & 1) === 1;
+      const startX = reverse ? width - 1 : 0;
+      const endX = reverse ? -1 : width;
+      const stepX = reverse ? -1 : 1;
+      const rowOffset = y * width;
+      const nextRowOffset = (y + 1) * width;
+      const hasNextRow = y + 1 < height;
+
+      for (let x = startX; x !== endX; x += stepX) {
+        const idx = rowOffset + x;
+        // Clamp accumulated luminance to [0, 255] to prevent error-overshoot blooming at high-contrast edges
+        const oldPixel = Math.max(0, Math.min(255, gray[idx]));
+        const newPixel = oldPixel < 128 ? 0 : 255;
+        mono[idx] = newPixel === 0 ? 1 : 0;
+
+        const quantError = oldPixel - newPixel;
+        if (quantError === 0) continue;
+
+        const nextX = x + stepX;
+        const prevX = x - stepX;
+
+        // 1. Forward neighbor: 7/16 of quantization error
+        if (nextX >= 0 && nextX < width) {
+          gray[rowOffset + nextX] += quantError * (7 / 16);
+        }
+
+        // 2. Next row neighbors: 3/16 (bottom-back), 5/16 (bottom-center), 1/16 (bottom-forward)
+        if (hasNextRow) {
+          if (prevX >= 0 && prevX < width) {
+            gray[nextRowOffset + prevX] += quantError * (3 / 16);
+          }
+          gray[nextRowOffset + x] += quantError * (5 / 16);
+          if (nextX >= 0 && nextX < width) {
+            gray[nextRowOffset + nextX] += quantError * (1 / 16);
+          }
+        }
+      }
+    }
+
+    return mono;
+  }
+
+  /**
+   * 2D Box-Filter Area-Averaging Downsampler + Physical Thermal Print Head Gamma & Energy Mapping
+   * + Canonical Serpentine Floyd-Steinberg Dithering (7/16, 3/16, 5/16, 1/16).
+   * - Eliminates 25:12 bilinear downscaling beat lines when resizing 768x1152 photostrips to 384x576.
+   * - Maps input brightness to physical thermal print head energy levels via `computePrintHeadEnergyProfile`
+   *   so prints are never washed-out or overly dark.
+   * - Applies 100% error-conserving Floyd-Steinberg dithering to render smooth shades and gradients with binary dots.
    * - Pads height to a multiple of 24 so both 8-row GS v 0 micro-bands and 24-dot ESC * 33 column bands align cleanly.
    */
   public generateDitheredRaster(
     sourceCanvas: HTMLCanvasElement,
     targetWidth: number,
     contrastMultiplier: number = 1.0,
-    brightnessDelta: number = 0
+    brightnessDelta: number = 0,
+    printerConfig?: Partial<ThermalPrinterConfig>
   ): {
     bitmap: Uint8Array;
     width: number;
     height: number;
     previewDataUrl: string;
+    energyProfile: {
+      effectiveGamma: number;
+      minActivationEnergyPct: number;
+      maxSaturationEnergyPct: number;
+      exposureState: 'underexposed' | 'balanced' | 'overexposed';
+    };
   } {
     const srcW = Math.max(1, sourceCanvas.width);
     const srcH = Math.max(1, sourceCanvas.height);
@@ -1175,78 +1483,28 @@ class ThermalPrinterService {
             }
           }
 
-          let lum = totalWeight > 0 ? sumLum / totalWeight : 255;
-
-          // Keep pure black typography and top/bottom frame line-art drawings (lum <= 22) razor-sharp black,
-          // and pure white paper background (lum >= 248) crisp white
-          if (lum <= 22) {
-            lum = 0;
-          } else if (lum >= 248) {
-            lum = 255;
-          } else {
-            if (brightnessDelta !== 0) {
-              lum = lum + brightnessDelta * 0.5;
-            }
-            if (contrastMultiplier !== 1.0) {
-              lum = (lum - 128) * contrastMultiplier + 128;
-            }
-            // Keep deepest photo shadows at >= 36 so thermal dots never fuse into solid black bars
-            if (lum < 36) {
-              lum = 36 + (lum / 36) * 12;
-            }
-          }
-
-          gray[y * width + x] = Math.max(0, Math.min(255, lum));
+          gray[y * width + x] = totalWeight > 0 ? sumLum / totalWeight : 255;
         }
       }
     }
 
-    const mono = new Uint8Array(width * height);
+    // Analyze continuous-tone exposure & map input brightness to physical print head energy levels via Gamma LUT
+    const exposure = this.analyzeThermalImageExposure(gray);
+    const energyProfile = this.computePrintHeadEnergyProfile(
+      printerConfig,
+      exposure,
+      contrastMultiplier,
+      brightnessDelta
+    );
+    const energyLut = energyProfile.energyLut;
 
-    // Clean Serpentine Atkinson-Floyd Hybrid Error Diffusion (zero periodic IGN threshold wave).
-    // Uses a fixed 128 threshold and diffuses 7/8 of quantization error across 2 rows below
-    // so neither vertical nor horizontal periodic lines can ever form in photos.
-    for (let y = 0; y < height; y++) {
-      const reverse = (y & 1) === 1;
-      const startX = reverse ? width - 1 : 0;
-      const endX = reverse ? -1 : width;
-      const stepX = reverse ? -1 : 1;
-
-      for (let x = startX; x !== endX; x += stepX) {
-        const idx = y * width + x;
-        const oldPixel = gray[idx];
-
-        const newPixel = oldPixel < 128 ? 0 : 255;
-        mono[idx] = newPixel === 0 ? 1 : 0;
-
-        // Diffuse 14/16 (87.5%) of quantization error across adjacent & 2-row neighbors (Atkinson-Stucki blend)
-        // Prevents solid black row saturation on 58mm battery printers while preserving full tonal smoothness
-        const err = (oldPixel - newPixel) / 16;
-
-        const nextX = x + stepX;
-        const next2X = x + stepX * 2;
-        const prevX = x - stepX;
-
-        if (nextX >= 0 && nextX < width) {
-          gray[y * width + nextX] += err * 5;
-        }
-        if (next2X >= 0 && next2X < width) {
-          gray[y * width + next2X] += err * 1;
-        }
-        if (y + 1 < height) {
-          if (prevX >= 0 && prevX < width) {
-            gray[(y + 1) * width + prevX] += err * 2;
-          }
-          gray[(y + 1) * width + x] += err * 4;
-          if (nextX >= 0 && nextX < width) {
-            gray[(y + 1) * width + nextX] += err * 1;
-          }
-        }
-        if (y + 2 < height) {
-          gray[(y + 2) * width + x] += err * 1;
-        }
-      }
+    for (let i = 0; i < width * rawTargetHeight; i++) {
+      const rawLum = Math.max(0, Math.min(255, Math.round(gray[i])));
+      gray[i] = energyLut[rawLum];
     }
+
+    // Apply 100%-conserved Serpentine Floyd-Steinberg Dithering (7/16, 3/16, 5/16, 1/16)
+    const mono = this.applyFloydSteinbergDithering(gray, width, height, true);
 
     const previewCanvas = document.createElement('canvas');
     previewCanvas.width = width;
@@ -1269,6 +1527,12 @@ class ThermalPrinterService {
       width,
       height,
       previewDataUrl: previewCanvas.toDataURL('image/png'),
+      energyProfile: {
+        effectiveGamma: energyProfile.effectiveGamma,
+        minActivationEnergyPct: energyProfile.minActivationEnergyPct,
+        maxSaturationEnergyPct: energyProfile.maxSaturationEnergyPct,
+        exposureState: energyProfile.exposureState,
+      },
     };
   }
 
@@ -1457,25 +1721,13 @@ class ThermalPrinterService {
   }
 
   /**
-   * Applies the Admin-configured Printer Printout Darkness (5% = Ultra Light to 100% = Max Dark)
-   * and Thermal Head Burn Density ('light' | 'normal' | 'dark') directly to a copy of the canvas.
-   * Ensures both the Windows Silent Print Spooler (EPSON TM-T82X / TM-T88V) and ESC/POS rasterizer
-   * obey the exact darkness setting chosen in Admin without crushing dark hair into banded plateaus.
+   * Applies the Physical Thermal Print Head Gamma & Energy Level Mapping directly to a copy of the canvas
+   * for System / Silent Spooler printing, while `generateDitheredRaster` applies the exact same LUT for ESC/POS.
    */
   public applyDarknessToCanvas(
     sourceCanvas: HTMLCanvasElement,
     config: ThermalPrinterConfig
   ): HTMLCanvasElement {
-    const rawDarkness = config.printDarkness ?? 35;
-    const densityOffset =
-      config.density === 'light' ? -6 : config.density === 'dark' ? 8 : 0;
-    // Effective darkness on a 5..100 scale where 45 is neutral-standard, <45 lightens printout, >45 darkens printout
-    const effectiveDarkness = Math.max(5, Math.min(100, rawDarkness + densityOffset));
-
-    if (Math.abs(effectiveDarkness - 45) <= 4) {
-      return sourceCanvas;
-    }
-
     const outCanvas = document.createElement('canvas');
     outCanvas.width = sourceCanvas.width;
     outCanvas.height = sourceCanvas.height;
@@ -1489,37 +1741,21 @@ class ThermalPrinterService {
     const imgData = ctx.getImageData(0, 0, outCanvas.width, outCanvas.height);
     const d = imgData.data;
 
-    // Normalize delta: negative means lighter printout (less black ink), positive means darker printout
-    const darknessDelta = (effectiveDarkness - 45) / 55; // -0.72 (ultra light) to +1.0 (max dark)
-
-    // Precompute 256-entry lookup table for fast pixel tone mapping
-    const lut = new Uint8ClampedArray(256);
-    for (let v = 0; v < 256; v++) {
-      // Keep pure black text/typography (#000000) and pure white background (#ffffff) untouched
-      if (v <= 18 || v >= 248) {
-        lut[v] = v;
-        continue;
-      }
-      const norm = v / 255;
-      if (darknessDelta < 0) {
-        const liftStrength = Math.abs(darknessDelta);
-        const gamma = Math.max(0.62, 1.0 - liftStrength * 0.28);
-        const curved = Math.pow(norm, gamma);
-        const shadowFloor = liftStrength * 22;
-        lut[v] = Math.min(252, Math.round(shadowFloor + curved * (255 - shadowFloor)));
-      } else {
-        const darkStrength = darknessDelta;
-        const gamma = 1.0 + darkStrength * 0.35;
-        const curved = Math.pow(norm, gamma);
-        const mapped = Math.round(curved * 255);
-        lut[v] = Math.max(32, Math.min(252, mapped));
-      }
+    // Sample luminance across canvas for auto-exposure analysis
+    const sampleGray = new Float32Array(Math.ceil(d.length / 16));
+    for (let i = 0, s = 0; i < d.length; i += 16, s++) {
+      sampleGray[s] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
     }
 
+    const exposure = this.analyzeThermalImageExposure(sampleGray);
+    const { energyLut } = this.computePrintHeadEnergyProfile(config, exposure, 1.0, 0);
+
     for (let i = 0; i < d.length; i += 4) {
-      d[i] = lut[d[i]];
-      d[i + 1] = lut[d[i + 1]];
-      d[i + 2] = lut[d[i + 2]];
+      const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      const mapped = energyLut[Math.max(0, Math.min(255, lum))];
+      d[i] = mapped;
+      d[i + 1] = mapped;
+      d[i + 2] = mapped;
     }
 
     ctx.putImageData(imgData, 0, 0);
@@ -1548,16 +1784,17 @@ class ThermalPrinterService {
       );
     const targetWidth = is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
 
-    // Apply Admin Printer Printout Darkness & Density calibration to the canvas (once, without duplicate lifting)
-    const calibratedCanvas = this.applyDarknessToCanvas(canvas, config);
-
-    onProgress?.(15, 'Calibrating print darkness & dithering...');
+    onProgress?.(15, 'Calibrating print head gamma & energy curve...');
+    // Pass raw canvas + config to generateDitheredRaster so gamma & energy LUT is applied once cleanly before dithering
     const dithered = this.generateDitheredRaster(
-      calibratedCanvas,
+      canvas,
       targetWidth,
       1.0,
-      0
+      0,
+      config
     );
+    // Also prepare gamma-calibrated canvas for OS / System Spooler drivers
+    const calibratedCanvas = this.applyDarknessToCanvas(canvas, config);
 
     onProgress?.(35, 'Compiling ESC/POS raster stream...');
     const commandBands = this.buildEscPosCommandBands(

@@ -864,6 +864,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       densityOverride ||
       (clampedDarkness <= 40 ? 'light' : clampedDarkness <= 65 ? 'normal' : 'dark');
 
+    // Map darkness (5..100) to physical print head gamma (0.52 = max shadow lift for light print .. 1.05 = deep burn)
+    const mappedGamma = Number(
+      Math.max(0.48, Math.min(1.15, 0.52 + (clampedDarkness / 100) * 0.48)).toFixed(2)
+    );
+
     const updated: RemoteKioskConfig = {
       ...localConfig,
       thermalPrinter: {
@@ -871,6 +876,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         printDarkness: clampedDarkness,
         brightness: mappedBrightness,
         contrast: mappedContrast,
+        gamma: mappedGamma,
         density: autoDensity,
       },
     };
@@ -886,6 +892,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTestPrintFeedback(null);
 
     const activeDarkness = localConfig.thermalPrinter.printDarkness ?? 35;
+    const activeGamma = (localConfig.thermalPrinter.gamma ?? 0.68).toFixed(2);
     const activeDensity = (localConfig.thermalPrinter.density || 'light').toUpperCase();
 
     const testCanvas = document.createElement('canvas');
@@ -904,7 +911,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ctx.fillText('⚡ JCVCREATIVES PHOTOBOOTH ⚡', testCanvas.width / 2, 38);
     ctx.font = 'bold 14px monospace';
     ctx.fillText(
-      `DARKNESS: ${activeDarkness}% (${activeDensity} BURN)`,
+      `DARKNESS: ${activeDarkness}% • GAMMA: γ=${activeGamma} (${activeDensity})`,
       testCanvas.width / 2,
       62
     );
@@ -2449,12 +2456,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 {/* 2. Fine Printout Darkness Slider (5% to 100%) */}
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
-                  <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center justify-between text-xs flex-wrap gap-1">
                     <span className="text-slate-300 font-mono">
-                      2. Fine Darkness Slider (5% Lightest — 100% Darkest)
+                      2. Fine Darkness &amp; Print Head Gamma (5% Lightest — 100% Darkest)
                     </span>
                     <span className="font-mono font-bold text-amber-300">
-                      {localConfig.thermalPrinter.printDarkness ?? 35}% Darkness • Shadow Lift:{' '}
+                      {localConfig.thermalPrinter.printDarkness ?? 35}% Darkness • γ=
+                      {(localConfig.thermalPrinter.gamma ?? 0.68).toFixed(2)} • Shadow Lift:{' '}
                       {(localConfig.thermalPrinter.brightness ?? 45) >= 0
                         ? `+${localConfig.thermalPrinter.brightness ?? 45}%`
                         : `${localConfig.thermalPrinter.brightness ?? 45}%`}

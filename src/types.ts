@@ -158,6 +158,7 @@ export interface ThermalPrinterConfig {
   contrast: number; // 0 to 100 (40 default)
   brightness?: number; // -30 to 100 (45 default for bright thermal portrait exposure)
   printDarkness?: number; // 5 to 100 (35 default — controls overall printer printout darkness)
+  gamma?: number; // 0.40 to 1.60 (0.68 default — maps input brightness to physical print head energy levels)
   autoCut: boolean;
   printCopies: number;
   feedLines: number;

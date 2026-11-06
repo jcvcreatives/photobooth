@@ -42,12 +42,24 @@ export const ThermalPrintPreviewModal: React.FC<ThermalPrintPreviewModalProps> =
   const [offsetX, setOffsetX] = useState<number>(0);
   const [offsetY, setOffsetY] = useState<number>(0);
   const [contrast, setContrast] = useState<number>(currentConfig.contrast ?? 50);
+  const [gamma, setGamma] = useState<number>(currentConfig.gamma ?? 0.68);
   const [invertThermal, setInvertThermal] = useState(false);
   const [autoCut, setAutoCut] = useState(currentConfig.autoCut ?? true);
   const [topPadding, setTopPadding] = useState<number>(12);
   const [bottomPadding, setBottomPadding] = useState<number>(16);
 
   const [ditheredPreviewUrl, setDitheredPreviewUrl] = useState<string>('');
+  const [energyReadout, setEnergyReadout] = useState<{
+    effectiveGamma: number;
+    minActivationEnergyPct: number;
+    maxSaturationEnergyPct: number;
+    exposureState: 'underexposed' | 'balanced' | 'overexposed';
+  }>({
+    effectiveGamma: currentConfig.gamma ?? 0.68,
+    minActivationEnergyPct: 7,
+    maxSaturationEnergyPct: 83,
+    exposureState: 'balanced',
+  });
   const [estimatedLengthMm, setEstimatedLengthMm] = useState<number>(150);
   const [printerStatus, setPrinterStatus] = useState<PrinterDeviceStatus>(thermalPrinterService.getStatus());
   const adjustedCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -97,13 +109,23 @@ export const ThermalPrintPreviewModal: React.FC<ThermalPrintPreviewModalProps> =
 
     adjustedCanvasRef.current = workingCanvas;
 
-    const contrastMultiplier = contrast / 40;
-    const dithered = thermalPrinterService.generateDitheredRaster(workingCanvas, targetWidthDots, contrastMultiplier);
+    const contrastMultiplier = contrast / 45;
+    const dithered = thermalPrinterService.generateDitheredRaster(
+      workingCanvas,
+      targetWidthDots,
+      contrastMultiplier,
+      0,
+      {
+        ...currentConfig,
+        gamma,
+      }
+    );
     setDitheredPreviewUrl(dithered.previewDataUrl);
+    setEnergyReadout(dithered.energyProfile);
 
     const lengthMm = Math.round(workingCanvas.height / 8);
     setEstimatedLengthMm(lengthMm);
-  }, [sourceCanvas, paperWidthMm, alignment, scale, offsetX, offsetY, contrast, invertThermal, topPadding, bottomPadding]);
+  }, [sourceCanvas, currentConfig, paperWidthMm, alignment, scale, offsetX, offsetY, contrast, gamma, invertThermal, topPadding, bottomPadding]);
 
   const handleConfirm = () => {
     soundEffects.playTap();
@@ -114,6 +136,7 @@ export const ThermalPrintPreviewModal: React.FC<ThermalPrintPreviewModalProps> =
       paperWidthMm,
       dotsPerLine: paperWidthMm === 80 ? 576 : 384,
       contrast,
+      gamma,
       autoCut,
       printCopies,
     };
@@ -128,6 +151,7 @@ export const ThermalPrintPreviewModal: React.FC<ThermalPrintPreviewModalProps> =
     setOffsetY(0);
     setAlignment('center');
     setContrast(50);
+    setGamma(0.68);
     setInvertThermal(false);
   };
 
@@ -313,12 +337,38 @@ export const ThermalPrintPreviewModal: React.FC<ThermalPrintPreviewModalProps> =
               </div>
             </div>
 
-            {/* 4. Thermal Head Contrast & Darkness */}
-            <div className="p-3.5 bg-zinc-900 border border-zinc-800 rounded-xl space-y-2.5">
+            {/* 4. Thermal Head Contrast, Gamma (γ) & Energy Mapping */}
+            <div className="p-3.5 bg-zinc-900 border border-zinc-800 rounded-xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
                   <SunMedium className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Thermal Burn Contrast</span>
+                  <span>Print Head Gamma Correction (γ)</span>
+                </span>
+                <span className="text-xs font-mono text-emerald-400 font-semibold">
+                  γ = {gamma.toFixed(2)} (Eff: {energyReadout.effectiveGamma.toFixed(2)})
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0.45"
+                max="1.35"
+                step="0.02"
+                value={gamma}
+                onChange={(e) => setGamma(Number(e.target.value))}
+                className="w-full accent-emerald-400 cursor-pointer"
+              />
+              <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400 bg-zinc-950/80 px-2.5 py-1.5 rounded-lg border border-zinc-800/80">
+                <span>
+                  Head Energy: {energyReadout.minActivationEnergyPct}%–{energyReadout.maxSaturationEnergyPct}%
+                </span>
+                <span className="uppercase text-zinc-300">
+                  Auto-Exposure: {energyReadout.exposureState}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+                  <span>Midtone S-Curve Contrast</span>
                 </span>
                 <span className="text-xs font-mono text-zinc-400">{contrast}%</span>
               </div>

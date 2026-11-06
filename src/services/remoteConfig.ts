@@ -34,6 +34,7 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
     contrast: 40,
     brightness: 45,
     printDarkness: 38,
+    gamma: 0.68,
     autoCut: false,
     printCopies: 1,
     feedLines: 7,
@@ -120,6 +121,10 @@ class RemoteConfigService {
       if (this.config.thermalPrinter && this.config.thermalPrinter.printDarkness === undefined) {
         this.config.thermalPrinter.printDarkness = 38;
         this.config.thermalPrinter.density = 'normal';
+        needsSave = true;
+      }
+      if (this.config.thermalPrinter && this.config.thermalPrinter.gamma === undefined) {
+        this.config.thermalPrinter.gamma = 0.68;
         needsSave = true;
       }
       if (!this.config.tabletEndurance) {
