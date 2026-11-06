@@ -1393,9 +1393,9 @@ class ThermalPrinterService {
       bands.push(band);
     }
 
-    // Restore default line spacing (ESC 2), advance 7 lines past the cutter/tear bar, and execute automatic paper cut (ESC i + GS V 66 0)
+    // Restore default line spacing (ESC 2) and advance 7 lines past the printer slot so guests can easily cut with scissors
     const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, Math.max(7, feedLinesCount)];
-    if (config.autoCut !== false || isXprinter58iiB) {
+    if (config.autoCut && !isXprinter58iiB) {
       footer.push(0x1b, 0x69, 0x1d, 0x56, 0x42, 0x00);
     }
     bands.push(new Uint8Array(footer));

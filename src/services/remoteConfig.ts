@@ -34,9 +34,9 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
     contrast: 40,
     brightness: 45,
     printDarkness: 38,
-    autoCut: true,
+    autoCut: false,
     printCopies: 1,
-    feedLines: 6,
+    feedLines: 7,
     density: 'normal',
     escPosCommandMode: 'gs_v_0',
   },
@@ -60,7 +60,7 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
   },
   remoteSyncUrl: 'https://api.snapkiosk.io/v1/kiosks/KIOSK-TAB-01/config',
   autoUpdateEnabled: true,
-  version: '2.9.0-kiosk',
+  version: '2.9.1-kiosk',
   lastSyncTimestamp: Date.now(),
 };
 
@@ -135,15 +135,15 @@ class RemoteConfigService {
       }
       if (
         this.config.thermalPrinter &&
-        (!this.config.thermalPrinter.printerModel || this.config.version !== '2.9.0-kiosk')
+        (!this.config.thermalPrinter.printerModel || this.config.version !== '2.9.1-kiosk')
       ) {
         this.config.thermalPrinter.printerModel = 'xprinter_58iib';
         this.config.thermalPrinter.escPosCommandMode = 'gs_v_0';
         this.config.thermalPrinter.paperWidthMm = 58;
         this.config.thermalPrinter.dotsPerLine = 384;
-        this.config.thermalPrinter.feedLines = 6;
-        this.config.thermalPrinter.autoCut = true;
-        this.config.version = '2.9.0-kiosk';
+        this.config.thermalPrinter.feedLines = 7;
+        this.config.thermalPrinter.autoCut = false;
+        this.config.version = '2.9.1-kiosk';
         needsSave = true;
       }
       if (needsSave) {

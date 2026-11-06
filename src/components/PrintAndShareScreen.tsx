@@ -21,6 +21,7 @@ import {
   Share2,
   WifiOff,
   Settings2,
+  Scissors,
 } from 'lucide-react';
 import { PhotostripResult, ThermalPrinterConfig, RemoteKioskConfig } from '../types';
 import { thermalPrinterService } from '../services/thermalPrinter';
@@ -342,9 +343,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             ? printStatusText
             : isFeeding
             ? `Printing ${activeCopiesCount} ${activeCopiesCount === 1 ? 'copy' : 'copies'}...`
-            : `Printed ${activeCopiesCount} ${activeCopiesCount === 1 ? 'copy' : 'copies'} — grab your strip${
-                activeCopiesCount > 1 ? 's' : ''
-              } from the tray`}
+            : 'Please use scissors carefully to cut your thermal photo receipt'}
         </p>
       </div>
 
@@ -360,7 +359,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           <div className="w-full overflow-hidden flex justify-center py-1">
             <div
               key={feedAnimationKey}
-              className={`relative max-h-[30vh] sm:max-h-[34vh] flex flex-col items-center transition-transform ${
+              className={`relative max-h-[28vh] sm:max-h-[32vh] flex flex-col items-center transition-transform ${
                 isFeeding ? 'animate-thermalFeed' : ''
               }`}
             >
@@ -368,7 +367,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 <img
                   src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
                   alt="Printed Thermal Photostrip"
-                  className="max-h-[26vh] sm:max-h-[30vh] w-auto object-contain select-none pointer-events-none"
+                  className="max-h-[24vh] sm:max-h-[28vh] w-auto object-contain select-none pointer-events-none"
                 />
                 {activeCopiesCount > 1 && (
                   <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px] font-mono font-bold shadow">
@@ -377,20 +376,36 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 )}
               </div>
 
-              {/* Perforated tear line */}
-              <div className="w-full mt-1 flex items-center justify-center gap-1.5 text-[8px] font-mono text-zinc-400 uppercase tracking-widest">
-                <span>✂ TEAR HERE</span>
+              {/* Dashed Scissor Cut Guide Line */}
+              <div className="w-full mt-1 pt-0.5 border-t border-dashed border-zinc-400 flex items-center justify-center gap-1.5 text-[8px] font-mono text-zinc-600 font-bold uppercase tracking-widest">
+                <Scissors className="w-2.5 h-2.5 text-amber-600 animate-pulse" />
+                <span>CUT CAREFULLY WITH SCISSORS</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Clarifying badge for guests */}
-        <div className="mt-1.5 text-[10px] text-zinc-500 text-center flex items-center gap-1 bg-white px-2.5 py-0.5 rounded-full border border-zinc-200 shadow-2xs">
-          <span>🖨️ Thermal receipt printed ({activeCopiesCount}x)</span>
-          <span>•</span>
-          <span className="text-sky-600 font-medium">Scan QR or Email for full color & GIF</span>
-        </div>
+        {/* Post-Animation Scissor Cut Instruction Banner */}
+        {isFeeding ? (
+          <div className="mt-1.5 text-[10px] text-zinc-600 text-center flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-zinc-200 shadow-2xs">
+            <Loader2 className="w-3 h-3 animate-spin text-zinc-700" />
+            <span>Feeding thermal photo receipt — please wait until printing stops...</span>
+          </div>
+        ) : (
+          <div className="mt-1.5 w-full max-w-xs bg-amber-50 border border-amber-300 rounded-2xl px-3 py-1.5 shadow-xs flex items-center gap-2.5 text-left animate-fadeIn">
+            <div className="w-7 h-7 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+              <Scissors className="w-4 h-4 animate-bounce" />
+            </div>
+            <div className="leading-tight">
+              <div className="text-[11px] font-extrabold text-amber-950">
+                Use scissors carefully to cut your thermal photo receipt
+              </div>
+              <div className="text-[9.5px] text-amber-800 mt-0.5">
+                Printed ({activeCopiesCount}x) • Cut gently along the bottom margin
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action Buttons */}
