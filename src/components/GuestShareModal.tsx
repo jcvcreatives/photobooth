@@ -21,8 +21,10 @@ import { PhotostripResult } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { emailDeliveryService } from '../services/email';
 import {
-   shareOfflineViaQuickShare,
+  shareOfflineViaQuickShare,
   upscaleToIosCompatibleJpeg,
+  reconstructVectorHdPhotostripOnPhone,
+  fetchFullHdFromTabletPeer,
   isIosDevice,
 } from '../services/offlineQrTransfer';
 
@@ -36,6 +38,13 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
   const [activeTab, setActiveTab] = useState<'strip' | 'gif' | 'email' | 'thermal' | 'individual'>('strip');
   const [gifFrameIndex, setGifFrameIndex] = useState(0);
   const [iosReadyJpegUrl, setIosReadyJpegUrl] = useState<string>(result.compositeDataUrl);
+  const [thermalReadyUrl, setThermalReadyUrl] = useState<string>(
+    result.thermalRasterDataUrl || result.compositeDataUrl
+  );
+  const [hdPhotos, setHdPhotos] = useState<string[]>(result.photos);
+  const [isHdSynced, setIsHdSynced] = useState<boolean>(
+    Boolean(result.compositeDataUrl && result.compositeDataUrl.length > 45000)
+  );
 
   // Email form states
   const [emailInput, setEmailInput] = useState('');
@@ -45,29 +54,53 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
 
   const isIos = isIosDevice();
 
-  // Convert photostrip to high-res standard JPEG so iOS Safari & Chrome support "Save to Photos"
+  // 1. Immediately reconstruct 100% HD Vector Frame (GOBBLE-CHU / Gobble Haus typography & borders)
+  //    with deblocked, smoothed portrait on the phone, AND
+  // 2. Simultaneously connect to the Galaxy Tab A11 via WebRTC P2P to stream the 100% uncompressed original HD photo!
   React.useEffect(() => {
     let cancelled = false;
-    upscaleToIosCompatibleJpeg(result.compositeDataUrl)
-      .then((jpegUrl) => {
-        if (!cancelled && jpegUrl) {
-          setIosReadyJpegUrl(jpegUrl);
+
+    reconstructVectorHdPhotostripOnPhone(result)
+      .then((reconstructed) => {
+        if (!cancelled) {
+          setIosReadyJpegUrl(reconstructed.colorStripJpegUrl);
+          setThermalReadyUrl(reconstructed.thermalStripPngUrl);
+          setHdPhotos(reconstructed.individualPhotos);
         }
       })
       .catch(() => {});
+
+    const stopPeerFetch = fetchFullHdFromTabletPeer(result.id, async (hdUpdate) => {
+      if (cancelled) return;
+      if (hdUpdate.compositeDataUrl) {
+        const crispJpeg = await upscaleToIosCompatibleJpeg(hdUpdate.compositeDataUrl);
+        if (!cancelled) {
+          setIosReadyJpegUrl(crispJpeg);
+          setIsHdSynced(true);
+        }
+      }
+      if (hdUpdate.thermalRasterDataUrl && !cancelled) {
+        setThermalReadyUrl(hdUpdate.thermalRasterDataUrl);
+      }
+      if (hdUpdate.photos && hdUpdate.photos.length > 0 && !cancelled) {
+        setHdPhotos(hdUpdate.photos);
+      }
+    });
+
     return () => {
       cancelled = true;
+      stopPeerFetch();
     };
-  }, [result.compositeDataUrl]);
+  }, [result]);
 
   // Auto-cycle through photos to create live motion GIF player
   React.useEffect(() => {
-    if (activeTab !== 'gif' || result.photos.length === 0) return;
+    if (activeTab !== 'gif' || hdPhotos.length === 0) return;
     const interval = setInterval(() => {
-      setGifFrameIndex((prev) => (prev + 1) % result.photos.length);
+      setGifFrameIndex((prev) => (prev + 1) % hdPhotos.length);
     }, 450);
     return () => clearInterval(interval);
-  }, [activeTab, result.photos.length]);
+  }, [activeTab, hdPhotos.length]);
 
   const handleCopyLink = () => {
     soundEffects.playTap();
@@ -119,8 +152,17 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
               <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
                 <span>Guest Digital Portal</span>
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[9px] font-mono">
-                  <WifiOff className="w-2.5 h-2.5" />
-                  iOS &amp; ANDROID READY
+                  {isHdSynced ? (
+                    <>
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>FULL HD SYNCED</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="w-2.5 h-2.5" />
+                      <span>HD VECTOR READY</span>
+                    </>
+                  )}
                 </span>
               </div>
               <div className="text-[10px] text-zinc-400">Save directly to iPhone Photos or Android Gallery</div>
@@ -227,6 +269,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
                     const res = await shareOfflineViaQuickShare({
                       ...result,
                       compositeDataUrl: iosReadyJpegUrl,
+                      photos: hdPhotos,
                     });
                     if (res.message) {
                       setQuickShareMsg(res.message);
@@ -256,23 +299,23 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
           {activeTab === 'gif' && (
             <div className="flex flex-col items-center w-full">
               <div className="relative rounded-xl overflow-hidden shadow-2xl border border-sky-400/30 mb-3 w-full max-w-[280px] aspect-4/3 bg-slate-950 flex items-center justify-center">
-                {result.photos[gifFrameIndex] && (
+                {hdPhotos[gifFrameIndex] && (
                   <img
-                    src={result.photos[gifFrameIndex]}
+                    src={hdPhotos[gifFrameIndex]}
                     alt={`Frame ${gifFrameIndex + 1}`}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover select-auto"
                   />
                 )}
                 <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-slate-950/80 backdrop-blur-md text-[9px] font-mono text-sky-300 border border-sky-300/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>ANIMATED REEL ({gifFrameIndex + 1}/{result.photos.length})</span>
+                  <span>ANIMATED REEL ({gifFrameIndex + 1}/{hdPhotos.length})</span>
                 </div>
               </div>
               <p className="text-[10px] text-slate-400 mb-3 text-center">
                 Live looping motion GIF created from your booth poses
               </p>
               <button
-                onClick={() => downloadImage(result.photos[gifFrameIndex] || result.compositeDataUrl, `motion_frame_${result.id}.jpg`)}
+                onClick={() => downloadImage(hdPhotos[gifFrameIndex] || iosReadyJpegUrl, `motion_frame_${result.id}.jpg`)}
                 className="w-full py-2.5 rounded-xl bg-sky-300 hover:bg-sky-200 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-sm shadow-sky-300/20 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-slate-950" />
@@ -287,7 +330,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
                 <Mail className="w-5 h-5" />
               </div>
               <h4 className="text-sm font-semibold text-zinc-100 mb-1">
-                Email Photos & Motion GIF
+                Email Photos &amp; Motion GIF
               </h4>
               <p className="text-xs text-zinc-400 mb-4 max-w-xs leading-relaxed">
                 Send your full-color keepsake photostrip and animated GIF directly to your email address.
@@ -347,11 +390,11 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
 
           {activeTab === 'thermal' && (
             <div className="flex flex-col items-center w-full">
-              <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-3 max-h-[46vh]">
+              <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-3 max-h-[46vh] bg-white">
                 <img
-                  src={result.thermalRasterDataUrl || result.compositeDataUrl}
+                  src={thermalReadyUrl}
                   alt="Thermal Slip"
-                  className="max-h-[44vh] w-auto object-contain"
+                  className="max-h-[44vh] w-auto object-contain select-auto"
                 />
               </div>
               <p className="text-[10px] text-zinc-400 mb-3 text-center">
@@ -359,12 +402,12 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
               </p>
               <button
                 onClick={() =>
-                  downloadImage(result.thermalRasterDataUrl || result.compositeDataUrl, `thermal_${result.id}.png`)
+                  downloadImage(thermalReadyUrl, `thermal_${result.id}.jpg`)
                 }
                 className="w-full py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-zinc-950" />
-                <span>Save Thermal Receipt (.PNG)</span>
+                <span>Save Thermal Receipt (.JPG)</span>
               </button>
             </div>
           )}
@@ -372,9 +415,9 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
           {activeTab === 'individual' && (
             <div className="w-full space-y-2">
               <div className="grid grid-cols-2 gap-2">
-                {result.photos.map((src, i) => (
+                {hdPhotos.map((src, i) => (
                   <div key={i} className="group relative rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900">
-                    <img src={src} alt={`Shot ${i + 1}`} className="w-full aspect-[4/3] object-cover" />
+                    <img src={src} alt={`Shot ${i + 1}`} className="w-full aspect-[4/3] object-cover select-auto" />
                     <button
                       onClick={() => downloadImage(src, `shot_${i + 1}_${result.id}.jpg`)}
                       className="absolute bottom-1 right-1 p-1 rounded bg-black/80 text-white hover:bg-zinc-800 text-[10px] flex items-center gap-1 cursor-pointer"

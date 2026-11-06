@@ -37,6 +37,7 @@ import {
   getSavedOfflineQrMode,
   setSavedOfflineQrMode,
   shareOfflineViaQuickShare,
+  startTabletHdPeerHost,
 } from '../services/offlineQrTransfer';
 import { ThermalPrintPreviewModal } from './ThermalPrintPreviewModal';
 
@@ -167,7 +168,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     };
   }, []);
 
-  // Generate Self-Contained Offline QR Code (embeds compressed photo directly inside QR payload)
+  // Generate Self-Contained Offline QR Code (embeds compressed camera portrait + vector frame metadata)
   useEffect(() => {
     let cancelled = false;
     buildOfflineQrPacket(activeCanvas, result, offlineQrMode, hotspotOrigin)
@@ -182,6 +183,16 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       cancelled = true;
     };
   }, [activeCanvas, result, offlineQrMode, hotspotOrigin]);
+
+  // Host 100% uncompressed Full-HD photostrip & raw photos via WebRTC P2P for instant iPhone/Android HD sync
+  useEffect(() => {
+    const stopPeerHost = startTabletHdPeerHost(result, () => {
+      setCountdownSeconds(60);
+    });
+    return () => {
+      stopPeerHost();
+    };
+  }, [result]);
 
   const handleToggleQrMode = (mode: OfflineQrMode) => {
     soundEffects.playTap();
