@@ -366,63 +366,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 isFeeding ? 'animate-thermalFeed' : ''
               }`}
             >
-              {/* Animated Scissors Cutting Track across Top Roll Margin */}
-              {!isFeeding && (
-                <div className="w-full relative h-4 flex items-center justify-center overflow-visible z-20 mb-0.5">
-                  {/* Dashed uncut perforation line */}
-                  <div className="w-full border-t-2 border-dashed border-zinc-400/90" />
-                  {/* Progressive cut slice trail behind scissors */}
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-amber-400/80 rounded-full animate-cut-trail" />
-                  {/* Gliding & Snipping Scissors SVG */}
-                  <div className="absolute top-1/2 animate-scissors-across pointer-events-none z-30 drop-shadow-sm">
-                    <svg
-                      width="26"
-                      height="22"
-                      viewBox="0 0 28 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      {/* Top Handle + Lower Blade (pivots up/down) */}
-                      <g className="animate-scissor-blade-top">
-                        <circle
-                          cx="5.5"
-                          cy="6.5"
-                          r="3.8"
-                          stroke="#d97706"
-                          strokeWidth="2.2"
-                          fill="#fef3c7"
-                        />
-                        <path
-                          d="M8.8 8.5L26 15.5L24.5 17.2L8.2 10.5Z"
-                          fill="#f59e0b"
-                          stroke="#b45309"
-                          strokeWidth="0.8"
-                        />
-                      </g>
-                      {/* Bottom Handle + Upper Blade (pivots down/up) */}
-                      <g className="animate-scissor-blade-bottom">
-                        <circle
-                          cx="5.5"
-                          cy="17.5"
-                          r="3.8"
-                          stroke="#d97706"
-                          strokeWidth="2.2"
-                          fill="#fef3c7"
-                        />
-                        <path
-                          d="M8.8 15.5L26 8.5L24.5 6.8L8.2 13.5Z"
-                          fill="#fbbf24"
-                          stroke="#b45309"
-                          strokeWidth="0.8"
-                        />
-                      </g>
-                      {/* Center Pivot Screw */}
-                      <circle cx="11.5" cy="12" r="1.6" fill="#78350f" />
-                    </svg>
-                  </div>
-                </div>
-              )}
-
               {/* Thermal Receipt Body (detaches slightly when scissors finish cutting across) */}
               <div
                 className={`relative rounded shadow-lg bg-white border border-zinc-200 overflow-hidden ${
@@ -432,7 +375,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 <img
                   src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
                   alt="Printed Thermal Photostrip"
-                  className="max-h-[22vh] sm:max-h-[26vh] w-auto object-contain select-none pointer-events-none"
+                  className="max-h-[24vh] sm:max-h-[28vh] w-auto object-contain select-none pointer-events-none"
                 />
                 {activeCopiesCount > 1 && (
                   <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px] font-mono font-bold shadow">

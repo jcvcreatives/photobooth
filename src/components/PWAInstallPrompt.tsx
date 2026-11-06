@@ -19,6 +19,9 @@ export const PWAInstallPrompt: React.FC = () => {
   const [showIOSGuide, setShowIOSGuide] = useState(false);
   const [dismissedBanner, setDismissedBanner] = useState(false);
   const [offlineReadyToast, setOfflineReadyToast] = useState(false);
+  const [showOfflineModeBanner, setShowOfflineModeBanner] = useState<boolean>(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   useEffect(() => {
@@ -38,6 +41,14 @@ export const PWAInstallPrompt: React.FC = () => {
       // Ignore in restricted WebViews
     }
 
+    let offlineTimer: ReturnType<typeof setTimeout> | null = null;
+    let readyTimer: ReturnType<typeof setTimeout> | null = null;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setShowOfflineModeBanner(true);
+      offlineTimer = setTimeout(() => setShowOfflineModeBanner(false), 10000);
+    }
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
@@ -48,12 +59,22 @@ export const PWAInstallPrompt: React.FC = () => {
       setDeferredPrompt(null);
     };
 
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => {
+      setIsOnline(true);
+      setShowOfflineModeBanner(false);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowOfflineModeBanner(true);
+      if (offlineTimer) clearTimeout(offlineTimer);
+      offlineTimer = setTimeout(() => setShowOfflineModeBanner(false), 10000);
+    };
 
     const handleOfflineReady = () => {
       setOfflineReadyToast(true);
-      setTimeout(() => setOfflineReadyToast(false), 4500);
+      if (readyTimer) clearTimeout(readyTimer);
+      readyTimer = setTimeout(() => setOfflineReadyToast(false), 10000);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -63,6 +84,8 @@ export const PWAInstallPrompt: React.FC = () => {
     window.addEventListener('jcv-offline-ready', handleOfflineReady);
 
     return () => {
+      if (offlineTimer) clearTimeout(offlineTimer);
+      if (readyTimer) clearTimeout(readyTimer);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
       window.removeEventListener('online', handleOnline);
@@ -84,20 +107,20 @@ export const PWAInstallPrompt: React.FC = () => {
 
   return (
     <>
-      {/* Offline Cache Ready Toast */}
+      {/* Offline Cache Ready Toast (visible for 10 seconds) */}
       {offlineReadyToast && isOnline && (
         <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-full bg-emerald-950/90 backdrop-blur-md px-4 py-2 text-xs font-medium text-emerald-100 shadow-xl border border-emerald-700/60 animate-fadeIn">
           <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-          <span className="text-[11px] tracking-wide">App cached for 100% offline use</span>
+          <span className="text-[11px] tracking-wide">Ready for offline use — camera, vouchers, frames &amp; printing cached.</span>
         </div>
       )}
 
-      {/* Offline Mode Active Toast Indicator */}
-      {!isOnline && (
-        <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2.5 rounded-full bg-zinc-950/90 backdrop-blur-md px-4 py-2 text-xs font-medium text-zinc-200 shadow-2xl border border-zinc-800">
+      {/* Offline Mode Active Toast Indicator (visible for 10 seconds, then auto-hides) */}
+      {!isOnline && showOfflineModeBanner && (
+        <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2.5 rounded-full bg-zinc-950/90 backdrop-blur-md px-4 py-2 text-xs font-medium text-zinc-200 shadow-2xl border border-zinc-800 animate-fadeIn">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <WifiOff className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-          <span className="text-[11px] tracking-wide">Offline mode active — camera, vouchers, frames & printing ready.</span>
+          <span className="text-[11px] tracking-wide">Offline mode active — camera, vouchers, frames &amp; printing ready.</span>
         </div>
       )}
 
