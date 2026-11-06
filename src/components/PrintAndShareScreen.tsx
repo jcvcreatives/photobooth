@@ -832,12 +832,14 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
               <form onSubmit={handleRedeemPrintAnotherCopy} className="w-full space-y-3 bg-white p-4 rounded-2xl border border-zinc-200 shadow-xs">
                 <input
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={anotherCopyVoucherCode}
                   onChange={(e) => {
-                    setAnotherCopyVoucherCode(e.target.value.toUpperCase());
+                    setAnotherCopyVoucherCode(e.target.value.replace(/\D/g, ''));
                     setAnotherCopyError('');
                   }}
-                  placeholder="ENTER NEW VOUCHER CODE..."
+                  placeholder="ENTER NUMERIC VOUCHER CODE..."
                   autoFocus
                   autoComplete="off"
                   className="w-full px-4 py-3 rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white text-center uppercase tracking-widest font-mono text-sm font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black transition"

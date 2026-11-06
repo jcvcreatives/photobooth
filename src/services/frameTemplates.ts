@@ -578,20 +578,23 @@ function drawGobbleFrameTopAndBottomArt(
   // 1. POKÉMON CARD THEME ('pokemon_card' / 'gobble_pokemon_card')
   // =========================================================================
   if (styleId === 'pokemon_card' || theme.id === 'gobble_pokemon_card') {
-    // Top outer card arch & collector header
-    ctx.lineWidth = 3.5 * s;
-    ctx.beginPath();
-    ctx.moveTo(leftX, headerZoneHeight - 8 * s);
-    ctx.lineTo(leftX, 24 * s);
-    ctx.lineTo(rightX, 24 * s);
-    ctx.lineTo(rightX, headerZoneHeight - 8 * s);
-    ctx.stroke();
+    const cardTopY = 22 * s;
+    const cardBottomY = canvasHeight - 22 * s;
+    const innerPad = 14 * s;
+    const innerLeftX = leftX + innerPad;
+    const innerRightX = rightX - innerPad;
+    const innerW = contentW - innerPad * 2;
 
-    // Evolution Stage pill box on top-left (widened to 192*s so STAGE 2 • GOBBLEMON never overlaps box edges)
-    const pillX = leftX + 14 * s;
-    const pillY = 36 * s;
+    // Continuous unbroken collector card frame enclosing header, photo(s), and footer
+    ctx.lineWidth = 3.5 * s;
+    ctx.strokeStyle = ink;
+    ctx.strokeRect(leftX, cardTopY, contentW, cardBottomY - cardTopY);
+
+    // Evolution Stage pill box on top-left
+    const pillX = innerLeftX;
+    const pillY = cardTopY + 12 * s;
     const pillW = 192 * s;
-    const pillH = 32 * s;
+    const pillH = 28 * s;
     ctx.lineWidth = 2.5 * s;
     ctx.fillStyle = isThermalMode ? '#ffffff' : '#fef08a';
     ctx.fillRect(pillX, pillY, pillW, pillH);
@@ -601,65 +604,62 @@ function drawGobbleFrameTopAndBottomArt(
     fillFittedText(
       'STAGE 2 • GOBBLEMON',
       pillX + pillW / 2,
-      pillY + 21 * s,
-      pillW - 18 * s,
-      12 * s,
+      pillY + 19 * s,
+      pillW - 16 * s,
+      11.5 * s,
       '900',
       'monospace'
     );
 
+    // Pokedex info strip banner right above centered photo (aligned with inner photo width)
+    const bannerH = 30 * s;
+    const bannerY = headerZoneHeight - bannerH - 12 * s;
+    const titleY = Math.round((pillY + pillH + bannerY) / 2 + 10 * s);
+
     // Pokemon Name: GOBBLE-CHU
     ctx.textAlign = 'left';
-    fillFittedText('GOBBLE-CHU', leftX + 16 * s, 108 * s, contentW - 195 * s, 29 * s, '900', 'sans-serif');
+    ctx.fillStyle = ink;
+    fillFittedText('GOBBLE-CHU', innerLeftX, titleY, innerW - 175 * s, 28 * s, '900', 'sans-serif');
 
     // Right side HP 999 + Energy Circle
     ctx.textAlign = 'right';
     ctx.fillStyle = accent;
-    fillFittedText('HP', rightX - 118 * s, 106 * s, 40 * s, 16 * s, '900', 'sans-serif');
+    fillFittedText('HP', innerRightX - 104 * s, titleY - 2 * s, 38 * s, 15.5 * s, '900', 'sans-serif');
     ctx.fillStyle = ink;
-    fillFittedText('999', rightX - 56 * s, 108 * s, 58 * s, 31 * s, '900', 'sans-serif');
-    drawEnergyBadge(rightX - 30 * s, 96 * s, 15 * s);
+    fillFittedText('999', innerRightX - 42 * s, titleY, 58 * s, 30 * s, '900', 'sans-serif');
+    drawEnergyBadge(innerRightX - 16 * s, titleY - 11 * s, 14.5 * s);
 
-    // Pokedex info strip banner right above centered photo
-    const bannerY = headerZoneHeight - 54 * s;
+    // Draw Pokedex strip box
     ctx.lineWidth = 2.5 * s;
-    ctx.strokeRect(leftX + 10 * s, bannerY, contentW - 20 * s, 34 * s);
+    ctx.strokeStyle = ink;
+    ctx.strokeRect(innerLeftX, bannerY, innerW, bannerH);
     ctx.textAlign = 'center';
     ctx.fillStyle = ink;
     fillFittedText(
       `NO. 088  INASAL & FLOAT POKÉMON  •  HT: 100% FRESH  •  ${dateStr.toUpperCase()}`,
       centerX,
-      bannerY + 22 * s,
-      contentW - 38 * s,
-      11.5 * s,
+      bannerY + 20 * s,
+      innerW - 20 * s,
+      11 * s,
       'bold',
       'monospace'
     );
 
-    // Bottom Attack Moves & Collector Stats Box (below centered photo)
-    ctx.lineWidth = 3.5 * s;
-    ctx.beginPath();
-    ctx.moveTo(leftX, bottomStartY + 8 * s);
-    ctx.lineTo(leftX, canvasHeight - 24 * s);
-    ctx.lineTo(rightX, canvasHeight - 24 * s);
-    ctx.lineTo(rightX, bottomStartY + 8 * s);
-    ctx.stroke();
-
     // Attack 1: Ice Cream Float Chill
-    const atk1Y = bottomStartY + 42 * s;
-    drawEnergyBadge(leftX + 28 * s, atk1Y - 6 * s, 12 * s);
-    drawEnergyBadge(leftX + 56 * s, atk1Y - 6 * s, 12 * s);
+    const atk1Y = bottomStartY + 32 * s;
+    drawEnergyBadge(innerLeftX + 14 * s, atk1Y - 6 * s, 11.5 * s);
+    drawEnergyBadge(innerLeftX + 41 * s, atk1Y - 6 * s, 11.5 * s);
     ctx.textAlign = 'left';
-    fillFittedText('Ice Cream Float Chill', leftX + 80 * s, atk1Y, contentW - 165 * s, 20 * s, '900', 'sans-serif');
+    fillFittedText('Ice Cream Float Chill', innerLeftX + 64 * s, atk1Y, innerW - 135 * s, 19 * s, '900', 'sans-serif');
     ctx.textAlign = 'right';
-    fillFittedText('+100', rightX - 18 * s, atk1Y, 68 * s, 22 * s, '900', 'sans-serif');
+    fillFittedText('+100', innerRightX, atk1Y, 64 * s, 21 * s, '900', 'sans-serif');
     ctx.textAlign = 'left';
     fillFittedText(
       'Restores 100% energy with creamy ice cream & ice-cold float!',
-      leftX + 80 * s,
-      atk1Y + 20 * s,
-      contentW - 98 * s,
-      11.5 * s,
+      innerLeftX + 64 * s,
+      atk1Y + 18 * s,
+      innerW - 68 * s,
+      11 * s,
       'bold',
       'sans-serif'
     );
@@ -667,52 +667,53 @@ function drawGobbleFrameTopAndBottomArt(
     // Divider line between attacks
     ctx.lineWidth = 2 * s;
     ctx.beginPath();
-    ctx.moveTo(leftX + 14 * s, atk1Y + 34 * s);
-    ctx.lineTo(rightX - 14 * s, atk1Y + 34 * s);
+    ctx.moveTo(innerLeftX, atk1Y + 30 * s);
+    ctx.lineTo(innerRightX, atk1Y + 30 * s);
     ctx.stroke();
 
     // Attack 2: Chicken Inasal Flame
-    const atk2Y = atk1Y + 66 * s;
-    drawEnergyBadge(leftX + 24 * s, atk2Y - 6 * s, 11 * s);
-    drawEnergyBadge(leftX + 49 * s, atk2Y - 6 * s, 11 * s);
-    drawEnergyBadge(leftX + 74 * s, atk2Y - 6 * s, 11 * s);
+    const atk2Y = atk1Y + 58 * s;
+    drawEnergyBadge(innerLeftX + 12 * s, atk2Y - 6 * s, 10.5 * s);
+    drawEnergyBadge(innerLeftX + 36 * s, atk2Y - 6 * s, 10.5 * s);
+    drawEnergyBadge(innerLeftX + 60 * s, atk2Y - 6 * s, 10.5 * s);
     ctx.textAlign = 'left';
-    fillFittedText('Chicken Inasal Flame', leftX + 96 * s, atk2Y, contentW - 175 * s, 20 * s, '900', 'sans-serif');
+    fillFittedText('Chicken Inasal Flame', innerLeftX + 80 * s, atk2Y, innerW - 145 * s, 19 * s, '900', 'sans-serif');
     ctx.textAlign = 'right';
-    fillFittedText('999', rightX - 18 * s, atk2Y, 64 * s, 23 * s, '900', 'sans-serif');
+    fillFittedText('999', innerRightX, atk2Y, 60 * s, 22 * s, '900', 'sans-serif');
     ctx.textAlign = 'left';
     fillFittedText(
       'Flip a coin! If heads, double grilled Chicken Inasal & rice box!',
-      leftX + 96 * s,
-      atk2Y + 20 * s,
-      contentW - 114 * s,
-      11.5 * s,
+      innerLeftX + 80 * s,
+      atk2Y + 18 * s,
+      innerW - 84 * s,
+      11 * s,
       'bold',
       'sans-serif'
     );
 
     // Weakness / Resistance / Retreat Bar
-    const statBarY = atk2Y + 36 * s;
+    const statBarY = atk2Y + 30 * s;
+    const statBarH = 26 * s;
     ctx.lineWidth = 2 * s;
-    ctx.strokeRect(leftX + 14 * s, statBarY, contentW - 28 * s, 30 * s);
+    ctx.strokeRect(innerLeftX, statBarY, innerW, statBarH);
     ctx.textAlign = 'center';
     fillFittedText(
       'WEAKNESS: HUNGER ×2  |  RESISTANCE: BAD VIBES -30  |  RETREAT: ★ ★',
       centerX,
-      statBarY + 19 * s,
-      contentW - 46 * s,
-      10.5 * s,
+      statBarY + 17.5 * s,
+      innerW - 18 * s,
+      10 * s,
       'bold',
       'monospace'
     );
 
-    // Collector Card Bottom Signature
+    // Collector Card Bottom Signature (inside the continuous card frame)
     fillFittedText(
       'ILLUS. GOBBLE HAUS STUDIO  •  © 2026 POKÉ-GOBBLE SERIES  •  001/006 ★',
       centerX,
-      canvasHeight - 36 * s,
-      contentW - 32 * s,
-      10.5 * s,
+      cardBottomY - 11 * s,
+      innerW - 8 * s,
+      10 * s,
       'bold',
       'monospace'
     );
@@ -1361,16 +1362,39 @@ export async function renderPhotostripCanvas(options: {
 
   // 3. Vertically Centered Photo Slot Calculations + Top & Bottom Frame Drawings
   const photoCount = Math.max(1, loadedImages.length);
+  const s = canvasWidth / 600;
+  const isPokemonCard =
+    theme.borderStyle === 'pokemon_card' || theme.id === 'gobble_pokemon_card';
+  const innerPhotoInset = isPokemonCard ? Math.round(14 * s) : 0;
+
+  const drawPhotoFrameBorder = (x: number, y: number, w: number, h: number, lineW: number) => {
+    ctx.save();
+    if (isPokemonCard && !isThermalMode) {
+      // Double collector frame border around the photo inside the Pokémon card
+      ctx.strokeStyle = effectiveAccentColor;
+      ctx.lineWidth = lineW + 1.5;
+      ctx.strokeRect(x, y, w, h);
+      ctx.strokeStyle = theme.textColor;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+    } else {
+      ctx.strokeStyle = isThermalMode ? '#000000' : effectiveAccentColor;
+      ctx.lineWidth = lineW;
+      ctx.strokeRect(x, y, w, h);
+    }
+    ctx.restore();
+  };
 
   if (layout === 'strip_3' || layout === 'strip_4' || (layout === 'grid_4' && photoCount <= 2)) {
     const margin = 36;
+    const photoX = margin + innerPhotoInset;
     // Symmetric top and bottom zones so the photo block is vertically centered in the printout
-    const headerZoneHeight = 240;
-    const footerZoneHeight = 240;
+    const headerZoneHeight = 264;
+    const footerZoneHeight = 264;
     const availableHeight = canvasHeight - headerZoneHeight - footerZoneHeight;
     const gap = 18;
     const slotHeight = (availableHeight - gap * (photoCount - 1)) / photoCount;
-    const slotWidth = canvasWidth - margin * 2;
+    const slotWidth = canvasWidth - photoX * 2;
 
     // Draw custom Gobble Haus top & bottom frame drawings and texts
     drawGobbleFrameTopAndBottomArt(
@@ -1385,34 +1409,35 @@ export async function renderPhotostripCanvas(options: {
       isThermalMode
     );
 
-    // Draw each photo centered between top and bottom frame art
+    // Draw each photo centered inside the frame
     loadedImages.forEach((img, idx) => {
-      const slotY = headerZoneHeight + idx * (slotHeight + gap);
+      const slotY = Math.round(headerZoneHeight + idx * (slotHeight + gap));
+      const rSlotW = Math.round(slotWidth);
+      const rSlotH = Math.round(slotHeight);
 
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(margin - 4, slotY - 4, slotWidth + 8, slotHeight + 8);
+      ctx.fillRect(photoX, slotY, rSlotW, rSlotH);
 
-      drawImageProp(ctx, img, margin, slotY, slotWidth, slotHeight);
+      drawImageProp(ctx, img, photoX, slotY, rSlotW, rSlotH);
 
       if (isThermalMode) {
-        applyThermalPhotoToneCurve(ctx, margin, slotY, slotWidth, slotHeight, thermalBrightness);
+        applyThermalPhotoToneCurve(ctx, photoX, slotY, rSlotW, rSlotH, thermalBrightness);
       } else {
-        applyCanvasFilter(ctx, effectiveFilter, margin, slotY, slotWidth, slotHeight);
-        ctx.strokeStyle = effectiveAccentColor;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(margin, slotY, slotWidth, slotHeight);
+        applyCanvasFilter(ctx, effectiveFilter, photoX, slotY, rSlotW, rSlotH);
       }
+      drawPhotoFrameBorder(photoX, slotY, rSlotW, rSlotH, 3);
     });
   } else if (layout === 'grid_4') {
     // 2x2 grid centered vertically
     const margin = 56;
-    const headerZoneHeight = 360;
-    const footerZoneHeight = 360;
+    const photoMargin = margin + innerPhotoInset;
+    const headerZoneHeight = 396;
+    const footerZoneHeight = 396;
     const cols = 2;
     const rows = 2;
     const gap = 24;
 
-    const slotWidth = (canvasWidth - margin * 2 - gap) / cols;
+    const slotWidth = (canvasWidth - photoMargin * 2 - gap) / cols;
     const availableHeight = canvasHeight - headerZoneHeight - footerZoneHeight;
     const slotHeight = (availableHeight - gap) / rows;
 
@@ -1431,29 +1456,30 @@ export async function renderPhotostripCanvas(options: {
     loadedImages.slice(0, 4).forEach((img, idx) => {
       const c = idx % 2;
       const r = Math.floor(idx / 2);
-      const x = margin + c * (slotWidth + gap);
-      const y = headerZoneHeight + r * (slotHeight + gap);
+      const x = Math.round(photoMargin + c * (slotWidth + gap));
+      const y = Math.round(headerZoneHeight + r * (slotHeight + gap));
+      const rSlotW = Math.round(slotWidth);
+      const rSlotH = Math.round(slotHeight);
 
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x - 6, y - 6, slotWidth + 12, slotHeight + 12);
+      ctx.fillRect(x, y, rSlotW, rSlotH);
 
-      drawImageProp(ctx, img, x, y, slotWidth, slotHeight);
+      drawImageProp(ctx, img, x, y, rSlotW, rSlotH);
       if (isThermalMode) {
-        applyThermalPhotoToneCurve(ctx, x, y, slotWidth, slotHeight, thermalBrightness);
+        applyThermalPhotoToneCurve(ctx, x, y, rSlotW, rSlotH, thermalBrightness);
       } else {
-        applyCanvasFilter(ctx, effectiveFilter, x, y, slotWidth, slotHeight);
-        ctx.strokeStyle = effectiveAccentColor;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, slotWidth, slotHeight);
+        applyCanvasFilter(ctx, effectiveFilter, x, y, rSlotW, rSlotH);
       }
+      drawPhotoFrameBorder(x, y, rSlotW, rSlotH, 3);
     });
   } else if (layout === 'single_polaroid') {
-    // Single Polaroid: Photo strictly centered vertically so Top & Bottom have rich frame drawings & texts
+    // Single Polaroid: Photo strictly centered vertically & enclosed inside the card frame
     const margin = 48;
+    const photoX = margin + innerPhotoInset;
     const headerZoneHeight = 290;
     const footerZoneHeight = 290;
-    const photoWidth = canvasWidth - margin * 2;
-    const photoHeight = canvasHeight - headerZoneHeight - footerZoneHeight; // 640px centered vertically
+    const photoWidth = Math.round(canvasWidth - photoX * 2);
+    const photoHeight = Math.round(canvasHeight - headerZoneHeight - footerZoneHeight);
     const photoY = headerZoneHeight;
 
     drawGobbleFrameTopAndBottomArt(
@@ -1470,17 +1496,15 @@ export async function renderPhotostripCanvas(options: {
 
     if (loadedImages[0]) {
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(margin - 4, photoY - 4, photoWidth + 8, photoHeight + 8);
+      ctx.fillRect(photoX, photoY, photoWidth, photoHeight);
 
-      drawImageProp(ctx, loadedImages[0], margin, photoY, photoWidth, photoHeight);
+      drawImageProp(ctx, loadedImages[0], photoX, photoY, photoWidth, photoHeight);
       if (isThermalMode) {
-        applyThermalPhotoToneCurve(ctx, margin, photoY, photoWidth, photoHeight, thermalBrightness);
+        applyThermalPhotoToneCurve(ctx, photoX, photoY, photoWidth, photoHeight, thermalBrightness);
       } else {
-        applyCanvasFilter(ctx, effectiveFilter, margin, photoY, photoWidth, photoHeight);
-        ctx.strokeStyle = effectiveAccentColor;
-        ctx.lineWidth = 3.5;
-        ctx.strokeRect(margin, photoY, photoWidth, photoHeight);
+        applyCanvasFilter(ctx, effectiveFilter, photoX, photoY, photoWidth, photoHeight);
       }
+      drawPhotoFrameBorder(photoX, photoY, photoWidth, photoHeight, 3.5);
     }
   }
 

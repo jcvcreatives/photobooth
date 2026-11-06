@@ -19,28 +19,28 @@ export const LAYOUT_VOUCHER_META: Record<
   }
 > = {
   single_polaroid: {
-    prefix: '1S',
+    prefix: '1',
     label: '1-Shot (Polaroid)',
     shortLabel: '1-Shot',
     shots: 1,
     defaultPrice: 20,
   },
   grid_4: {
-    prefix: '2S',
+    prefix: '2',
     label: '2-Shot (Grid)',
     shortLabel: '2-Shot',
     shots: 2,
     defaultPrice: 25,
   },
   strip_3: {
-    prefix: '3S',
+    prefix: '3',
     label: '3-Shot (Grid)',
     shortLabel: '3-Shot',
     shots: 3,
     defaultPrice: 30,
   },
   strip_4: {
-    prefix: '4S',
+    prefix: '4',
     label: '4-Shot (4-Cut Strip)',
     shortLabel: '4-Shot',
     shots: 4,
@@ -49,17 +49,18 @@ export const LAYOUT_VOUCHER_META: Record<
 };
 
 export function inferLayoutFromPrefix(codeOrPrefix: string): FrameLayoutType | undefined {
-  const upper = codeOrPrefix.trim().toUpperCase();
-  if (upper.startsWith('1S') || upper.startsWith('JCV1')) return 'single_polaroid';
-  if (upper.startsWith('2S') || upper.startsWith('JCV2')) return 'grid_4';
-  if (upper.startsWith('3S') || upper.startsWith('JCV3')) return 'strip_3';
-  if (upper.startsWith('4S') || upper.startsWith('JCV4')) return 'strip_4';
+  const digits = codeOrPrefix.replace(/\D/g, '');
+  if (!digits) return undefined;
+  if (digits.startsWith('1')) return 'single_polaroid';
+  if (digits.startsWith('2')) return 'grid_4';
+  if (digits.startsWith('3')) return 'strip_3';
+  if (digits.startsWith('4')) return 'strip_4';
   return undefined;
 }
 
 const SEEDED_VOUCHERS: Voucher[] = [
   {
-    code: 'VIPFREE',
+    code: '888888',
     discountPercent: 100,
     maxUses: 1000,
     usedCount: 0,
@@ -68,7 +69,7 @@ const SEEDED_VOUCHERS: Voucher[] = [
     active: true,
   },
   {
-    code: 'PHOTO2025',
+    code: '202600',
     discountPercent: 100,
     maxUses: 250,
     usedCount: 0,
@@ -77,7 +78,7 @@ const SEEDED_VOUCHERS: Voucher[] = [
     active: true,
   },
   {
-    code: 'EVENTGUEST',
+    code: '100100',
     discountPercent: 100,
     maxUses: 500,
     usedCount: 0,
@@ -86,7 +87,7 @@ const SEEDED_VOUCHERS: Voucher[] = [
     active: true,
   },
   {
-    code: 'HALFPRICE',
+    code: '505050',
     discountPercent: 50,
     maxUses: 100,
     usedCount: 0,
@@ -96,32 +97,29 @@ const SEEDED_VOUCHERS: Voucher[] = [
   },
 ];
 
-const VOUCHER_CHARSET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const VOUCHER_CHARSET = '0123456789';
 
 /**
- * Computes a deterministic single-character checksum for offline cashier voucher verification.
+ * Computes a deterministic single-digit numeric checksum ('0'..'9') for offline cashier voucher verification.
  */
 function computeVoucherChecksum(payload: string): string {
-  const clean = payload.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const clean = payload.replace(/\D/g, '');
   let hash = 29;
   for (let i = 0; i < clean.length; i++) {
     hash = (hash * 37 + clean.charCodeAt(i) * (i + 3)) & 0xfffffff;
   }
-  return VOUCHER_CHARSET[hash % VOUCHER_CHARSET.length];
+  return VOUCHER_CHARSET[hash % 10];
 }
 
 /**
- * Verifies if an unknown code matches the JCV offline cashier voucher checksum format (e.g. JCV-XXXXC).
+ * Verifies if an unknown code matches the JCV offline numeric cashier voucher checksum format (e.g. 6-10 digits).
  */
 function isValidOfflineSignedCashierCode(code: string): boolean {
-  const normalized = code.trim().toUpperCase();
-  const match = normalized.match(/^([A-Z0-9]{2,6})-?([23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{5})$/);
-  if (!match) return false;
-  const prefix = match[1];
-  const bodyWithCheck = match[2];
-  const body = bodyWithCheck.slice(0, 4);
-  const checkChar = bodyWithCheck.slice(4, 5);
-  return computeVoucherChecksum(`${prefix}${body}`) === checkChar;
+  const normalized = code.replace(/\D/g, '');
+  if (!/^\d{6,10}$/.test(normalized)) return false;
+  const body = normalized.slice(0, -1);
+  const checkDigit = normalized.slice(-1);
+  return computeVoucherChecksum(body) === checkDigit;
 }
 
 class PaymentService {
@@ -130,14 +128,21 @@ class PaymentService {
   public async initVouchers(): Promise<void> {
     if (this.initialized) return;
     const existing = await storageService.getAllVouchers();
-    if (existing.length === 0) {
+    // Clean up any legacy non-numeric voucher codes so all stored vouchers are numbers only
+    for (const v of existing) {
+      if (!/^\d+$/.test(v.code)) {
+        await storageService.deleteVoucher(v.code);
+      }
+    }
+    const remaining = await storageService.getAllVouchers();
+    if (remaining.length === 0) {
       await storageService.saveVouchersBatch(SEEDED_VOUCHERS);
     }
     this.initialized = true;
   }
 
   /**
-   * Batch generates single-use layout vouchers (1 Voucher = 1 Print Copy) that work 100% offline.
+   * Batch generates single-use numeric layout vouchers (1 Voucher = 1 Print Copy) that work 100% offline.
    */
   public async generateCashierVouchersBatch(options: {
     count: number;
@@ -151,9 +156,9 @@ class PaymentService {
     await this.initVouchers();
     const count = Math.max(1, Math.min(500, Math.floor(options.count || 1)));
     const layoutMeta = options.layoutType ? LAYOUT_VOUCHER_META[options.layoutType] : undefined;
-    const defaultPrefix = layoutMeta ? layoutMeta.prefix : 'JCV';
-    const rawPrefix = (options.prefix || defaultPrefix).replace(/[^A-Z0-9]/gi, '').toUpperCase();
-    const prefix = rawPrefix.slice(0, 6) || defaultPrefix;
+    const defaultPrefix = layoutMeta ? layoutMeta.prefix : '3';
+    const rawPrefix = (options.prefix || defaultPrefix).replace(/\D/g, '');
+    const prefix = rawPrefix.slice(0, 4) || defaultPrefix;
     const discountPercent = options.discountPercent ?? 100;
     const maxUses = options.maxUses ?? 1; // 1 Voucher = 1 Print Copy (Single-Use)
     const expiryDays = options.expiryDays ?? 365;
@@ -165,7 +170,7 @@ class PaymentService {
         : `Cashier Batch (${new Date(now).toLocaleDateString([], { month: 'short', day: 'numeric' })})`);
 
     const existingList = await storageService.getAllVouchers();
-    const existingCodes = new Set(existingList.map((v) => v.code.toUpperCase()));
+    const existingCodes = new Set(existingList.map((v) => v.code));
 
     const generated: Voucher[] = [];
     let attempts = 0;
@@ -177,8 +182,8 @@ class PaymentService {
         const idx = Math.floor(Math.random() * VOUCHER_CHARSET.length);
         randPart += VOUCHER_CHARSET[idx];
       }
-      const checkChar = computeVoucherChecksum(`${prefix}${randPart}`);
-      const fullCode = `${prefix}-${randPart}${checkChar}`;
+      const checkDigit = computeVoucherChecksum(`${prefix}${randPart}`);
+      const fullCode = `${prefix}${randPart}${checkDigit}`;
 
       if (!existingCodes.has(fullCode)) {
         existingCodes.add(fullCode);
@@ -236,7 +241,7 @@ class PaymentService {
   }
 
   /**
-   * Validate and consume a voucher code (supports exact match, dash-omitted match, and offline signed cashier codes)
+   * Validate and consume a numeric voucher code (supports exact numeric match and offline signed cashier codes)
    * Note: 1 Voucher = 1 Print Copy. Once used, a single-use voucher is marked as spent.
    */
   public async redeemVoucher(
@@ -251,33 +256,35 @@ class PaymentService {
     transaction?: PaymentTransaction;
   }> {
     await this.initVouchers();
-    const cleanCode = code.trim().toUpperCase();
+    const cleanCode = code.replace(/\D/g, '');
+    if (!cleanCode) {
+      return {
+        success: false,
+        discountPercent: 0,
+        message: 'Please enter a numeric voucher code.',
+      };
+    }
+
     let voucher = await storageService.getVoucher(cleanCode);
 
-    // If customer typed code without hyphen (e.g. 3S4829K instead of 3S-4829K), find matching stored voucher
     if (!voucher) {
-      const strippedInput = cleanCode.replace(/[^A-Z0-9]/g, '');
       const allVouchers = await storageService.getAllVouchers();
-      const matched = allVouchers.find(
-        (v) => v.code.replace(/[^A-Z0-9]/g, '').toUpperCase() === strippedInput
-      );
+      const matched = allVouchers.find((v) => v.code.replace(/\D/g, '') === cleanCode);
       if (matched) {
         voucher = matched;
       }
     }
 
-    // If still not in local storage, check if it is a valid offline-signed cashier voucher generated on another station
+    // If still not in local storage, check if it is a valid offline-signed numeric cashier voucher generated on another station
     if (!voucher && isValidOfflineSignedCashierCode(cleanCode)) {
-      const m = cleanCode.match(/^([A-Z0-9]{2,6})-?([23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{5})$/);
-      const canonicalCode = m ? `${m[1]}-${m[2]}` : cleanCode;
-      const inferredLayout = inferLayoutFromPrefix(canonicalCode);
-      const existingCanonical = await storageService.getVoucher(canonicalCode);
+      const inferredLayout = inferLayoutFromPrefix(cleanCode);
+      const existingCanonical = await storageService.getVoucher(cleanCode);
       if (existingCanonical) {
         voucher = existingCanonical;
       } else {
         const meta = inferredLayout ? LAYOUT_VOUCHER_META[inferredLayout] : undefined;
         voucher = {
-          code: canonicalCode,
+          code: cleanCode,
           discountPercent: 100,
           maxUses: 1,
           usedCount: 0,

@@ -155,12 +155,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           <form onSubmit={handleRedeemVoucher} className="w-full space-y-3 bg-white p-5 rounded-2xl border border-zinc-200 shadow-xs">
             <input
               type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={voucherCode}
               onChange={(e) => {
-                setVoucherCode(e.target.value.toUpperCase());
+                setVoucherCode(e.target.value.replace(/\D/g, ''));
                 setVoucherError('');
               }}
-              placeholder="ENTER VOUCHER CODE..."
+              placeholder="ENTER NUMERIC VOUCHER CODE..."
               autoFocus
               autoComplete="off"
               className="w-full px-4 py-3.5 rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white text-center uppercase tracking-widest font-mono text-base font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black transition"

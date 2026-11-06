@@ -178,7 +178,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Cashier Batch Voucher Generator state
   const [batchLayoutType, setBatchLayoutType] = useState<FrameLayoutType>('strip_3');
   const [batchCount, setBatchCount] = useState<number>(20);
-  const [batchPrefix, setBatchPrefix] = useState<string>('3S');
+  const [batchPrefix, setBatchPrefix] = useState<string>('3');
   const [batchMaxUses, setBatchMaxUses] = useState<number>(1);
   const [batchDiscount, setBatchDiscount] = useState<number>(100);
   const [batchLabel, setBatchLabel] = useState<string>('3-Shot (Grid) • 1 Print Copy');
@@ -631,8 +631,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!newVoucherCode) return;
     soundEffects.playTap();
 
+    const numericCode = newVoucherCode.replace(/\D/g, '');
+    if (!numericCode) return;
+
     const voucher: Voucher = {
-      code: newVoucherCode.trim().toUpperCase(),
+      code: numericCode,
       discountPercent: Number(newVoucherDiscount),
       maxUses: Number(newVoucherMaxUses),
       usedCount: 0,
@@ -3688,7 +3691,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <span className="font-mono text-emerald-400">P{price}</span>
                             </div>
                             <div className="text-[10px] font-mono text-slate-400 mt-1">
-                              Prefix: {meta.prefix}-XXXX • 1 Copy
+                              Code: {meta.prefix}XXXXX • 1 Copy
                             </div>
                           </button>
                         );
@@ -3737,13 +3740,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div>
-                      <label className="text-slate-400 block mb-1">Code Prefix</label>
+                      <label className="text-slate-400 block mb-1">Numeric Prefix</label>
                       <input
                         type="text"
-                        maxLength={6}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={4}
                         value={batchPrefix}
-                        onChange={(e) => setBatchPrefix(e.target.value.toUpperCase())}
-                        placeholder="3S"
+                        onChange={(e) => setBatchPrefix(e.target.value.replace(/\D/g, ''))}
+                        placeholder="3"
                         className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase font-mono"
                       />
                     </div>
@@ -3913,12 +3918,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex flex-wrap gap-3 items-end text-xs"
                 >
                   <div>
-                    <label className="text-slate-400 block mb-1">Custom Promo Code</label>
+                    <label className="text-slate-400 block mb-1">Custom Numeric Code</label>
                     <input
                       type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       value={newVoucherCode}
-                      onChange={(e) => setNewVoucherCode(e.target.value)}
-                      placeholder="E.g. VIP2026"
+                      onChange={(e) => setNewVoucherCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="E.g. 999999"
                       className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase font-mono"
                     />
                   </div>
