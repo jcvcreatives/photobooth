@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Build APK & Deploy to GitHub Pages
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -44,12 +44,33 @@ jobs:
       - name: Build Android 7+ Offline APK
         run: node scripts/build-android-apk.mjs
 
+      - name: Upload Android APK Artifact (Download from GitHub Actions tab)
+        uses: actions/upload-artifact@v4
+        with:
+          name: JCVcreatives-Photobooth-APK
+          path: ./dist/JCVcreatives-Photobooth.apk
+          if-no-files-found: error
+
+      - name: Publish APK to GitHub Releases (Direct GitHub Download)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="v2.6.0"
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" ./dist/JCVcreatives-Photobooth.apk --clobber
+          else
+            gh release create "$TAG_NAME" ./dist/JCVcreatives-Photobooth.apk \
+              --title "JCVcreatives Photobooth Android APK ($TAG_NAME)" \
+              --notes "Standalone offline Android APK (compatible with Android 7.0 Nougat through Android 14). Includes HD Offline QR photo encoding, USB/Bluetooth/Wi-Fi thermal printing, and custom frames." \
+              --latest
+          fi
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
-      - name: Upload build artifact
+      - name: Upload GitHub Pages build artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: "./dist"
@@ -58,3 +79,8 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
+      - name: Write APK Download Links to Summary
+        run: |
+          echo "### 📲 Android APK Download Links" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Releases (Direct .APK):** [Download JCVcreatives-Photobooth.apk](https://github.com/${{ github.repository }}/releases/latest/download/JCVcreatives-Photobooth.apk)" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Pages (Direct .APK):** [${{ steps.deployment.outputs.page_url }}JCVcreatives-Photobooth.apk](${{ steps.deployment.outputs.page_url }}JCVcreatives-Photobooth.apk)" >> $GITHUB_STEP_SUMMARY

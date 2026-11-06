@@ -11,6 +11,28 @@ function run(cmd) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
+function isUnusedChatAttachment(fileName) {
+  return (
+    fileName.endsWith('.apk') ||
+    fileName.endsWith('.mov') ||
+    fileName.startsWith('IMG_') ||
+    fileName.startsWith('ScreenRecording_')
+  );
+}
+
+function cleanUnusedAttachmentsFromDist(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir)) {
+    const fullPath = path.join(dir, entry);
+    const stat = fs.statSync(fullPath);
+    if (stat.isDirectory()) {
+      cleanUnusedAttachmentsFromDist(fullPath);
+    } else if (isUnusedChatAttachment(entry)) {
+      fs.rmSync(fullPath, { force: true });
+    }
+  }
+}
+
 function copyRecursiveSync(src, dest) {
   const exists = fs.existsSync(src);
   const stats = exists && fs.statSync(src);
@@ -18,16 +40,18 @@ function copyRecursiveSync(src, dest) {
   if (isDirectory) {
     fs.mkdirSync(dest, { recursive: true });
     fs.readdirSync(src).forEach((childItemName) => {
-      // Do not recursively copy the .apk itself into assets
-      if (childItemName.endsWith('.apk')) return;
+      // Do not recursively copy the .apk or unused chat recordings into APK assets
+      if (isUnusedChatAttachment(childItemName) || childItemName === 'downloads') return;
       copyRecursiveSync(path.join(src, childItemName), path.join(dest, childItemName));
     });
   } else if (exists) {
+    if (isUnusedChatAttachment(path.basename(src))) return;
     fs.copyFileSync(src, dest);
   }
 }
 
 async function buildApk() {
+  cleanUnusedAttachmentsFromDist(path.join(distDir, 'assets', 'aistudio'));
   const sdkRoot = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || '/usr/local/lib/android/sdk';
   if (!fs.existsSync(sdkRoot)) {
     console.log('Android SDK not found in this environment; skipping local APK build.');
@@ -97,8 +121,8 @@ async function buildApk() {
     `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.jcvcreatives.photobooth"
-    android:versionCode="205"
-    android:versionName="2.5.0">
+    android:versionCode="206"
+    android:versionName="2.6.0">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="31" />
 
