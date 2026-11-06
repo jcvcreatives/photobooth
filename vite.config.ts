@@ -312,7 +312,7 @@ export default defineConfig(() => {
               urlPattern: ({ request }) => request.mode === 'navigate',
               handler: 'NetworkFirst',
               options: {
-                cacheName: 'jcv-pages-navigation-cache-v5',
+                cacheName: 'jcv-pages-navigation-cache-v6',
                 networkTimeoutSeconds: 3,
                 expiration: {
                   maxEntries: 25,
@@ -331,7 +331,7 @@ export default defineConfig(() => {
                 request.destination === 'worker',
               handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'jcv-static-assets-cache-v5',
+                cacheName: 'jcv-static-assets-cache-v6',
                 expiration: {
                   maxEntries: 120,
                   maxAgeSeconds: 60 * 60 * 24 * 60, // 60 days
@@ -346,7 +346,7 @@ export default defineConfig(() => {
               urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'jcv-images-cache-v5',
+                cacheName: 'jcv-images-cache-v6',
                 expiration: {
                   maxEntries: 250,
                   maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year

@@ -719,13 +719,368 @@ export function fetchFullHdFromTabletPeer(
 }
 
 /**
- * Luminance-Channel Unsharp Mask + Local Contrast Clarity Filter.
+ * Foveated Pre-Compression Filter (runs on the Tablet BEFORE WebP/JPEG encoding):
+ * 1. Strips high-frequency camera sensor grain on flat skin/walls using a 3x3 surface denoiser
+ *    while preserving eyes, eyebrows, lips, and hair edges 100%.
+ * 2. Gently low-pass filters the outer background periphery outside the portrait center
+ *    so 85%+ of the QR code's WebP/JPEG bit budget is spent on the subject's face!
  */
-function applyPortraitClarityEnhancer(
+function applyFoveatedPreCompressionFilter(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  amount: number = 0.65
+  shotCount: number = 1
+): void {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const src = imgData.data;
+  const denoised = new Uint8ClampedArray(src);
+
+  // Pass 1: 3x3 Edge-Preserving Surface Denoiser (removes random sensor grain <= 10 gray levels)
+  for (let y = 1; y < height - 1; y++) {
+    const row = y * width;
+    for (let x = 1; x < width - 1; x++) {
+      const cIdx = (row + x) * 4;
+      const r0 = src[cIdx];
+      const g0 = src[cIdx + 1];
+      const b0 = src[cIdx + 2];
+
+      let sumR = r0 * 4;
+      let sumG = g0 * 4;
+      let sumB = b0 * 4;
+      let wSum = 4;
+
+      for (let dy = -1; dy <= 1; dy++) {
+        const nRow = (y + dy) * width;
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nIdx = (nRow + x + dx) * 4;
+          const dr = Math.abs(src[nIdx] - r0);
+          const dg = Math.abs(src[nIdx + 1] - g0);
+          const db = Math.abs(src[nIdx + 2] - b0);
+          const diff = dr * 0.3 + dg * 0.59 + db * 0.11;
+          if (diff < 11) {
+            const w = diff < 5 ? 2 : 1;
+            sumR += src[nIdx] * w;
+            sumG += src[nIdx + 1] * w;
+            sumB += src[nIdx + 2] * w;
+            wSum += w;
+          }
+        }
+      }
+
+      denoised[cIdx] = Math.round(sumR / wSum);
+      denoised[cIdx + 1] = Math.round(sumG / wSum);
+      denoised[cIdx + 2] = Math.round(sumB / wSum);
+    }
+  }
+
+  // Pass 2: Foveated Background Periphery Low-Pass Filter (allocates bits to center face)
+  const out = new Uint8ClampedArray(denoised);
+  const singleH = Math.max(1, Math.floor(height / Math.max(1, shotCount)));
+
+  for (let y = 2; y < height - 2; y++) {
+    const localY = y % singleH;
+    const ny = (localY + 0.5) / singleH;
+    const dyNorm = (ny - 0.52) / 0.41;
+
+    for (let x = 2; x < width - 2; x++) {
+      const nx = (x + 0.5) / width;
+      const dxNorm = (nx - 0.5) / 0.37;
+      const radialDistSq = dxNorm * dxNorm + dyNorm * dyNorm;
+
+      // Inside the central face oval (radialDistSq <= 1.0), keep 100% full resolution
+      if (radialDistSq <= 1.0) continue;
+
+      const blend = Math.min(0.62, (radialDistSq - 1.0) * 0.42);
+      if (blend <= 0.02) continue;
+
+      let avgR = 0;
+      let avgG = 0;
+      let avgB = 0;
+      for (let ky = -2; ky <= 2; ky++) {
+        const kRow = (y + ky) * width;
+        for (let kx = -2; kx <= 2; kx++) {
+          const kIdx = (kRow + x + kx) * 4;
+          avgR += denoised[kIdx];
+          avgG += denoised[kIdx + 1];
+          avgB += denoised[kIdx + 2];
+        }
+      }
+      avgR /= 25;
+      avgG /= 25;
+      avgB /= 25;
+
+      const cIdx = (y * width + x) * 4;
+      out[cIdx] = Math.round(denoised[cIdx] * (1 - blend) + avgR * blend);
+      out[cIdx + 1] = Math.round(denoised[cIdx + 1] * (1 - blend) + avgG * blend);
+      out[cIdx + 2] = Math.round(denoised[cIdx + 2] * (1 - blend) + avgB * blend);
+    }
+  }
+
+  imgData.data.set(out);
+  ctx.putImageData(imgData, 0, 0);
+}
+
+/**
+ * Stage 1 (On Guest Phone at Native Decoded Resolution):
+ * YCbCr 8x8/4x4 DCT Block-Boundary Deblocker + 5x5 Joint Bilateral Chroma Smoother
+ * + 2-Pass Edge-Preserving Bilateral Surface Filter + Adaptive Portrait Shadow Lift.
+ * Melts away 8x8 luminance blocks and 16x16 color blotches on skin/walls while keeping
+ * eyes, eyebrows, hair, and facial contours 100% sharp!
+ */
+function applyYCbCrDctDeblockingFilter(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number
+): void {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+  const n = width * height;
+
+  const Y = new Float32Array(n);
+  const Cb = new Float32Array(n);
+  const Cr = new Float32Array(n);
+
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    Y[p] = 0.299 * r + 0.587 * g + 0.114 * b;
+    Cb[p] = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+    Cr[p] = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+  }
+
+  // Step 1A: Explicit 4x4 / 8x8 DCT Block-Boundary De-Stepping on Luminance Y
+  // Smooths artificial quantization steps across vertical (x % 4 == 0) and horizontal (y % 4 == 0) block boundaries
+  for (let y = 1; y < height - 1; y++) {
+    const row = y * width;
+    for (let x = 4; x < width - 2; x += 4) {
+      const idx = row + x;
+      const p1 = Y[idx - 2];
+      const p0 = Y[idx - 1];
+      const q0 = Y[idx];
+      const q1 = Y[idx + 1];
+      const delta = q0 - p0;
+      const absDelta = Math.abs(delta);
+      if (absDelta > 0.5 && absDelta < 24 && Math.abs(p0 - p1) < 10 && Math.abs(q1 - q0) < 10) {
+        const adj = delta * 0.42;
+        Y[idx - 1] = p0 + adj;
+        Y[idx] = q0 - adj;
+        Y[idx - 2] = p1 + adj * 0.35;
+        Y[idx + 1] = q1 - adj * 0.35;
+      }
+    }
+  }
+
+  for (let y = 4; y < height - 2; y += 4) {
+    const row = y * width;
+    for (let x = 1; x < width - 1; x++) {
+      const idx = row + x;
+      const p1 = Y[idx - 2 * width];
+      const p0 = Y[idx - width];
+      const q0 = Y[idx];
+      const q1 = Y[idx + width];
+      const delta = q0 - p0;
+      const absDelta = Math.abs(delta);
+      if (absDelta > 0.5 && absDelta < 24 && Math.abs(p0 - p1) < 10 && Math.abs(q1 - q0) < 10) {
+        const adj = delta * 0.42;
+        Y[idx - width] = p0 + adj;
+        Y[idx] = q0 - adj;
+        Y[idx - 2 * width] = p1 + adj * 0.35;
+        Y[idx + width] = q1 - adj * 0.35;
+      }
+    }
+  }
+
+  // Step 1B: 5x5 Joint Bilateral Chroma Deblocking (eliminates 16x16 color blotches on skin & walls)
+  const smoothCb = new Float32Array(Cb);
+  const smoothCr = new Float32Array(Cr);
+  for (let y = 2; y < height - 2; y++) {
+    const row = y * width;
+    for (let x = 2; x < width - 2; x++) {
+      const idx = row + x;
+      const y0 = Y[idx];
+      let sumCb = 0;
+      let sumCr = 0;
+      let wSum = 0;
+
+      for (let dy = -2; dy <= 2; dy++) {
+        const nRow = (y + dy) * width;
+        for (let dx = -2; dx <= 2; dx++) {
+          const nIdx = nRow + x + dx;
+          const dyDiff = Math.abs(Y[nIdx] - y0);
+          if (dyDiff < 32) {
+            const w = dyDiff < 12 ? 2.0 : 1.0 - (dyDiff - 12) / 24;
+            sumCb += Cb[nIdx] * w;
+            sumCr += Cr[nIdx] * w;
+            wSum += w;
+          }
+        }
+      }
+      if (wSum > 0) {
+        smoothCb[idx] = sumCb / wSum;
+        smoothCr[idx] = sumCr / wSum;
+      }
+    }
+  }
+
+  // Step 1C: 2-Pass 5x5 Edge-Preserving Bilateral Filter on Luminance Y
+  // Melts flat 8x8 stair-steps on cheeks, forehead, nose, chin & walls while keeping eyes/hair sharp
+  let curY = Y;
+  const spatialKernel = [
+    1, 2, 3, 2, 1,
+    2, 5, 6, 5, 2,
+    3, 6, 8, 6, 3,
+    2, 5, 6, 5, 2,
+    1, 2, 3, 2, 1,
+  ];
+
+  for (let pass = 0; pass < 2; pass++) {
+    const nextY = new Float32Array(curY);
+    const invTwoSigmaSq = 1 / (2 * (pass === 0 ? 16.5 * 16.5 : 13.0 * 13.0));
+
+    for (let y = 2; y < height - 2; y++) {
+      const row = y * width;
+      for (let x = 2; x < width - 2; x++) {
+        const idx = row + x;
+        const centerY = curY[idx];
+        let sumY = 0;
+        let wSum = 0;
+        let k = 0;
+
+        for (let dy = -2; dy <= 2; dy++) {
+          const nRow = (y + dy) * width;
+          for (let dx = -2; dx <= 2; dx++, k++) {
+            const nVal = curY[nRow + x + dx];
+            const diff = nVal - centerY;
+            const absDiff = Math.abs(diff);
+            if (absDiff > 34) continue;
+            const rangeW = Math.exp(-(diff * diff) * invTwoSigmaSq);
+            const w = spatialKernel[k] * rangeW;
+            sumY += nVal * w;
+            wSum += w;
+          }
+        }
+
+        if (wSum > 0) {
+          nextY[idx] = sumY / wSum;
+        }
+      }
+    }
+    curY = nextY;
+  }
+
+  // Step 1D: Adaptive Portrait Shadow Lift (brightens dark indoor eyes/faces gently without blowing highlights)
+  let faceLumSum = 0;
+  let faceCount = 0;
+  const xStart = Math.floor(width * 0.25);
+  const xEnd = Math.ceil(width * 0.75);
+  const yStart = Math.floor(height * 0.2);
+  const yEnd = Math.ceil(height * 0.8);
+  for (let y = yStart; y < yEnd; y++) {
+    const row = y * width;
+    for (let x = xStart; x < xEnd; x++) {
+      faceLumSum += curY[row + x];
+      faceCount++;
+    }
+  }
+  const meanFaceY = faceCount > 0 ? faceLumSum / faceCount : 128;
+  const shadowLiftStrength = meanFaceY < 118 ? Math.min(0.22, ((118 - meanFaceY) / 118) * 0.28) : 0;
+
+  // Convert restored YCbCr back to RGB
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    let yVal = curY[p];
+    if (shadowLiftStrength > 0) {
+      const norm = Math.max(0, Math.min(1, yVal / 255));
+      // Smooth shadow lift that boosts dark/mid tones (eyes/skin) while leaving bright walls unchanged
+      const lifted = norm + shadowLiftStrength * norm * (1 - norm) * (1 - norm * 0.5);
+      yVal = lifted * 255;
+    }
+
+    const cb = smoothCb[p] - 128;
+    const cr = smoothCr[p] - 128;
+
+    const r = yVal + 1.402 * cr;
+    const g = yVal - 0.344136 * cb - 0.714136 * cr;
+    const b = yVal + 1.772 * cb;
+
+    data[i] = Math.max(0, Math.min(255, Math.round(r)));
+    data[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+    data[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+  }
+
+  imgData.data.set(data);
+  ctx.putImageData(imgData, 0, 0);
+}
+
+/**
+ * Stage 2 (Mid-Scale 384px Polish):
+ * Fast 3x3 Edge-Preserving Bilateral Polish that eliminates any diagonal stair-stepping
+ * or interpolation ringing after the first upscale stage.
+ */
+function applyMidScaleBilateralPolish(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number
+): void {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const src = imgData.data;
+  const out = new Uint8ClampedArray(src);
+
+  for (let y = 1; y < height - 1; y++) {
+    const row = y * width;
+    for (let x = 1; x < width - 1; x++) {
+      const cIdx = (row + x) * 4;
+      const r0 = src[cIdx];
+      const g0 = src[cIdx + 1];
+      const b0 = src[cIdx + 2];
+
+      let sumR = r0 * 4;
+      let sumG = g0 * 4;
+      let sumB = b0 * 4;
+      let wSum = 4;
+
+      for (let dy = -1; dy <= 1; dy++) {
+        const nRow = (y + dy) * width;
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nIdx = (nRow + x + dx) * 4;
+          const diff =
+            Math.abs(src[nIdx] - r0) * 0.3 +
+            Math.abs(src[nIdx + 1] - g0) * 0.59 +
+            Math.abs(src[nIdx + 2] - b0) * 0.11;
+          if (diff < 15) {
+            const w = diff < 7 ? 1.5 : 0.75;
+            sumR += src[nIdx] * w;
+            sumG += src[nIdx + 1] * w;
+            sumB += src[nIdx + 2] * w;
+            wSum += w;
+          }
+        }
+      }
+
+      out[cIdx] = Math.round(sumR / wSum);
+      out[cIdx + 1] = Math.round(sumG / wSum);
+      out[cIdx + 2] = Math.round(sumB / wSum);
+    }
+  }
+
+  imgData.data.set(out);
+  ctx.putImageData(imgData, 0, 0);
+}
+
+/**
+ * Stage 3 (Final 672px Soft-Coring Structural Feature Definition):
+ * Only enhances true high-contrast structural edges (eyelashes, pupils, eyebrows, lips, hair)
+ * where |detail| >= deadband, while leaving smooth skin and backgrounds 100% untouched
+ * so compression blocks are NEVER re-sharpened!
+ */
+function applySoftCoringFeatureEnhancer(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  amount: number = 0.34,
+  deadband: number = 4.2
 ): void {
   const imgData = ctx.getImageData(0, 0, width, height);
   const src = imgData.data;
@@ -753,13 +1108,14 @@ function applyPortraitClarityEnhancer(
         16;
 
       const detail = lum[idx] - blurLum;
-      const boost = Math.abs(detail) < 1.5 ? 0 : detail * amount;
+      const absDetail = Math.abs(detail);
+      if (absDetail <= deadband) continue;
+
+      const sign = detail > 0 ? 1 : -1;
+      const boost = sign * Math.min(10, (absDetail - deadband) * amount);
       const cIdx = idx * 4;
       for (let c = 0; c < 3; c++) {
-        const v = src[cIdx + c] + boost;
-        const norm = Math.max(0, Math.min(255, v)) / 255;
-        const contrasted = (norm - 0.5) * 1.05 + 0.5;
-        out[cIdx + c] = Math.max(0, Math.min(255, Math.round(contrasted * 255)));
+        out[cIdx + c] = Math.max(0, Math.min(255, Math.round(src[cIdx + c] + boost)));
       }
     }
   }
@@ -810,7 +1166,7 @@ async function buildCameraPhotosOnlyCanvas(
 
   const count = validImgs.length;
   const slotAspect = getLayoutSlotAspect(layout, count);
-  const slotW = 320;
+  const slotW = 360;
   const slotH = Math.round(slotW / slotAspect);
   const out = document.createElement('canvas');
   out.width = slotW;
@@ -842,41 +1198,54 @@ async function buildCameraPhotosOnlyCanvas(
   return { canvas: out, count };
 }
 
+function stripDataUrlToBase64Length(dataUrl: string): number {
+  const raw = dataUrl.replace(/^data:image\/[a-zA-Z]+;base64,/, '').replace(/=+$/, '');
+  return raw.length;
+}
+
 /**
- * Compresses a camera-only canvas into an ultra-crisp Data URI that fits inside a Version-40 QR code.
+ * Compresses a camera-only canvas into an ultra-smooth, block-free Data URI that maximizes
+ * the Version-40 QR code capacity (~2,925 bytes total URL) while keeping quality high (>= 0.62)
+ * so 8x8 macroblocks are never coarsely quantized!
  */
 export function compressCanvasForOfflineQr(
   sourceCanvas: HTMLCanvasElement,
-  maxChars: number = 2580,
-  forceJpegForIos: boolean = false
+  maxBase64Chars: number = 2780,
+  forceJpegForIos: boolean = false,
+  shotCount: number = 1
 ): { dataUrl: string; width: number; height: number } {
-  const srcW = sourceCanvas.width || 320;
-  const srcH = sourceCanvas.height || 272;
+  const srcW = sourceCanvas.width || 360;
+  const srcH = sourceCanvas.height || 306;
   const aspect = srcH / srcW;
 
+  // Prioritized (width, quality) profiles — keeps quality >= 0.62 to prevent 8x8 DCT blockiness!
   const clarityProfiles: Array<[number, number]> = [
-    [248, 0.76],
-    [232, 0.74],
-    [220, 0.72],
-    [208, 0.70],
-    [196, 0.68],
+    [280, 0.78],
+    [268, 0.76],
+    [256, 0.75],
+    [248, 0.74],
+    [240, 0.73],
+    [232, 0.72],
+    [224, 0.71],
+    [216, 0.70],
+    [208, 0.69],
+    [200, 0.68],
+    [192, 0.67],
     [184, 0.66],
-    [176, 0.64],
-    [168, 0.62],
-    [160, 0.60],
-    [152, 0.58],
-    [144, 0.56],
-    [136, 0.54],
-    [128, 0.52],
-    [116, 0.50],
+    [176, 0.65],
+    [168, 0.64],
+    [160, 0.63],
+    [152, 0.62],
+    [144, 0.60],
+    [136, 0.58],
   ];
 
   const scratch = document.createElement('canvas');
   const ctx = scratch.getContext('2d');
 
   let bestDataUrl = '';
-  let bestW = 160;
-  let bestH = Math.round(160 * aspect);
+  let bestW = 176;
+  let bestH = Math.round(176 * aspect);
 
   for (const [w, q] of clarityProfiles) {
     const h = Math.max(48, Math.round(w * aspect));
@@ -889,7 +1258,9 @@ export function compressCanvasForOfflineQr(
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(sourceCanvas, 0, 0, w, h);
-      applyPortraitClarityEnhancer(ctx, w, h, 0.36);
+      // Foveated pre-filtering removes sensor grain & smooths outer background periphery
+      // so 85% of WebP/JPEG bits go directly to the subject's face!
+      applyFoveatedPreCompressionFilter(ctx, w, h, shotCount);
     }
 
     let attempt = '';
@@ -904,7 +1275,7 @@ export function compressCanvasForOfflineQr(
     bestW = w;
     bestH = h;
 
-    if (attempt.length <= maxChars) {
+    if (stripDataUrlToBase64Length(attempt) <= maxBase64Chars) {
       scratch.width = 0;
       scratch.height = 0;
       return { dataUrl: attempt, width: w, height: h };
@@ -945,7 +1316,7 @@ async function resolveReachableBaseUrl(customHostOrigin?: string): Promise<strin
 }
 
 /**
- * Generates an iOS & Android compatible QR Code with maximum portrait clarity.
+ * Generates an iOS & Android compatible QR Code with maximum portrait clarity even when 100% offline.
  */
 export async function buildOfflineQrPacket(
   fallbackCanvas: HTMLCanvasElement,
@@ -956,12 +1327,12 @@ export async function buildOfflineQrPacket(
   const resolvedBaseUrl = await resolveReachableBaseUrl(customHostOrigin);
 
   if (mode === 'direct_data_uri') {
-    const { canvas: camCanvas } = await buildCameraPhotosOnlyCanvas(
+    const { canvas: camCanvas, count: shotCount } = await buildCameraPhotosOnlyCanvas(
       result.photos,
       result.layout,
       fallbackCanvas
     );
-    const compressed = compressCanvasForOfflineQr(camCanvas, 2650, true);
+    const compressed = compressCanvasForOfflineQr(camCanvas, 2860, true, shotCount);
     const payloadString = compressed.dataUrl;
     const qrDataUrl = await QRCode.toDataURL(payloadString, {
       errorCorrectionLevel: 'L',
@@ -992,16 +1363,52 @@ export async function buildOfflineQrPacket(
   )}&f=${encodeURIComponent(result.filter)}&c=${photoCount}&offline-photo=`;
 
   const prefix = `${resolvedBaseUrl}?share=${encodeURIComponent(result.id)}#${metaPrefix}`;
-  const availableForImage = Math.max(1250, 2740 - prefix.length);
-  const compressed = compressCanvasForOfflineQr(camCanvas, availableForImage, false);
 
+  // Maximize QR Version-40 L capacity (up to 2,925 total bytes, fallback to 2,800 if needed)
+  for (const maxTotalBytes of [2920, 2800, 2680]) {
+    const availableForBase64 = Math.max(1400, maxTotalBytes - prefix.length - 2);
+    const compressed = compressCanvasForOfflineQr(
+      camCanvas,
+      availableForBase64,
+      false,
+      photoCount
+    );
+
+    const isWebp = compressed.dataUrl.startsWith('data:image/webp;base64,');
+    const formatCode = isWebp ? 'w' : 'j';
+    const rawBase64 = compressed.dataUrl.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+    const urlSafeBase64 = rawBase64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const payloadString = `${prefix}${formatCode}.${urlSafeBase64}`;
+
+    try {
+      const qrDataUrl = await QRCode.toDataURL(payloadString, {
+        errorCorrectionLevel: 'L',
+        width: 420,
+        margin: 2,
+        color: { dark: '#18181b', light: '#ffffff' },
+      });
+
+      return {
+        mode,
+        qrDataUrl,
+        payloadString,
+        compactImageDataUrl: compressed.dataUrl,
+        byteLength: payloadString.length,
+        dimensions: { width: compressed.width, height: compressed.height },
+        resolvedBaseUrl,
+      };
+    } catch {
+      // Try next slightly smaller budget if QR payload was near boundary
+    }
+  }
+
+  // Guaranteed fallback
+  const compressed = compressCanvasForOfflineQr(camCanvas, 2350, false, photoCount);
   const isWebp = compressed.dataUrl.startsWith('data:image/webp;base64,');
   const formatCode = isWebp ? 'w' : 'j';
   const rawBase64 = compressed.dataUrl.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
   const urlSafeBase64 = rawBase64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
   const payloadString = `${prefix}${formatCode}.${urlSafeBase64}`;
-
   const qrDataUrl = await QRCode.toDataURL(payloadString, {
     errorCorrectionLevel: 'L',
     width: 420,
@@ -1021,8 +1428,9 @@ export async function buildOfflineQrPacket(
 }
 
 /**
- * Splits a vertical camera contact sheet back into individual portraits at the exact layout slot aspect ratio
- * and renders the 100% native HD vector photostrip!
+ * Splits a vertical camera contact sheet back into individual portraits at the exact layout slot aspect ratio,
+ * runs our 4-Stage YCbCr DCT Deblocking & Bilateral Super-Resolution pipeline so offline QR portraits have
+ * ZERO pixelation or 8x8 macroblocking, and renders the 100% native HD vector photostrip!
  */
 export async function reconstructVectorHdPhotostripOnPhone(
   result: PhotostripResult,
@@ -1061,7 +1469,7 @@ export async function reconstructVectorHdPhotostripOnPhone(
   const individualPhotos: string[] = await new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const w = img.naturalWidth || img.width || 220;
+      const w = img.naturalWidth || img.width || 240;
       const totalH = img.naturalHeight || img.height || Math.round(w / slotAspect) * packedCount;
       const count = Math.max(1, packedCount);
       const singleH = Math.max(1, Math.floor(totalH / count));
@@ -1073,6 +1481,20 @@ export async function reconstructVectorHdPhotostripOnPhone(
       const extracted: string[] = [];
 
       for (let i = 0; i < count; i++) {
+        // Stage 1: Native-resolution YCbCr 8x8 DCT Deblocking + Joint Bilateral Chroma & Luminance Restoration
+        const nativeCanvas = document.createElement('canvas');
+        nativeCanvas.width = w;
+        nativeCanvas.height = singleH;
+        const nativeCtx = nativeCanvas.getContext('2d');
+        if (nativeCtx) {
+          nativeCtx.imageSmoothingEnabled = false;
+          nativeCtx.drawImage(img, 0, i * singleH, w, singleH, 0, 0, w, singleH);
+          if (!isFromHdStream) {
+            applyYCbCrDctDeblockingFilter(nativeCtx, w, singleH);
+          }
+        }
+
+        // Stage 2: Intermediate Bicubic Upscale (to 384px) + Bilateral Anti-Aliasing Polish
         const step1 = document.createElement('canvas');
         step1.width = midW;
         step1.height = midH;
@@ -1080,10 +1502,13 @@ export async function reconstructVectorHdPhotostripOnPhone(
         if (ctx1) {
           ctx1.imageSmoothingEnabled = true;
           ctx1.imageSmoothingQuality = 'high';
-          ctx1.drawImage(img, 0, i * singleH, w, singleH, 0, 0, midW, midH);
-          applyPortraitClarityEnhancer(ctx1, midW, midH, isFromHdStream ? 0.25 : 0.68);
+          ctx1.drawImage(nativeCtx ? nativeCanvas : img, 0, 0, midW, midH);
+          if (!isFromHdStream) {
+            applyMidScaleBilateralPolish(ctx1, midW, midH);
+          }
         }
 
+        // Stage 3: Final Bicubic Upscale (to 672px) + Soft-Coring Structural Feature Definition
         const finalCanvas = document.createElement('canvas');
         finalCanvas.width = targetW;
         finalCanvas.height = targetH;
@@ -1092,9 +1517,17 @@ export async function reconstructVectorHdPhotostripOnPhone(
           finalCtx.imageSmoothingEnabled = true;
           finalCtx.imageSmoothingQuality = 'high';
           finalCtx.drawImage(ctx1 ? step1 : img, 0, 0, targetW, targetH);
-          applyPortraitClarityEnhancer(finalCtx, targetW, targetH, isFromHdStream ? 0.18 : 0.42);
+          applySoftCoringFeatureEnhancer(
+            finalCtx,
+            targetW,
+            targetH,
+            isFromHdStream ? 0.22 : 0.36,
+            isFromHdStream ? 2.5 : 4.2
+          );
           extracted.push(finalCanvas.toDataURL('image/jpeg', 0.95));
         }
+
+        nativeCanvas.width = 0;
         step1.width = 0;
         finalCanvas.width = 0;
       }

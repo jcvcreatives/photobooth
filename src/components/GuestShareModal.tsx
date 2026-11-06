@@ -57,8 +57,8 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
 
   const isIos = isIosDevice();
 
-  // 1. Reconstruct 100% HD Vector Frame (768x1152 / 768x1824) with Unsharp Mask Clarity Enhancement locally on the phone, AND
-  // 2. Simultaneously stream the HD Camera Portrait Sheet from the booth (completing smoothly within 3.5s even if offline!)
+  // 1. Reconstruct 100% HD Vector Frame (768x1152 / 768x1824) with 4-Stage YCbCr DCT Deblocking & Bilateral Restoration locally on the phone, AND
+  // 2. Simultaneously stream the uncompressed Camera Sheet if the booth is online
   React.useEffect(() => {
     let cancelled = false;
     let hdArrived = isAlreadyFullHd;
@@ -69,36 +69,18 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
           setIosReadyJpegUrl(reconstructed.colorStripJpegUrl);
           setThermalReadyUrl(reconstructed.thermalStripPngUrl);
           setHdPhotos(reconstructed.individualPhotos);
+          setSyncProgress(100);
+          setIsHdSynced(true);
         }
       })
       .catch(() => {});
 
     if (!isAlreadyFullHd) {
-      // Smoothly advance progress bar so it never stalls at 12% while connecting or enhancing
-      const progressTicker = setInterval(() => {
-        if (!cancelled && !hdArrived) {
-          setSyncProgress((prev) => {
-            if (prev >= 92) return prev;
-            return prev + Math.max(4, Math.round((95 - prev) * 0.24));
-          });
-        }
-      }, 380);
-
-      // Guaranteed completion within 3.4s if booth is offline so user is never stuck waiting
-      const fallbackDoneTimer = setTimeout(() => {
-        if (!cancelled && !hdArrived) {
-          setSyncProgress(100);
-          setIsHdSynced(true);
-        }
-      }, 3400);
-
       const stopPeerFetch = fetchFullHdFromTabletPeer(
         result,
         (hdReconstructed) => {
           if (cancelled) return;
           hdArrived = true;
-          clearInterval(progressTicker);
-          clearTimeout(fallbackDoneTimer);
           setIosReadyJpegUrl(hdReconstructed.colorStripJpegUrl);
           setThermalReadyUrl(hdReconstructed.thermalStripPngUrl);
           setHdPhotos(hdReconstructed.individualPhotos);
@@ -114,8 +96,6 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
 
       return () => {
         cancelled = true;
-        clearInterval(progressTicker);
-        clearTimeout(fallbackDoneTimer);
         stopPeerFetch();
       };
     }
