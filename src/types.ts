@@ -23,6 +23,7 @@ export type ThemeCategory =
   | 'passport'
   | 'party'
   | 'retro'
+  | 'gobble'
   | 'custom';
 
 export interface FrameTheme {
