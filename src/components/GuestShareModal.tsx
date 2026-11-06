@@ -179,7 +179,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
         </div>
 
         {/* Tab switcher */}
-        <div className="grid grid-cols-5 gap-1 p-2 bg-zinc-900/60 border-b border-zinc-800 text-xs">
+        <div className="grid grid-cols-3 gap-1.5 p-2 bg-zinc-900/60 border-b border-zinc-800 text-xs">
           <button
             onClick={() => {
               soundEffects.playTap();
@@ -209,19 +209,6 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
           <button
             onClick={() => {
               soundEffects.playTap();
-              setActiveTab('email');
-            }}
-            className={`py-1.5 rounded-md font-medium text-[11px] transition cursor-pointer ${
-              activeTab === 'email'
-                ? 'bg-zinc-100 text-zinc-950 font-semibold'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            ✉️ Email
-          </button>
-          <button
-            onClick={() => {
-              soundEffects.playTap();
               setActiveTab('thermal');
             }}
             className={`py-1.5 rounded-md font-medium text-[11px] transition cursor-pointer ${
@@ -231,19 +218,6 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
             }`}
           >
             Receipt
-          </button>
-          <button
-            onClick={() => {
-              soundEffects.playTap();
-              setActiveTab('individual');
-            }}
-            className={`py-1.5 rounded-md font-medium text-[11px] transition cursor-pointer ${
-              activeTab === 'individual'
-                ? 'bg-zinc-100 text-zinc-950 font-semibold'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            Photos
           </button>
         </div>
 

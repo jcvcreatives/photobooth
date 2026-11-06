@@ -190,6 +190,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const stripContainerRef = useRef<HTMLDivElement | null>(null);
   const stickerGridScrollRef = useRef<HTMLDivElement | null>(null);
   const activeStickerDragRef = useRef<{ id: string; startX: number; startY: number; stickerX: number; stickerY: number } | null>(null);
+  const activeStickerResizeRef = useRef<{ id: string; startX: number; startY: number; startScale: number } | null>(null);
 
   const selectedSticker = stickers.find((s) => s.id === selectedStickerId) || null;
 
@@ -310,7 +311,6 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   // Drag sticker handlers with pointer capture
   const handleStickerPointerDown = (id: string, e: React.PointerEvent) => {
     e.stopPropagation();
-    e.preventDefault();
     soundEffects.playTap();
     setSelectedStickerId(id);
 
@@ -330,16 +330,25 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
       stickerY: st.y,
     };
 
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   };
 
   const handleStickerPointerMove = (id: string, e: React.PointerEvent) => {
     if (!activeStickerDragRef.current || activeStickerDragRef.current.id !== id) return;
     if (!stripContainerRef.current) return;
 
+    const dxPx = e.clientX - activeStickerDragRef.current.startX;
+    const dyPx = e.clientY - activeStickerDragRef.current.startY;
+    // Ignore tiny micro-jitter on simple tap so tapping to select/resize stays rock solid
+    if (Math.hypot(dxPx, dyPx) < 3) return;
+
     const rect = stripContainerRef.current.getBoundingClientRect();
-    const deltaXPercent = ((e.clientX - activeStickerDragRef.current.startX) / rect.width) * 100;
-    const deltaYPercent = ((e.clientY - activeStickerDragRef.current.startY) / rect.height) * 100;
+    const deltaXPercent = (dxPx / rect.width) * 100;
+    const deltaYPercent = (dyPx / rect.height) * 100;
 
     const newX = Math.max(5, Math.min(95, activeStickerDragRef.current.stickerX + deltaXPercent));
     const newY = Math.max(5, Math.min(95, activeStickerDragRef.current.stickerY + deltaYPercent));
@@ -350,8 +359,56 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   };
 
   const handleStickerPointerUp = (id: string, e: React.PointerEvent) => {
+    e.stopPropagation();
     if (activeStickerDragRef.current && activeStickerDragRef.current.id === id) {
       activeStickerDragRef.current = null;
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  // Direct corner drag-to-resize handlers on the sticker itself
+  const handleResizeHandlePointerDown = (id: string, currentScale: number, e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    soundEffects.playTap();
+    setSelectedStickerId(id);
+    activeStickerResizeRef.current = {
+      id,
+      startX: e.clientX,
+      startY: e.clientY,
+      startScale: currentScale,
+    };
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleResizeHandlePointerMove = (id: string, e: React.PointerEvent) => {
+    if (!activeStickerResizeRef.current || activeStickerResizeRef.current.id !== id) return;
+    e.stopPropagation();
+    const dx = e.clientX - activeStickerResizeRef.current.startX;
+    const dy = e.clientY - activeStickerResizeRef.current.startY;
+    const delta = (dx + dy) / 70;
+    const nextScale = Math.max(
+      0.4,
+      Math.min(2.6, Number((activeStickerResizeRef.current.startScale + delta).toFixed(2)))
+    );
+    setDefaultItemScale(nextScale);
+    setStickers((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, scale: nextScale } : s))
+    );
+  };
+
+  const handleResizeHandlePointerUp = (id: string, e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (activeStickerResizeRef.current && activeStickerResizeRef.current.id === id) {
+      activeStickerResizeRef.current = null;
       try {
         (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
       } catch {
@@ -504,7 +561,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           <div
             ref={stripContainerRef}
             onClick={() => setSelectedStickerId(null)}
-            className="relative rounded-2xl shadow-md overflow-hidden max-h-[32vh] sm:max-h-[36vh] flex items-center justify-center bg-white border border-zinc-200 select-none p-1 shrink-0"
+            className="relative rounded-2xl shadow-md max-h-[32vh] sm:max-h-[36vh] flex items-center justify-center bg-white border border-zinc-200 select-none p-1 shrink-0"
           >
             {previewSrc ? (
               <img
@@ -529,6 +586,10 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 return (
                   <div
                     key={st.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedStickerId(st.id);
+                    }}
                     onPointerDown={(e) => handleStickerPointerDown(st.id, e)}
                     onPointerMove={(e) => handleStickerPointerMove(st.id, e)}
                     onPointerUp={(e) => handleStickerPointerUp(st.id, e)}
@@ -536,63 +597,121 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       position: 'absolute',
                       left: `${st.x}%`,
                       top: `${st.y}%`,
-                      transform: `translate(-50%, -50%) rotate(${st.rotation}deg) scale(${st.scale})`,
+                      transform: 'translate(-50%, -50%)',
                       pointerEvents: 'auto',
                       touchAction: 'none',
                     }}
-                    className={`select-none cursor-grab active:cursor-grabbing p-1 rounded-lg ${
-                      isSelected ? 'ring-2 ring-black bg-black/10' : ''
+                    className={`select-none cursor-grab active:cursor-grabbing p-2 rounded-xl ${
+                      isSelected ? 'ring-2 ring-black bg-black/10 shadow-sm z-30' : ''
                     }`}
                   >
-                    {st.isText && st.text ? (
-                      <span
-                        style={
-                          tStyle === 'white_pill'
-                            ? {
-                                backgroundColor: '#ffffff',
-                                color: activeColor,
-                                borderColor: activeColor,
-                              }
-                            : tStyle === 'black_pill'
-                            ? {
-                                backgroundColor: activeColor,
-                                color: '#ffffff',
-                                borderColor: '#ffffff',
-                              }
-                            : tStyle === 'outline'
-                            ? {
-                                color: activeColor,
-                                textShadow:
-                                  '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff',
-                              }
-                            : {
-                                color: activeColor,
-                              }
-                        }
-                        className={`inline-block whitespace-nowrap font-black text-xs sm:text-sm leading-tight select-none pointer-events-none ${
-                          tStyle === 'white_pill' || tStyle === 'black_pill'
-                            ? 'px-2 py-0.5 rounded-full border-2 shadow-2xs'
-                            : ''
-                        }`}
-                      >
-                        {st.text}
-                      </span>
-                    ) : (
-                      <span className="text-2xl sm:text-3xl leading-none select-none pointer-events-none drop-shadow">
-                        {st.emoji}
-                      </span>
-                    )}
+                    <div
+                      style={{
+                        transform: `rotate(${st.rotation}deg) scale(${st.scale})`,
+                        transformOrigin: 'center center',
+                      }}
+                      className="flex items-center justify-center pointer-events-none"
+                    >
+                      {st.isText && st.text ? (
+                        <span
+                          style={
+                            tStyle === 'white_pill'
+                              ? {
+                                  backgroundColor: '#ffffff',
+                                  color: activeColor,
+                                  borderColor: activeColor,
+                                }
+                              : tStyle === 'black_pill'
+                              ? {
+                                  backgroundColor: activeColor,
+                                  color: '#ffffff',
+                                  borderColor: '#ffffff',
+                                }
+                              : tStyle === 'outline'
+                              ? {
+                                  color: activeColor,
+                                  textShadow:
+                                    '-1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff',
+                                }
+                              : {
+                                  color: activeColor,
+                                }
+                          }
+                          className={`inline-block whitespace-nowrap font-black text-xs sm:text-sm leading-tight select-none pointer-events-none ${
+                            tStyle === 'white_pill' || tStyle === 'black_pill'
+                              ? 'px-2 py-0.5 rounded-full border-2 shadow-2xs'
+                              : ''
+                          }`}
+                        >
+                          {st.text}
+                        </span>
+                      ) : (
+                        <span className="text-2xl sm:text-3xl leading-none select-none pointer-events-none drop-shadow">
+                          {st.emoji}
+                        </span>
+                      )}
+                    </div>
 
                     {isSelected && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteSticker(st.id);
-                        }}
-                        className="absolute -top-3 -right-3 w-4 h-4 rounded-full bg-black text-white text-[10px] flex items-center justify-center cursor-pointer"
-                      >
-                        ✕
-                      </button>
+                      <>
+                        {/* Top-Left: Delete Button */}
+                        <button
+                          type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteSticker(st.id);
+                          }}
+                          title="Remove Sticker"
+                          className="absolute -top-3 -left-3 w-6 h-6 rounded-full bg-rose-600 text-white text-xs font-bold flex items-center justify-center shadow-md border border-white cursor-pointer active:scale-90 z-30"
+                        >
+                          ✕
+                        </button>
+
+                        {/* Top-Right: Tap to Enlarge (+) */}
+                        <button
+                          type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            soundEffects.playTap();
+                            handleUpdateSelectedScale(st.scale + 0.15);
+                          }}
+                          title="Make Larger (+)"
+                          className="absolute -top-3 -right-3 w-6 h-6 rounded-full bg-black text-white text-xs font-bold flex items-center justify-center shadow-md border border-white cursor-pointer active:scale-90 z-30"
+                        >
+                          +
+                        </button>
+
+                        {/* Bottom-Left: Tap to Shrink (-) */}
+                        <button
+                          type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            soundEffects.playTap();
+                            handleUpdateSelectedScale(st.scale - 0.15);
+                          }}
+                          title="Make Smaller (-)"
+                          className="absolute -bottom-3 -left-3 w-6 h-6 rounded-full bg-zinc-800 text-white text-xs font-bold flex items-center justify-center shadow-md border border-white cursor-pointer active:scale-90 z-30"
+                        >
+                          −
+                        </button>
+
+                        {/* Bottom-Right: Drag or Tap to Resize Handle (⤡) */}
+                        <div
+                          onPointerDown={(e) => handleResizeHandlePointerDown(st.id, st.scale, e)}
+                          onPointerMove={(e) => handleResizeHandlePointerMove(st.id, e)}
+                          onPointerUp={(e) => handleResizeHandlePointerUp(st.id, e)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                          title="Drag to Resize"
+                          className="absolute -bottom-3 -right-3 w-6 h-6 rounded-full bg-sky-500 text-white text-xs font-bold flex items-center justify-center shadow-md border border-white cursor-nwse-resize z-30"
+                        >
+                          ⤡
+                        </div>
+                      </>
                     )}
                   </div>
                 );
@@ -600,62 +719,71 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             </div>
           </div>
 
-          {/* Quick Size & Rotation Bar when a Sticker or Text item is selected */}
-          {selectedSticker && (
-            <div className="mt-1 px-2.5 py-1 bg-white border border-zinc-300 rounded-full shadow-2xs flex items-center gap-1.5 text-[10px] shrink-0">
-              <span className="font-semibold text-zinc-700">Size:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEffects.playTap();
-                  handleUpdateSelectedScale(selectedSticker.scale - 0.15);
-                }}
-                className="w-5 h-5 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
-                title="Smaller"
+          {/* Stable-Height Quick Size & Rotation Bar so selecting a sticker never shifts layout */}
+          <div className="mt-1 min-h-[30px] flex items-center justify-center shrink-0">
+            {selectedSticker ? (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="px-2.5 py-1 bg-white border border-zinc-300 rounded-full shadow-2xs flex items-center gap-1.5 text-[10px]"
               >
-                <Minus className="w-3 h-3" />
-              </button>
-              <input
-                type="range"
-                min="0.4"
-                max="2.6"
-                step="0.05"
-                value={selectedSticker.scale}
-                onChange={(e) => handleUpdateSelectedScale(Number(e.target.value))}
-                className="w-16 h-1 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-black"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  soundEffects.playTap();
-                  handleUpdateSelectedScale(selectedSticker.scale + 0.15);
-                }}
-                className="w-5 h-5 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer"
-                title="Larger"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
-              <span className="font-mono text-zinc-500 w-8 text-center">
-                {Math.round(selectedSticker.scale * 100)}%
+                <span className="font-semibold text-zinc-700">Size:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEffects.playTap();
+                    handleUpdateSelectedScale(selectedSticker.scale - 0.15);
+                  }}
+                  className="w-6 h-6 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer active:scale-90"
+                  title="Smaller"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <input
+                  type="range"
+                  min="0.4"
+                  max="2.6"
+                  step="0.05"
+                  value={selectedSticker.scale}
+                  onChange={(e) => handleUpdateSelectedScale(Number(e.target.value))}
+                  className="w-16 sm:w-20 h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-black"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEffects.playTap();
+                    handleUpdateSelectedScale(selectedSticker.scale + 0.15);
+                  }}
+                  className="w-6 h-6 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold cursor-pointer active:scale-90"
+                  title="Larger"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <span className="font-mono text-zinc-700 font-bold w-9 text-center">
+                  {Math.round(selectedSticker.scale * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRotateSelected(-15)}
+                  className="px-1.5 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 font-mono cursor-pointer active:scale-90"
+                  title="Rotate Left"
+                >
+                  ↺
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRotateSelected(15)}
+                  className="px-1.5 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 font-mono cursor-pointer active:scale-90"
+                  title="Rotate Right"
+                >
+                  ↻
+                </button>
+              </div>
+            ) : stickers.length > 0 ? (
+              <span className="text-[10px] text-zinc-500 font-medium">
+                Tap any sticker on the strip to resize, rotate, or move
               </span>
-              <button
-                type="button"
-                onClick={() => handleRotateSelected(-15)}
-                className="px-1.5 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 font-mono cursor-pointer"
-                title="Rotate Left"
-              >
-                ↺
-              </button>
-              <button
-                type="button"
-                onClick={() => handleRotateSelected(15)}
-                className="px-1.5 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 font-mono cursor-pointer"
-                title="Rotate Right"
-              >
-                ↻
-              </button>
-            </div>
-          )}
+            ) : null}
+          </div>
 
           {/* Compact Bottom Controls under Preview */}
           <div className="mt-1 text-center space-y-1 shrink-0">

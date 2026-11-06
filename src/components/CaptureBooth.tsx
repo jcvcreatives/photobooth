@@ -41,7 +41,8 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   const [capturedPhotos, setCapturedPhotos] = useState<string[]>([]);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isFlashing, setIsFlashing] = useState(false);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [facingMode] = useState<'user' | 'environment'>('user');
+  const [isMirrored, setIsMirrored] = useState<boolean>(true);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(() =>
     cameraStreamService.hasLiveStream('user')
@@ -111,10 +112,10 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     };
   }, [facingMode]);
 
-  // Flip camera (Front/Back)
-  const toggleCameraFacing = () => {
+  // Toggle horizontal camera mirror
+  const toggleCameraMirror = () => {
     soundEffects.playTap();
-    setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+    setIsMirrored((prev) => !prev);
   };
 
   // Start Countdown Sequence
@@ -171,7 +172,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         // Brightness adjustments
         ctx.filter = `brightness(${brightness}%)`;
 
-        if (facingMode === 'user') {
+        if (isMirrored) {
           ctx.translate(canvas.width, 0);
           ctx.scale(-1, 1);
         }
@@ -275,9 +276,14 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         </div>
 
         <button
-          onClick={toggleCameraFacing}
-          title="Flip Camera"
-          className="p-2 rounded-full hover:bg-zinc-200/80 text-zinc-600 transition cursor-pointer"
+          type="button"
+          onClick={toggleCameraMirror}
+          title={isMirrored ? 'Mirror On (Tap to Un-Mirror)' : 'Mirror Off (Tap to Mirror)'}
+          className={`p-2 rounded-full transition cursor-pointer flex items-center gap-1 ${
+            isMirrored
+              ? 'bg-zinc-900 text-white shadow-2xs'
+              : 'bg-zinc-200/80 hover:bg-zinc-300/80 text-zinc-700'
+          }`}
         >
           <FlipHorizontal className="w-5 h-5" />
         </button>
@@ -291,7 +297,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           playsInline
           muted
           style={{
-            transform: `${facingMode === 'user' ? 'scaleX(-1)' : ''} scale(${zoomLevel})`,
+            transform: `${isMirrored ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoomLevel})`,
             filter: `brightness(${brightness}%)`,
           }}
           className="w-full h-full object-cover transition-all duration-200"
