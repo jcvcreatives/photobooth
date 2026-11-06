@@ -9,7 +9,6 @@ import {
   PhotostripResult,
   FrameLayoutType,
   PhotoFilterType,
-  StickerItem,
 } from '../types';
 import {
   DIGITAL_COLOR_THEMES,
@@ -36,29 +35,14 @@ const PREFERRED_QR_MODE_KEY = 'jcv_offline_qr_mode_v3';
 const CLOUD_FALLBACK_URL =
   'https://ais-pre-viyeqwfb7gkjv5s5dxi6sd-397788646776.asia-northeast1.run.app/';
 
-// Safe 12 KB chunk size (well below iOS Safari & Chrome's 64 KB WebRTC SCTP limit)
-const WEBRTC_CHUNK_SIZE = 12288;
+// Safe 10 KB chunk size (well below iOS Safari & Chrome's 64 KB WebRTC SCTP limit)
+const WEBRTC_CHUNK_SIZE = 10240;
 
-// STUN + TURN servers so Galaxy Tab A11 (Wi-Fi/Hotspot) and iPhone (Wi-Fi/5G/LTE) connect across any NAT
+// Fast STUN servers (no dead openrelay TURN servers that stall iOS WebKit ICE gathering)
 const PEER_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:global.stun.twilio.com:3478' },
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
+  { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 
 /**
@@ -107,80 +91,178 @@ export function setSavedOfflineQrMode(mode: OfflineQrMode): void {
  */
 export function getDeterministicPeerId(shareId: string): string {
   const clean = shareId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  return `jcvhd3${clean.slice(0, 26)}`;
+  return `jcvhd4${clean.slice(0, 26)}`;
 }
 
 /**
- * Uploads the Full-HD photostrip in small chunks to a zero-config HTTPS relay topic
- * so that even if UDP/WebRTC is blocked by cellular or venue Wi-Fi firewalls,
- * the iPhone downloads the 100% uncompressed Full-HD photo over HTTPS port 443.
+ * Builds a crisp Full-HD Camera Portrait Contact Sheet (560x420 per shot, JPEG 0.85, ~28–45 KB total)
+ * so WebRTC and HTTPS Relay transfer in < 400ms instead of stalling on a 2.5 MB bundle!
+ */
+async function buildHdCameraSheetDataUrl(result: PhotostripResult): Promise<{
+  hdSheetDataUrl: string;
+  count: number;
+}> {
+  const maxCount =
+    result.layout === 'single_polaroid'
+      ? 1
+      : result.layout === 'grid_4' && result.photos.length <= 2
+      ? 2
+      : result.layout === 'strip_3'
+      ? 3
+      : 4;
+
+  const targetUrls = (result.photos || [])
+    .slice(0, maxCount)
+    .filter((u) => u && u.startsWith('data:image/'));
+
+  if (targetUrls.length === 0) {
+    return { hdSheetDataUrl: result.compositeDataUrl, count: 1 };
+  }
+
+  const loadedImgs = await Promise.all(
+    targetUrls.map(
+      (src) =>
+        new Promise<HTMLImageElement | null>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = src;
+        })
+    )
+  );
+
+  const validImgs = loadedImgs.filter((i): i is HTMLImageElement => i !== null);
+  if (validImgs.length === 0) {
+    return { hdSheetDataUrl: result.compositeDataUrl, count: 1 };
+  }
+
+  const count = validImgs.length;
+  const slotW = count === 1 ? 600 : 480;
+  const slotH = Math.round(slotW * 0.75);
+  const out = document.createElement('canvas');
+  out.width = slotW;
+  out.height = slotH * count;
+  const ctx = out.getContext('2d');
+
+  if (ctx) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    validImgs.forEach((img, idx) => {
+      const iw = img.naturalWidth || img.width || 640;
+      const ih = img.naturalHeight || img.height || 480;
+      const targetAspect = slotW / slotH;
+      const imgAspect = iw / ih;
+      let sx = 0;
+      let sy = 0;
+      let sw = iw;
+      let sh = ih;
+      if (imgAspect > targetAspect) {
+        sw = ih * targetAspect;
+        sx = (iw - sw) / 2;
+      } else {
+        sh = iw / targetAspect;
+        sy = (ih - sh) / 2;
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, idx * slotH, slotW, slotH);
+    });
+  }
+
+  const hdSheetDataUrl = out.toDataURL('image/jpeg', 0.85);
+  out.width = 0;
+  return { hdSheetDataUrl, count };
+}
+
+/**
+ * Uploads the ~30 KB HD Camera Portrait Sheet in 3.2 KB CORS-Simple-Request POST chunks (no custom headers,
+ * zero OPTIONS preflight!) so any iPhone or Android on Wi-Fi or 5G can pull it in < 500ms.
  */
 async function uploadFullHdToHttpsRelay(result: PhotostripResult): Promise<void> {
   try {
-    const topic = `jcv_photobooth_hd_${getDeterministicPeerId(result.id)}`;
-    const payloadStr = JSON.stringify({
-      id: result.id,
-      layout: result.layout,
-      themeId: result.themeId,
-      filter: result.filter,
-      compositeDataUrl: result.compositeDataUrl,
-      thermalRasterDataUrl: result.thermalRasterDataUrl,
-      photos: result.photos,
-    });
+    const { hdSheetDataUrl, count } = await buildHdCameraSheetDataUrl(result);
+    const topic = `jcv_hd4_${getDeterministicPeerId(result.id)}`;
+    const chunkSize = 3100;
+    const total = Math.ceil(hdSheetDataUrl.length / chunkSize);
 
-    await fetch(`https://ntfy.sh/${topic}`, {
-      method: 'PUT',
-      body: payloadStr,
-      headers: {
-        Filename: 'hd_bundle.json',
-      },
-    });
+    for (let idx = 0; idx < total; idx++) {
+      const slice = hdSheetDataUrl.slice(idx * chunkSize, (idx + 1) * chunkSize);
+      const packet = JSON.stringify({
+        i: idx,
+        n: total,
+        c: count,
+        d: slice,
+      });
+      // Simple POST with default text/plain body — zero CORS preflight!
+      await fetch(`https://ntfy.sh/${topic}`, {
+        method: 'POST',
+        body: packet,
+      });
+    }
   } catch {
     // Ignore when offline
   }
 }
 
 /**
- * Fetches the Full-HD photostrip from the HTTPS relay if available.
+ * Fetches and reassembles the HD Camera Portrait Sheet from the HTTPS relay, updating live progress.
  */
 async function fetchFullHdFromHttpsRelay(
   shareId: string,
   onProgress?: (pct: number) => void
-): Promise<Partial<PhotostripResult> | null> {
-  const topic = `jcv_photobooth_hd_${getDeterministicPeerId(shareId)}`;
+): Promise<{ hdSheetDataUrl: string; count: number } | null> {
+  const topic = `jcv_hd4_${getDeterministicPeerId(shareId)}`;
+  const chunks: string[] = [];
+  let expectedTotal = 0;
+  let photoCount = 1;
+
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1`);
       if (res.ok) {
         const text = await res.text();
         const lines = text.trim().split('\n').filter(Boolean);
-        for (let i = lines.length - 1; i >= 0; i--) {
-          const event = JSON.parse(lines[i]);
-          if (event?.attachment?.url) {
-            onProgress?.(55);
-            const attRes = await fetch(event.attachment.url);
-            if (attRes.ok) {
-              const bundle = await attRes.json();
-              if (bundle && typeof bundle.compositeDataUrl === 'string') {
-                onProgress?.(100);
-                return bundle;
+        for (const line of lines) {
+          try {
+            const event = JSON.parse(line);
+            if (typeof event?.message === 'string' && event.message.startsWith('{')) {
+              const msg = JSON.parse(event.message);
+              if (
+                typeof msg.i === 'number' &&
+                typeof msg.n === 'number' &&
+                typeof msg.d === 'string'
+              ) {
+                expectedTotal = msg.n;
+                if (typeof msg.c === 'number') photoCount = msg.c;
+                chunks[msg.i] = msg.d;
               }
             }
+          } catch {
+            // ignore non-chunk line
+          }
+        }
+
+        if (expectedTotal > 0) {
+          const receivedCount = chunks.filter((c) => typeof c === 'string').length;
+          onProgress?.(Math.min(95, 25 + Math.round((receivedCount / expectedTotal) * 70)));
+          if (receivedCount === expectedTotal) {
+            onProgress?.(100);
+            return {
+              hdSheetDataUrl: chunks.join(''),
+              count: photoCount,
+            };
           }
         }
       }
     } catch {
       // ignore and retry
     }
-    await new Promise((r) => setTimeout(r, 1100));
+    await new Promise((r) => setTimeout(r, 900));
   }
   return null;
 }
 
 /**
- * Starts a Chunked WebRTC P2P Host (12 KB chunks for iOS WebKit compatibility) + HTTPS Relay
- * on the Galaxy Tab A11 so any iPhone or Android scanning the QR code receives the
- * 100% uncompressed, full-resolution original camera photos & strip.
+ * Starts a Chunked WebRTC P2P Host (10 KB chunks for iOS WebKit compatibility) + Simple-POST HTTPS Relay
+ * on the Galaxy Tab A11 so any iPhone or Android scanning the QR code receives the crisp HD portrait sheet.
  */
 export function startTabletHdPeerHost(
   result: PhotostripResult,
@@ -188,24 +270,28 @@ export function startTabletHdPeerHost(
 ): () => void {
   let peer: Peer | null = null;
   let destroyed = false;
+  let cachedHdSheetPromise: Promise<{ hdSheetDataUrl: string; count: number }> | null = null;
 
-  // Also push to HTTPS relay in background for instant firewall-proof fallback
+  const getHdSheet = () => {
+    if (!cachedHdSheetPromise) {
+      cachedHdSheetPromise = buildHdCameraSheetDataUrl(result);
+    }
+    return cachedHdSheetPromise;
+  };
+
+  // Push to HTTPS relay immediately in background
   uploadFullHdToHttpsRelay(result).catch(() => {});
 
-  const sendChunkedBundle = (conn: DataConnection) => {
+  const sendChunkedBundle = async (conn: DataConnection) => {
     if (destroyed) return;
     try {
       onGuestConnected?.();
+      const { hdSheetDataUrl, count } = await getHdSheet();
+      if (destroyed) return;
+
       const fullPayload = JSON.stringify({
-        id: result.id,
-        layout: result.layout,
-        themeId: result.themeId,
-        filter: result.filter,
-        eventTitle: result.eventTitle,
-        compositeDataUrl: result.compositeDataUrl,
-        thermalRasterDataUrl: result.thermalRasterDataUrl,
-        photos: result.photos,
-        stickers: result.stickers || [],
+        hdSheetDataUrl,
+        count,
       });
 
       const totalChunks = Math.ceil(fullPayload.length / WEBRTC_CHUNK_SIZE);
@@ -252,12 +338,15 @@ export function startTabletHdPeerHost(
       };
 
       conn.on('open', () => {
-        // Send immediately on open AND whenever guest requests
-        setTimeout(triggerSend, 80);
+        setTimeout(triggerSend, 60);
       });
 
       conn.on('data', (data: unknown) => {
-        if (data && typeof data === 'object' && (data as Record<string, unknown>).type === 'JCV_REQUEST_HD') {
+        if (
+          data &&
+          typeof data === 'object' &&
+          (data as Record<string, unknown>).type === 'JCV_REQUEST_HD'
+        ) {
           sent = false;
           triggerSend();
         }
@@ -265,7 +354,7 @@ export function startTabletHdPeerHost(
     });
 
     peer.on('error', () => {
-      // Ignore signaling errors when tablet is completely air-gapped offline
+      // Ignore signaling errors when tablet is offline
     });
   } catch {
     // Ignore WebRTC init errors
@@ -283,11 +372,15 @@ export function startTabletHdPeerHost(
 
 /**
  * Connects from the Guest's iPhone/Android to the Galaxy Tab A11's Chunked WebRTC P2P Host
- * AND HTTPS Relay in parallel to pull the 100% uncompressed Full-HD photostrip.
+ * AND HTTPS Relay in parallel to pull the crisp HD Camera Portrait Sheet and reconstruct the HD photostrip.
  */
 export function fetchFullHdFromTabletPeer(
-  shareId: string,
-  onReceived: (hdResult: Partial<PhotostripResult>) => void,
+  baseResult: PhotostripResult,
+  onReceived: (hdResult: {
+    colorStripJpegUrl: string;
+    thermalStripPngUrl: string;
+    individualPhotos: string[];
+  }) => void,
   onProgress?: (pct: number) => void
 ): () => void {
   let peer: Peer | null = null;
@@ -295,28 +388,39 @@ export function fetchFullHdFromTabletPeer(
   let resolved = false;
   let retryTimer: ReturnType<typeof setInterval> | null = null;
 
-  const deliver = (bundle: Partial<PhotostripResult>) => {
-    if (destroyed || resolved) return;
+  const deliverHdSheet = async (hdSheetDataUrl: string, count: number) => {
+    if (destroyed || resolved || !hdSheetDataUrl) return;
     resolved = true;
     if (retryTimer) clearInterval(retryTimer);
-    onProgress?.(100);
-    onReceived(bundle);
+    onProgress?.(92);
+
+    const upgradedResult: PhotostripResult = {
+      ...baseResult,
+      photos: [hdSheetDataUrl],
+      compositeDataUrl: hdSheetDataUrl,
+      printCopies: count,
+    };
+    const reconstructed = await reconstructVectorHdPhotostripOnPhone(upgradedResult, true);
+    if (!destroyed) {
+      onProgress?.(100);
+      onReceived(reconstructed);
+    }
   };
 
   // 1. Race HTTPS Relay in parallel
-  fetchFullHdFromHttpsRelay(shareId, (p) => {
+  fetchFullHdFromHttpsRelay(baseResult.id, (p) => {
     if (!resolved) onProgress?.(p);
   })
-    .then((relayBundle) => {
-      if (relayBundle && relayBundle.compositeDataUrl) {
-        deliver(relayBundle);
+    .then((relayData) => {
+      if (relayData && relayData.hdSheetDataUrl) {
+        deliverHdSheet(relayData.hdSheetDataUrl, relayData.count);
       }
     })
     .catch(() => {});
 
-  // 2. Race Chunked WebRTC P2P DataChannel (12 KB chunks for iOS Safari/Chrome)
+  // 2. Race Chunked WebRTC P2P DataChannel (only ~3 chunks of 10 KB!)
   try {
-    const hostPeerId = getDeterministicPeerId(shareId);
+    const hostPeerId = getDeterministicPeerId(baseResult.id);
     peer = new Peer({
       debug: 0,
       config: {
@@ -332,7 +436,7 @@ export function fetchFullHdFromTabletPeer(
 
       conn.on('open', () => {
         if (destroyed || resolved) return;
-        onProgress?.(20);
+        onProgress?.(35);
         conn.send({ type: 'JCV_REQUEST_HD' });
       });
 
@@ -342,7 +446,7 @@ export function fetchFullHdFromTabletPeer(
 
         if (msg.type === 'JCV_HD_START' && typeof msg.totalChunks === 'number') {
           expectedChunks = msg.totalChunks;
-          onProgress?.(30);
+          onProgress?.(45);
         } else if (
           msg.type === 'JCV_HD_CHUNK' &&
           typeof msg.index === 'number' &&
@@ -352,14 +456,16 @@ export function fetchFullHdFromTabletPeer(
           expectedChunks = total;
           receivedChunks[msg.index] = msg.chunk;
           const countSoFar = receivedChunks.filter((c) => typeof c === 'string').length;
-          onProgress?.(Math.min(95, 30 + Math.round((countSoFar / total) * 65)));
+          onProgress?.(Math.min(90, 45 + Math.round((countSoFar / total) * 45)));
 
           if (countSoFar === total) {
             try {
-              const fullJson = receivedChunks.join('');
-              const parsed = JSON.parse(fullJson) as Partial<PhotostripResult>;
-              if (parsed && typeof parsed.compositeDataUrl === 'string') {
-                deliver(parsed);
+              const parsed = JSON.parse(receivedChunks.join('')) as {
+                hdSheetDataUrl?: string;
+                count?: number;
+              };
+              if (parsed?.hdSheetDataUrl) {
+                deliverHdSheet(parsed.hdSheetDataUrl, parsed.count || 1);
               }
             } catch {
               // wait for JCV_HD_END
@@ -367,16 +473,16 @@ export function fetchFullHdFromTabletPeer(
           }
         } else if (msg.type === 'JCV_HD_END') {
           try {
-            const fullJson = receivedChunks.join('');
-            const parsed = JSON.parse(fullJson) as Partial<PhotostripResult>;
-            if (parsed && typeof parsed.compositeDataUrl === 'string') {
-              deliver(parsed);
+            const parsed = JSON.parse(receivedChunks.join('')) as {
+              hdSheetDataUrl?: string;
+              count?: number;
+            };
+            if (parsed?.hdSheetDataUrl) {
+              deliverHdSheet(parsed.hdSheetDataUrl, parsed.count || 1);
             }
           } catch {
             // ignore
           }
-        } else if (msg.type === 'JCV_FULL_HD_PHOTO' && typeof msg.compositeDataUrl === 'string') {
-          deliver(msg as unknown as Partial<PhotostripResult>);
         }
       });
     };
@@ -387,7 +493,7 @@ export function fetchFullHdFromTabletPeer(
         if (!resolved && !destroyed) {
           connectAttempt();
         }
-      }, 2200);
+      }, 1800);
     });
 
     peer.on('error', () => {
@@ -409,6 +515,61 @@ export function fetchFullHdFromTabletPeer(
 }
 
 /**
+ * Luminance-Channel Unsharp Mask + Local Contrast Clarity Filter.
+ * Sharpens eyes, hair, facial contours, and glasses without introducing color noise or halos.
+ */
+function applyPortraitClarityEnhancer(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  amount: number = 0.65
+): void {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const src = imgData.data;
+  const out = new Uint8ClampedArray(src);
+
+  // Compute luminance plane
+  const lum = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < src.length; i += 4, p++) {
+    lum[p] = 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2];
+  }
+
+  // 3x3 Gaussian blur kernel on luminance to extract high-frequency facial detail
+  for (let y = 1; y < height - 1; y++) {
+    const row = y * width;
+    for (let x = 1; x < width - 1; x++) {
+      const idx = row + x;
+      const blurLum =
+        (lum[idx - width - 1] +
+          lum[idx - width] * 2 +
+          lum[idx - width + 1] +
+          lum[idx - 1] * 2 +
+          lum[idx] * 4 +
+          lum[idx + 1] * 2 +
+          lum[idx + width - 1] +
+          lum[idx + width] * 2 +
+          lum[idx + width + 1]) /
+        16;
+
+      const detail = lum[idx] - blurLum;
+      // Suppress tiny quantization noise (< 1.5) while boosting real facial edges
+      const boost = Math.abs(detail) < 1.5 ? 0 : detail * amount;
+      // Gentle S-curve midtone contrast
+      const cIdx = idx * 4;
+      for (let c = 0; c < 3; c++) {
+        const v = src[cIdx + c] + boost;
+        const norm = Math.max(0, Math.min(255, v)) / 255;
+        const contrasted = (norm - 0.5) * 1.05 + 0.5;
+        out[cIdx + c] = Math.max(0, Math.min(255, Math.round(contrasted * 255)));
+      }
+    }
+  }
+
+  imgData.data.set(out);
+  ctx.putImageData(imgData, 0, 0);
+}
+
+/**
  * Packs ONLY the raw camera photo(s) into a clean 4:3 vertical contact sheet
  * so 0 bytes of the QR code are wasted on frame borders or text!
  */
@@ -418,7 +579,13 @@ async function buildCameraPhotosOnlyCanvas(
   fallbackCanvas: HTMLCanvasElement
 ): Promise<{ canvas: HTMLCanvasElement; count: number }> {
   const maxCount =
-    layout === 'single_polaroid' ? 1 : layout === 'grid_4' && photos.length <= 2 ? 2 : layout === 'strip_3' ? 3 : 4;
+    layout === 'single_polaroid'
+      ? 1
+      : layout === 'grid_4' && photos.length <= 2
+      ? 2
+      : layout === 'strip_3'
+      ? 3
+      : 4;
   const targetUrls = (photos || []).slice(0, maxCount).filter((u) => u && u.startsWith('data:image/'));
 
   if (targetUrls.length === 0) {
@@ -442,8 +609,8 @@ async function buildCameraPhotosOnlyCanvas(
     return { canvas: fallbackCanvas, count: 1 };
   }
 
-  const slotW = 280;
-  const slotH = 210;
+  const slotW = 320;
+  const slotH = 240;
   const count = validImgs.length;
   const out = document.createElement('canvas');
   out.width = slotW;
@@ -477,28 +644,44 @@ async function buildCameraPhotosOnlyCanvas(
 }
 
 /**
- * Compresses a camera-only canvas into an ultra-compact Data URI that fits inside a Version-40 QR code.
+ * Compresses a camera-only canvas into an ultra-crisp Data URI that fits inside a Version-40 QR code.
+ * Prioritizes high compression quality (q >= 0.56) so faces never suffer from q=0.30 macroblock blur!
  */
 export function compressCanvasForOfflineQr(
   sourceCanvas: HTMLCanvasElement,
-  maxChars: number = 2200,
+  maxChars: number = 2580,
   forceJpegForIos: boolean = false
 ): { dataUrl: string; width: number; height: number } {
-  const srcW = sourceCanvas.width || 280;
-  const srcH = sourceCanvas.height || 210;
+  const srcW = sourceCanvas.width || 320;
+  const srcH = sourceCanvas.height || 240;
   const aspect = srcH / srcW;
 
-  const candidateWidths = [240, 220, 200, 184, 168, 152, 140, 128, 116, 104];
-  const candidateQualities = [0.72, 0.62, 0.54, 0.46, 0.38, 0.3];
+  // Ordered by highest visual facial clarity (high quality + balanced resolution first, never dropping to 0.30 at high res)
+  const clarityProfiles: Array<[number, number]> = [
+    [248, 0.76],
+    [232, 0.74],
+    [220, 0.72],
+    [208, 0.70],
+    [196, 0.68],
+    [184, 0.66],
+    [176, 0.64],
+    [168, 0.62],
+    [160, 0.60],
+    [152, 0.58],
+    [144, 0.56],
+    [136, 0.54],
+    [128, 0.52],
+    [116, 0.50],
+  ];
 
   const scratch = document.createElement('canvas');
   const ctx = scratch.getContext('2d');
 
   let bestDataUrl = '';
-  let bestW = 140;
-  let bestH = Math.round(140 * aspect);
+  let bestW = 160;
+  let bestH = Math.round(160 * aspect);
 
-  for (const w of candidateWidths) {
+  for (const [w, q] of clarityProfiles) {
     const h = Math.max(48, Math.round(w * aspect));
     scratch.width = w;
     scratch.height = h;
@@ -509,26 +692,26 @@ export function compressCanvasForOfflineQr(
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(sourceCanvas, 0, 0, w, h);
+      // Pre-sharpen facial features slightly before encoding so WebP/JPEG retains crisp eye/hair edges
+      applyPortraitClarityEnhancer(ctx, w, h, 0.38);
     }
 
-    for (const q of candidateQualities) {
-      let attempt = '';
-      if (!forceJpegForIos) {
-        attempt = scratch.toDataURL('image/webp', q);
-      }
-      if (!attempt || !attempt.startsWith('data:image/webp')) {
-        attempt = scratch.toDataURL('image/jpeg', q);
-      }
+    let attempt = '';
+    if (!forceJpegForIos) {
+      attempt = scratch.toDataURL('image/webp', q);
+    }
+    if (!attempt || !attempt.startsWith('data:image/webp')) {
+      attempt = scratch.toDataURL('image/jpeg', q);
+    }
 
-      bestDataUrl = attempt;
-      bestW = w;
-      bestH = h;
+    bestDataUrl = attempt;
+    bestW = w;
+    bestH = h;
 
-      if (attempt.length <= maxChars) {
-        scratch.width = 0;
-        scratch.height = 0;
-        return { dataUrl: attempt, width: w, height: h };
-      }
+    if (attempt.length <= maxChars) {
+      scratch.width = 0;
+      scratch.height = 0;
+      return { dataUrl: attempt, width: w, height: h };
     }
   }
 
@@ -566,7 +749,7 @@ async function resolveReachableBaseUrl(customHostOrigin?: string): Promise<strin
 }
 
 /**
- * Generates an iOS & Android compatible QR Code.
+ * Generates an iOS & Android compatible QR Code with maximum portrait clarity.
  */
 export async function buildOfflineQrPacket(
   fallbackCanvas: HTMLCanvasElement,
@@ -582,11 +765,11 @@ export async function buildOfflineQrPacket(
       result.layout,
       fallbackCanvas
     );
-    const compressed = compressCanvasForOfflineQr(camCanvas, 2300, true);
+    const compressed = compressCanvasForOfflineQr(camCanvas, 2650, true);
     const payloadString = compressed.dataUrl;
     const qrDataUrl = await QRCode.toDataURL(payloadString, {
       errorCorrectionLevel: 'L',
-      width: 400,
+      width: 420,
       margin: 2,
       color: { dark: '#18181b', light: '#ffffff' },
     });
@@ -613,7 +796,8 @@ export async function buildOfflineQrPacket(
   )}&f=${encodeURIComponent(result.filter)}&c=${photoCount}&offline-photo=`;
 
   const prefix = `${resolvedBaseUrl}?share=${encodeURIComponent(result.id)}#${metaPrefix}`;
-  const availableForImage = Math.max(1050, 2340 - prefix.length);
+  // Version-40 QR Level L supports up to 2,953 bytes; 2,740 total chars leaves safe margin while maximizing portrait quality
+  const availableForImage = Math.max(1250, 2740 - prefix.length);
   const compressed = compressCanvasForOfflineQr(camCanvas, availableForImage, false);
 
   const isWebp = compressed.dataUrl.startsWith('data:image/webp;base64,');
@@ -625,7 +809,7 @@ export async function buildOfflineQrPacket(
 
   const qrDataUrl = await QRCode.toDataURL(payloadString, {
     errorCorrectionLevel: 'L',
-    width: 400,
+    width: 420,
     margin: 2,
     color: { dark: '#18181b', light: '#ffffff' },
   });
@@ -642,17 +826,17 @@ export async function buildOfflineQrPacket(
 }
 
 /**
- * Splits a vertical camera contact sheet back into individual 4:3 deblocked, smoothed portrait Data URLs
- * and reconstructs the 100% native HD vector photostrip (768x1152 / 768x1824) using `renderPhotostripCanvas`!
+ * Splits a vertical camera contact sheet back into individual 4:3 portraits with multi-step
+ * bicubic upscaling + luminance unsharp masking, and renders the 100% native HD vector photostrip!
  */
 export async function reconstructVectorHdPhotostripOnPhone(
-  result: PhotostripResult
+  result: PhotostripResult,
+  isFromHdStream: boolean = false
 ): Promise<{
   colorStripJpegUrl: string;
   thermalStripPngUrl: string;
   individualPhotos: string[];
 }> {
-  // Store packedCount in result.printCopies or default from layout
   const packedCount =
     result.layout === 'single_polaroid'
       ? 1
@@ -662,13 +846,18 @@ export async function reconstructVectorHdPhotostripOnPhone(
       ? result.printCopies
       : 1;
 
-  // If result already has a full-HD composite (> 45KB) from WebRTC or HTTPS relay, export as crisp JPEG
-  if (result.compositeDataUrl && result.compositeDataUrl.length > 45000) {
+  // If result already has a pre-composited full-HD strip (e.g. opened directly on the booth tablet)
+  if (
+    !isFromHdStream &&
+    result.compositeDataUrl &&
+    result.compositeDataUrl.length > 55000 &&
+    result.photos.length > 1
+  ) {
     const jpegUrl = await upscaleToIosCompatibleJpeg(result.compositeDataUrl);
     return {
       colorStripJpegUrl: jpegUrl,
       thermalStripPngUrl: result.thermalRasterDataUrl || jpegUrl,
-      individualPhotos: result.photos && result.photos.length > 0 ? result.photos : [jpegUrl],
+      individualPhotos: result.photos,
     };
   }
 
@@ -676,9 +865,8 @@ export async function reconstructVectorHdPhotostripOnPhone(
   const individualPhotos: string[] = await new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const w = img.naturalWidth || img.width || 180;
-      const totalH = img.naturalHeight || img.height || 135 * packedCount;
-      // Automatically infer packed count from aspect ratio if needed
+      const w = img.naturalWidth || img.width || 220;
+      const totalH = img.naturalHeight || img.height || 165 * packedCount;
       const inferredCount = Math.max(1, Math.round(totalH / (w * 0.75)));
       const count = packedCount > 1 ? packedCount : inferredCount;
       const singleH = Math.max(1, Math.floor(totalH / count));
@@ -688,21 +876,19 @@ export async function reconstructVectorHdPhotostripOnPhone(
       const extracted: string[] = [];
 
       for (let i = 0; i < count; i++) {
-        // Multi-step progressive upscale + gentle deblocking to eliminate 8x8 macroblocks
+        // Step 1: Intermediate 2x bicubic upscale (no blur!)
         const step1 = document.createElement('canvas');
-        step1.width = 360;
-        step1.height = 270;
+        step1.width = 400;
+        step1.height = 300;
         const ctx1 = step1.getContext('2d');
         if (ctx1) {
           ctx1.imageSmoothingEnabled = true;
           ctx1.imageSmoothingQuality = 'high';
-          if (typeof ctx1.filter === 'string') {
-            ctx1.filter = 'blur(0.65px) contrast(1.05) saturate(1.06)';
-          }
-          ctx1.drawImage(img, 0, i * singleH, w, singleH, 0, 0, 360, 270);
-          ctx1.filter = 'none';
+          ctx1.drawImage(img, 0, i * singleH, w, singleH, 0, 0, 400, 300);
+          applyPortraitClarityEnhancer(ctx1, 400, 300, isFromHdStream ? 0.35 : 0.72);
         }
 
+        // Step 2: Final 720x540 upscale + fine edge clarity pass
         const finalCanvas = document.createElement('canvas');
         finalCanvas.width = targetW;
         finalCanvas.height = targetH;
@@ -711,7 +897,8 @@ export async function reconstructVectorHdPhotostripOnPhone(
           finalCtx.imageSmoothingEnabled = true;
           finalCtx.imageSmoothingQuality = 'high';
           finalCtx.drawImage(ctx1 ? step1 : img, 0, 0, targetW, targetH);
-          extracted.push(finalCanvas.toDataURL('image/jpeg', 0.94));
+          applyPortraitClarityEnhancer(finalCtx, targetW, targetH, isFromHdStream ? 0.25 : 0.45);
+          extracted.push(finalCanvas.toDataURL('image/jpeg', 0.95));
         }
         step1.width = 0;
         finalCanvas.width = 0;

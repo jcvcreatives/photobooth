@@ -429,8 +429,8 @@ export default function App() {
         />
       )}
 
-      {/* PWA Install Prompt & Offline Connectivity Banner */}
-      <PWAInstallPrompt />
+      {/* PWA Install Prompt & Offline Connectivity Banner (hidden during guest mobile share modal) */}
+      {!showMobileShareModal && <PWAInstallPrompt />}
     </div>
   );
 }

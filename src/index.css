@@ -437,6 +437,109 @@
   animation: thermalSlotPulse 1.8s infinite ease-in-out;
 }
 
+/* Looping Scissors Cutting Receipt Animation */
+@keyframes scissorsCutAcross {
+  0% {
+    left: -14%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+  }
+  8% {
+    left: 0%;
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+  74% {
+    left: 92%;
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+  84% {
+    left: 106%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.92);
+  }
+  100% {
+    left: 106%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.92);
+  }
+}
+
+@keyframes scissorBladeTopSnip {
+  0%, 100% {
+    transform: rotate(-24deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes scissorBladeBottomSnip {
+  0%, 100% {
+    transform: rotate(24deg);
+  }
+  50% {
+    transform: rotate(-4deg);
+  }
+}
+
+@keyframes cutTrailProgress {
+  0%, 6% {
+    width: 0%;
+    opacity: 1;
+  }
+  74% {
+    width: 100%;
+    opacity: 1;
+  }
+  88%, 100% {
+    width: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes receiptSeverDrop {
+  0%, 70% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  78% {
+    transform: translateY(6px) rotate(0.8deg);
+  }
+  88% {
+    transform: translateY(6px) rotate(0.8deg);
+    opacity: 0.96;
+  }
+  96%, 100% {
+    transform: translateY(0px) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.animate-scissors-across {
+  animation: scissorsCutAcross 2.8s infinite ease-in-out;
+  will-change: left, opacity, transform;
+}
+
+.animate-scissor-blade-top {
+  transform-origin: 10px 12px;
+  animation: scissorBladeTopSnip 0.28s infinite ease-in-out;
+}
+
+.animate-scissor-blade-bottom {
+  transform-origin: 10px 12px;
+  animation: scissorBladeBottomSnip 0.28s infinite ease-in-out;
+}
+
+.animate-cut-trail {
+  animation: cutTrailProgress 2.8s infinite ease-in-out;
+}
+
+.animate-receipt-sever {
+  animation: receiptSeverDrop 2.8s infinite ease-in-out;
+  will-change: transform;
+}
+
 /* Optimize touch tablet kiosk interaction & prevent iPadOS WebKit overscroll fullscreen exit */
 html,
 body {

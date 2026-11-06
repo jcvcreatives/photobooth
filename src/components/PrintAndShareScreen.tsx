@@ -359,18 +359,80 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
 
         {/* Paper Chute holding photostrip (pure monochrome thermal print) */}
         <div className="w-60 sm:w-68 bg-white/40 border-x border-b border-zinc-200 rounded-b-xl p-1.5 pt-0 flex flex-col items-center overflow-hidden relative shadow-md">
-          <div className="w-full overflow-hidden flex justify-center py-1">
+          <div className="w-full overflow-hidden flex justify-center py-1.5">
             <div
               key={feedAnimationKey}
-              className={`relative max-h-[28vh] sm:max-h-[32vh] flex flex-col items-center transition-transform ${
+              className={`relative max-h-[29vh] sm:max-h-[33vh] flex flex-col items-center transition-transform ${
                 isFeeding ? 'animate-thermalFeed' : ''
               }`}
             >
-              <div className="relative rounded shadow-lg bg-white border border-zinc-200 overflow-hidden">
+              {/* Animated Scissors Cutting Track across Top Roll Margin */}
+              {!isFeeding && (
+                <div className="w-full relative h-4 flex items-center justify-center overflow-visible z-20 mb-0.5">
+                  {/* Dashed uncut perforation line */}
+                  <div className="w-full border-t-2 border-dashed border-zinc-400/90" />
+                  {/* Progressive cut slice trail behind scissors */}
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-amber-400/80 rounded-full animate-cut-trail" />
+                  {/* Gliding & Snipping Scissors SVG */}
+                  <div className="absolute top-1/2 animate-scissors-across pointer-events-none z-30 drop-shadow-sm">
+                    <svg
+                      width="26"
+                      height="22"
+                      viewBox="0 0 28 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      {/* Top Handle + Lower Blade (pivots up/down) */}
+                      <g className="animate-scissor-blade-top">
+                        <circle
+                          cx="5.5"
+                          cy="6.5"
+                          r="3.8"
+                          stroke="#d97706"
+                          strokeWidth="2.2"
+                          fill="#fef3c7"
+                        />
+                        <path
+                          d="M8.8 8.5L26 15.5L24.5 17.2L8.2 10.5Z"
+                          fill="#f59e0b"
+                          stroke="#b45309"
+                          strokeWidth="0.8"
+                        />
+                      </g>
+                      {/* Bottom Handle + Upper Blade (pivots down/up) */}
+                      <g className="animate-scissor-blade-bottom">
+                        <circle
+                          cx="5.5"
+                          cy="17.5"
+                          r="3.8"
+                          stroke="#d97706"
+                          strokeWidth="2.2"
+                          fill="#fef3c7"
+                        />
+                        <path
+                          d="M8.8 15.5L26 8.5L24.5 6.8L8.2 13.5Z"
+                          fill="#fbbf24"
+                          stroke="#b45309"
+                          strokeWidth="0.8"
+                        />
+                      </g>
+                      {/* Center Pivot Screw */}
+                      <circle cx="11.5" cy="12" r="1.6" fill="#78350f" />
+                    </svg>
+                  </div>
+                </div>
+              )}
+
+              {/* Thermal Receipt Body (detaches slightly when scissors finish cutting across) */}
+              <div
+                className={`relative rounded shadow-lg bg-white border border-zinc-200 overflow-hidden ${
+                  !isFeeding ? 'animate-receipt-sever' : ''
+                }`}
+              >
                 <img
                   src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
                   alt="Printed Thermal Photostrip"
-                  className="max-h-[24vh] sm:max-h-[28vh] w-auto object-contain select-none pointer-events-none"
+                  className="max-h-[22vh] sm:max-h-[26vh] w-auto object-contain select-none pointer-events-none"
                 />
                 {activeCopiesCount > 1 && (
                   <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px] font-mono font-bold shadow">
@@ -379,9 +441,35 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 )}
               </div>
 
-              {/* Dashed Scissor Cut Guide Line */}
-              <div className="w-full mt-1 pt-0.5 border-t border-dashed border-zinc-400 flex items-center justify-center gap-1.5 text-[8px] font-mono text-zinc-600 font-bold uppercase tracking-widest">
-                <Scissors className="w-2.5 h-2.5 text-amber-600 animate-pulse" />
+              {/* Bottom Animated Scissors Cut Guide Line */}
+              <div className="w-full relative mt-1.5 pt-1 flex items-center justify-center gap-1.5 text-[8px] font-mono text-amber-800 font-bold uppercase tracking-widest overflow-visible">
+                {/* Dashed perforation line */}
+                <div className="absolute top-0 inset-x-0 border-t border-dashed border-amber-500/80" />
+                {!isFeeding && (
+                  <>
+                    <div className="absolute left-0 top-0 -translate-y-1/2 h-0.5 bg-amber-500 animate-cut-trail" />
+                    <div className="absolute top-0 animate-scissors-across pointer-events-none z-20">
+                      <svg
+                        width="20"
+                        height="16"
+                        viewBox="0 0 28 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <g className="animate-scissor-blade-top">
+                          <circle cx="5.5" cy="6.5" r="3.6" stroke="#d97706" strokeWidth="2.2" fill="#fffbeb" />
+                          <path d="M8.8 8.5L26 15.5L24.5 17.2L8.2 10.5Z" fill="#d97706" />
+                        </g>
+                        <g className="animate-scissor-blade-bottom">
+                          <circle cx="5.5" cy="17.5" r="3.6" stroke="#d97706" strokeWidth="2.2" fill="#fffbeb" />
+                          <path d="M8.8 15.5L26 8.5L24.5 6.8L8.2 13.5Z" fill="#f59e0b" />
+                        </g>
+                        <circle cx="11.5" cy="12" r="1.5" fill="#78350f" />
+                      </svg>
+                    </div>
+                  </>
+                )}
+                <Scissors className="w-2.5 h-2.5 text-amber-600" />
                 <span>CUT CAREFULLY WITH SCISSORS</span>
               </div>
             </div>
@@ -396,15 +484,42 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           </div>
         ) : (
           <div className="mt-1.5 w-full max-w-xs bg-amber-50 border border-amber-300 rounded-2xl px-3 py-1.5 shadow-xs flex items-center gap-2.5 text-left animate-fadeIn">
-            <div className="w-7 h-7 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
-              <Scissors className="w-4 h-4 animate-bounce" />
+            {/* Mini Looping Receipt + Snipping Scissors Badge */}
+            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs relative overflow-hidden">
+              {/* Mini receipt strip inside badge */}
+              <div className="w-4 h-6 bg-white/95 rounded-[2px] flex flex-col items-center justify-between p-0.5 shadow-2xs animate-receipt-sever">
+                <div className="w-full h-2.5 bg-zinc-800/80 rounded-[1px]" />
+                <div className="w-full border-t border-dashed border-amber-500" />
+                <div className="w-2.5 h-0.5 bg-zinc-400 rounded-full" />
+              </div>
+              {/* Looping snipping blades across mini receipt */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <svg
+                  width="26"
+                  height="22"
+                  viewBox="0 0 28 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="drop-shadow"
+                >
+                  <g className="animate-scissor-blade-top">
+                    <circle cx="5.5" cy="6.5" r="3.5" stroke="#ffffff" strokeWidth="2" fill="#b45309" />
+                    <path d="M8.8 8.5L25 15L23.5 16.8L8.2 10.5Z" fill="#ffffff" />
+                  </g>
+                  <g className="animate-scissor-blade-bottom">
+                    <circle cx="5.5" cy="17.5" r="3.5" stroke="#ffffff" strokeWidth="2" fill="#b45309" />
+                    <path d="M8.8 15.5L25 9L23.5 7.2L8.2 13.5Z" fill="#fef3c7" />
+                  </g>
+                  <circle cx="11.5" cy="12" r="1.5" fill="#78350f" />
+                </svg>
+              </div>
             </div>
             <div className="leading-tight">
               <div className="text-[11px] font-extrabold text-amber-950">
                 Use scissors carefully to cut your thermal photo receipt
               </div>
               <div className="text-[9.5px] text-amber-800 mt-0.5">
-                Printed ({activeCopiesCount}x) • Cut gently along the bottom margin
+                Printed ({activeCopiesCount}x) • Cut gently along the dashed line
               </div>
             </div>
           </div>
