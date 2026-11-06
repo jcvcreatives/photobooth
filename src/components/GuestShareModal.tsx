@@ -14,10 +14,13 @@ import {
   Send,
   Loader2,
   Sparkles,
+  Share2,
+  WifiOff,
 } from 'lucide-react';
 import { PhotostripResult } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { emailDeliveryService } from '../services/email';
+import { shareOfflineViaQuickShare } from '../services/offlineQrTransfer';
 
 interface GuestShareModalProps {
   result: PhotostripResult;
@@ -33,6 +36,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
   const [emailInput, setEmailInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sentMessage, setSentMessage] = useState<string | null>(null);
+  const [quickShareMsg, setQuickShareMsg] = useState<string | null>(null);
 
   // Auto-cycle through photos to create live motion GIF player
   React.useEffect(() => {
@@ -65,16 +69,16 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
     setSentMessage(null);
 
     try {
-      await emailDeliveryService.sendPhotoEmail({
+      const res = await emailDeliveryService.sendPhotoEmail({
         recipientEmail: emailInput.trim(),
         photostripId: result.id,
         photostripUrl: result.compositeDataUrl,
         eventTitle: result.eventTitle || 'JCVcreatives Photobooth',
       });
-      setSentMessage(`Sent to ${emailInput}! Check your inbox for your full-color strip & GIF.`);
+      setSentMessage(res.message);
       soundEffects.playSuccessChime();
     } catch {
-      setSentMessage('Delivery queued. Your photos will be emailed shortly.');
+      setSentMessage('Delivery queued offline. Your photos will be emailed automatically when online.');
     } finally {
       setIsSending(false);
     }
@@ -88,8 +92,14 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
           <div className="flex items-center gap-2">
             <Smartphone className="w-4 h-4 text-sky-400" />
             <div>
-              <div className="text-xs font-semibold text-zinc-100">Guest Digital Portal</div>
-              <div className="text-[10px] text-zinc-400">Full color photos & motion GIF</div>
+              <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                <span>Guest Digital Portal</span>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[9px] font-mono">
+                  <WifiOff className="w-2.5 h-2.5" />
+                  OFFLINE READY
+                </span>
+              </div>
+              <div className="text-[10px] text-zinc-400">Save directly to phone with zero internet</div>
             </div>
           </div>
           <button
@@ -176,19 +186,37 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
         <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center">
           {activeTab === 'strip' && (
             <div className="flex flex-col items-center w-full">
-              <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-3 max-h-[46vh]">
-                <img src={result.compositeDataUrl} alt="Photostrip" className="max-h-[44vh] w-auto object-contain" />
+              <div className="rounded-lg overflow-hidden shadow-lg border border-zinc-800 mb-3 max-h-[44vh]">
+                <img src={result.compositeDataUrl} alt="Photostrip" className="max-h-[42vh] w-auto object-contain" />
               </div>
-              <p className="text-[10px] text-zinc-400 mb-3 text-center">
-                Full-color archival keepsake photostrip with your chosen theme
+              <p className="text-[10px] text-zinc-400 mb-2.5 text-center">
+                Full-color archival keepsake photostrip — ready for offline save
               </p>
-              <button
-                onClick={() => downloadImage(result.compositeDataUrl, `photostrip_${result.id}.png`)}
-                className="w-full py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5 text-zinc-950" />
-                <span>Save Full-Color Strip</span>
-              </button>
+              <div className="w-full space-y-2">
+                <button
+                  onClick={() => downloadImage(result.compositeDataUrl, `photostrip_${result.id}.png`)}
+                  className="w-full py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-zinc-950" />
+                  <span>Save Photostrip to Phone</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    soundEffects.playTap();
+                    const res = await shareOfflineViaQuickShare(result);
+                    setQuickShareMsg(res.message);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-white" />
+                  <span>Quick Share / Bluetooth Transfer (Offline)</span>
+                </button>
+                {quickShareMsg && (
+                  <div className="text-[11px] text-emerald-400 text-center pt-0.5">
+                    {quickShareMsg}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

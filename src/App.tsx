@@ -21,6 +21,7 @@ import { storageService, safeStorageGet } from './services/storage';
 import { soundEffects } from './services/soundEffects';
 import { cameraStreamService } from './services/cameraStreamService';
 import { enduranceManager } from './services/enduranceManager';
+import { decodeOfflinePhotoFromLocation } from './services/offlineQrTransfer';
 
 // Components
 import {
@@ -62,20 +63,57 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showMobileShareModal, setShowMobileShareModal] = useState(false);
 
-  // Initialize config, telemetry, persistent camera stream, Galaxy Tab A11 12h endurance manager, and check URL for direct mobile guest share (?share=...)
+  // Initialize config, telemetry, persistent camera stream, Galaxy Tab A11 12h endurance manager, and check URL for direct mobile guest share (?share=... or #offline-photo=...)
   useEffect(() => {
     enduranceManager.init();
 
-    // Eagerly acquire and keep camera stream alive on boot so permission is granted once
-    // before entering fullscreen and never interrupts the kiosk session later.
-    cameraStreamService
-      .getOrStartStream('user')
-      .then(() => {
-        if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
-          enterBrowserFullscreenApi();
+    // Check if opened with self-contained #offline-photo=... QR payload on a guest's smartphone
+    const checkShareUrlOrHash = () => {
+      try {
+        const offlineDecoded = decodeOfflinePhotoFromLocation(
+          window.location.search,
+          window.location.hash
+        );
+        if (offlineDecoded) {
+          setFinalizedResult(offlineDecoded);
+          setShowMobileShareModal(true);
+          return true;
         }
-      })
-      .catch(() => {});
+
+        const params = new URLSearchParams(window.location.search);
+        const shareId = params.get('share');
+        if (shareId) {
+          storageService
+            .getCapture(shareId)
+            .then((cap) => {
+              if (cap) {
+                setFinalizedResult(cap);
+                setShowMobileShareModal(true);
+              }
+            })
+            .catch(() => {});
+          return true;
+        }
+      } catch {
+        // Ignore URL parsing errors on non-standard schemes
+      }
+      return false;
+    };
+
+    const isGuestPhoneView = checkShareUrlOrHash();
+    window.addEventListener('hashchange', checkShareUrlOrHash);
+
+    // Only eagerly acquire kiosk camera stream if not opened as a guest mobile share link
+    if (!isGuestPhoneView) {
+      cameraStreamService
+        .getOrStartStream('user')
+        .then(() => {
+          if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
+            enterBrowserFullscreenApi();
+          }
+        })
+        .catch(() => {});
+    }
 
     remoteConfigService
       .init()
@@ -87,24 +125,9 @@ export default function App() {
       .catch(() => {});
     analyticsService.init().then(setTelemetry).catch(() => {});
 
-    try {
-      // Check if opened with ?share=... on a smartphone
-      const params = new URLSearchParams(window.location.search);
-      const shareId = params.get('share');
-      if (shareId) {
-        storageService
-          .getCapture(shareId)
-          .then((cap) => {
-            if (cap) {
-              setFinalizedResult(cap);
-              setShowMobileShareModal(true);
-            }
-          })
-          .catch(() => {});
-      }
-    } catch {
-      // Ignore URL parsing errors on non-standard schemes
-    }
+    return () => {
+      window.removeEventListener('hashchange', checkShareUrlOrHash);
+    };
   }, []);
 
   // Handler: Return to Attract / Reset (frees offscreen GPU canvas textures for 12-hour endurance)
