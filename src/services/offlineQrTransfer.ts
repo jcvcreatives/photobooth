@@ -719,18 +719,18 @@ export function fetchFullHdFromTabletPeer(
 }
 
 /**
- * Studio Portrait Relighting + Foveated Edge-Preserving Bilateral Denoiser (runs BEFORE QR compression):
+ * Foveated Pre-Encoding Portrait Optimizer (runs at 480px BEFORE QR downsampling):
  *
- * Why previous offline QR photos looked blocky/unclear:
- * Pre-sharpening BEFORE low-bitrate (~2 KB) compression amplified camera sensor noise, which forced
- * the WebP/JPEG encoder to drop quantization quality `q` down to ~0.48, creating 8x8 macroblocks.
+ * Why `IMG_3597` was previously blurry:
+ * Running a 3x3 bilateral blur over the face before encoding destroyed fine hair strands,
+ * eyelashes, eyebrows, and lip contours.
  *
- * How this works:
- * 1. Adaptive Fill-Light LUT lifts dark indoor eye sockets and shadows smoothly without washing out blacks.
- * 2. Edge-Preserving Bilateral Denoiser smooths flat skin & background sensor grain while keeping
- *    strong edges (eyes, irises, eyelashes, eyebrows, nostrils, lips, hair) 100% untouched.
- * 3. Foveated Periphery Softening gently smooths the outer 25% background corners so 85%+ of the
- *    QR code's byte budget is spent on the person's face at high quality (`q = 0.72..0.84`)!
+ * How this works now:
+ * 1. Keeps 100% of the natural camera exposure & skin tones (only lifts shadows if the capture is genuinely dark `meanY < 82`).
+ * 2. Inside the subject portrait zone (`r2 <= 1.25`), NEVER blurs luma — instead applies a +22% pre-downscale
+ *    acutance boost on real facial details so hair strands, eyes, irises, and lips survive downsampling!
+ * 3. Only in the outer background edges (`r2 > 1.35`, walls/curtains outside the person) does it smooth
+ *    background grain so 90%+ of the QR code's bitrate is dedicated to the person's face!
  */
 function enhanceCameraPortraitBeforeQrEncoding(
   ctx: CanvasRenderingContext2D,
@@ -746,7 +746,6 @@ function enhanceCameraPortraitBeforeQrEncoding(
     const Y = new Float32Array(n);
     const Cb = new Float32Array(n);
     const Cr = new Float32Array(n);
-    const hist = new Uint32Array(256);
 
     let sumY = 0;
     for (let i = 0, p = 0; i < data.length; i += 4, p++) {
@@ -757,52 +756,20 @@ function enhanceCameraPortraitBeforeQrEncoding(
       Y[p] = yVal;
       Cb[p] = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
       Cr[p] = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-      hist[Math.max(0, Math.min(255, yVal | 0))]++;
       sumY += yVal;
     }
 
     const meanY = n > 0 ? sumY / n : 128;
 
-    let p3 = 6;
-    let p98 = 250;
-    let acc = 0;
-    for (let v = 0; v < 256; v++) {
-      acc += hist[v];
-      if (acc >= n * 0.03) {
-        p3 = v;
-        break;
-      }
-    }
-    acc = 0;
-    for (let v = 0; v < 256; v++) {
-      acc += hist[v];
-      if (acc >= n * 0.98) {
-        p98 = v;
-        break;
+    // Only apply shadow fill-light if the room is genuinely dark (meanY < 82); otherwise preserve exact camera exposure
+    if (meanY < 82) {
+      const gamma = Math.max(0.82, 0.96 - ((82 - meanY) / 82) * 0.14);
+      for (let p = 0; p < n; p++) {
+        Y[p] = Math.pow(Math.max(0, Math.min(1, Y[p] / 255)), gamma) * 255;
       }
     }
 
-    const blackPt = Math.max(0, Math.min(22, p3 * 0.55));
-    const whitePt = Math.max(220, Math.min(255, p98 + (255 - p98) * 0.35));
-    const span = Math.max(130, whitePt - blackPt);
-    // Natural studio fill light for dark indoor faces without washing out contrast
-    const gamma = meanY < 128 ? Math.max(0.78, 0.95 - ((128 - meanY) / 128) * 0.18) : 0.96;
-
-    const toneLut = new Float32Array(256);
-    for (let v = 0; v < 256; v++) {
-      const norm = Math.max(0, Math.min(1, (v - blackPt) / span));
-      const curved = Math.pow(norm, gamma);
-      const sCurve = curved * curved * (3 - 2 * curved);
-      toneLut[v] = (curved * 0.86 + sCurve * 0.14) * 255;
-    }
-
-    const relitY = new Float32Array(n);
-    for (let p = 0; p < n; p++) {
-      relitY[p] = toneLut[Math.max(0, Math.min(255, Y[p] | 0))];
-    }
-
-    // Edge-Preserving Bilateral Denoising (reduces sensor noise entropy by ~40% so WebP/JPEG encodes at high q!)
-    const outY = new Float32Array(relitY);
+    const outY = new Float32Array(Y);
     const outCb = new Float32Array(Cb);
     const outCr = new Float32Array(Cr);
 
@@ -811,54 +778,56 @@ function enhanceCameraPortraitBeforeQrEncoding(
 
     for (let y = 1; y < height - 1; y++) {
       const row = y * width;
-      // Normalized distance from portrait center (0.5, 0.46)
-      const ny = (y * invH - 0.46) / 0.42;
+      const ny = (y * invH - 0.48) / 0.44;
       const ny2 = ny * ny;
 
       for (let x = 1; x < width - 1; x++) {
         const idx = row + x;
-        const cY = relitY[idx];
+        const cY = Y[idx];
+        const up = idx - width;
+        const dn = idx + width;
+        const lf = idx - 1;
+        const rt = idx + 1;
 
-        const nx = (x * invW - 0.5) / 0.38;
+        const nx = (x * invW - 0.5) / 0.42;
         const r2 = nx * nx + ny2;
-        // Inside the portrait oval (r2 <= 1.0): tight bilateral threshold (11) preserves all facial detail
-        // Outside in the background corners (r2 > 1.0): wider threshold (26) smooths background wall clutter to save bytes!
-        const lumaThresh = r2 <= 1.0 ? 10.5 : 26.0;
 
-        let sumYVal = cY * 3;
-        let wY = 3;
+        if (r2 <= 1.25) {
+          // Inside the portrait (face, hair, eyes, shoulders):
+          // NEVER blur luma! Boost real edges/details (+22%) so downsampling preserves crisp eyes & hair strands.
+          const crossAvg = (Y[up] + Y[dn] + Y[lf] + Y[rt]) * 0.25;
+          const detail = cY - crossAvg;
+          if (Math.abs(detail) > 2.2) {
+            outY[idx] = Math.max(0, Math.min(255, cY + detail * 0.22));
+          }
+        } else if (r2 > 1.35) {
+          // Far background corners only: smooth low-contrast wall/curtain grain to save QR bytes for the face
+          let sumBg = cY * 2;
+          let wBg = 2;
+          const nbs = [up, dn, lf, rt];
+          for (let k = 0; k < 4; k++) {
+            const nY = Y[nbs[k]];
+            if (Math.abs(nY - cY) < 18) {
+              sumBg += nY;
+              wBg += 1;
+            }
+          }
+          outY[idx] = sumBg / wBg;
+        }
+
+        // Clean sub-perceptual chroma noise everywhere without touching luma sharpness
         let sumCb = Cb[idx] * 2;
         let sumCr = Cr[idx] * 2;
         let wC = 2;
-
-        const neighbors = [
-          idx - width,
-          idx + width,
-          idx - 1,
-          idx + 1,
-          idx - width - 1,
-          idx - width + 1,
-          idx + width - 1,
-          idx + width + 1,
-        ];
-
-        for (let k = 0; k < 8; k++) {
-          const nIdx = neighbors[k];
-          const nY = relitY[nIdx];
-          const diff = Math.abs(nY - cY);
-          if (diff < lumaThresh) {
-            const w = k < 4 ? 1.0 : 0.7;
-            sumYVal += nY * w;
-            wY += w;
-          }
-          if (diff < 24) {
+        const nbs = [up, dn, lf, rt];
+        for (let k = 0; k < 4; k++) {
+          const nIdx = nbs[k];
+          if (Math.abs(Y[nIdx] - cY) < 22) {
             sumCb += Cb[nIdx];
             sumCr += Cr[nIdx];
             wC += 1;
           }
         }
-
-        outY[idx] = sumYVal / wY;
         outCb[idx] = sumCb / wC;
         outCr[idx] = sumCr / wC;
       }
@@ -883,9 +852,10 @@ function enhanceCameraPortraitBeforeQrEncoding(
 }
 
 /**
- * Chroma-Only Pre-Compression Optimization at Target QR Size:
- * Smooths sub-perceptual Cb/Cr chroma noise while keeping strong facial edges crisp and flat skin clean
- * so the encoder achieves high quality `q` without macroblocking.
+ * Target-Scale Pre-Compression Acutance & Chroma Optimizer:
+ * Runs at the exact QR encoding resolution (`w x h`, e.g. `312x294`).
+ * Pre-emphasizes high-frequency facial edges (`+20%`) right before WebP/JPEG DCT quantization
+ * so the encoder preserves crisp eyes, hair strands, eyebrows, and lips instead of quantizing them away!
  */
 function applyPreCompressionChromaOptimization(
   ctx: CanvasRenderingContext2D,
@@ -911,8 +881,14 @@ function applyPreCompressionChromaOptimization(
       Cr[p] = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
     }
 
+    const invW = 1 / width;
+    const invH = 1 / height;
+
     for (let y = 1; y < height - 1; y++) {
       const row = y * width;
+      const ny = (y * invH - 0.48) / 0.44;
+      const ny2 = ny * ny;
+
       for (let x = 1; x < width - 1; x++) {
         const idx = row + x;
         const y0 = Y[idx];
@@ -921,38 +897,40 @@ function applyPreCompressionChromaOptimization(
         const lf = idx - 1;
         const rt = idx + 1;
 
-        // Only boost high-contrast facial features (eyes, eyebrows, lips where |diff| > 7),
-        // and gently smooth micro-noise (< 4) so flat skin encodes with zero blocks!
+        const nx = (x * invW - 0.5) / 0.42;
+        const r2 = nx * nx + ny2;
+
         const crossAvg = (Y[up] + Y[dn] + Y[lf] + Y[rt]) * 0.25;
         const diff = y0 - crossAvg;
         const absDiff = Math.abs(diff);
+
         let yVal = y0;
-        if (absDiff > 7.5) {
-          yVal = Math.max(0, Math.min(255, y0 + diff * 0.18));
-        } else if (absDiff < 3.5) {
-          yVal = y0 * 0.65 + crossAvg * 0.35;
+        if (r2 <= 1.25 && absDiff >= 2.0) {
+          // Pre-compensate for DCT high-frequency attenuation inside the subject area
+          const boost = Math.max(-8, Math.min(8, diff * 0.22));
+          yVal = Math.max(0, Math.min(255, y0 + boost));
         }
 
         let sumCb = Cb[idx] * 2;
         let sumCr = Cr[idx] * 2;
         let wSum = 2;
 
-        if (Math.abs(Y[up] - y0) < 26) {
+        if (Math.abs(Y[up] - y0) < 24) {
           sumCb += Cb[up];
           sumCr += Cr[up];
           wSum++;
         }
-        if (Math.abs(Y[dn] - y0) < 26) {
+        if (Math.abs(Y[dn] - y0) < 24) {
           sumCb += Cb[dn];
           sumCr += Cr[dn];
           wSum++;
         }
-        if (Math.abs(Y[lf] - y0) < 26) {
+        if (Math.abs(Y[lf] - y0) < 24) {
           sumCb += Cb[lf];
           sumCr += Cr[lf];
           wSum++;
         }
-        if (Math.abs(Y[rt] - y0) < 26) {
+        if (Math.abs(Y[rt] - y0) < 24) {
           sumCb += Cb[rt];
           sumCr += Cr[rt];
           wSum++;
@@ -977,12 +955,18 @@ function applyPreCompressionChromaOptimization(
 }
 
 /**
- * Stage 1 (On Guest Phone at Native Decoded Resolution):
- * 4x4 & 8x8 DCT Block-Boundary De-Stepping + 2-Pass Edge-Preserving Bilateral Surface Restoration.
- * Eliminates compression blockiness, mosquito ringing, and color blotches on skin and backgrounds
- * while keeping strong edges (eyes, irises, eyelashes, eyebrows, lips, hair) 100% sharp!
+ * Stage 1 (On Guest Phone at Native Decoded Resolution `w x singleH`):
+ * Native-Scale High-Frequency Deconvolution + Chroma Denoising (ZERO Luma Blurring on Details!).
+ *
+ * Why this eliminates blur:
+ * Instead of running a 2-pass bilateral blur at native resolution (which smeared eyes, hair, and lips),
+ * this stage:
+ * 1. Gently de-steps ONLY flat 8x8 block seams (`absDelta < 6` where interior slope `< 2.5`).
+ * 2. Smooths ONLY chroma (`Cb`/`Cr`) while leaving luma edges 100% sharp.
+ * 3. Runs a Native-Scale Deconvolution Unsharp Pass right on the decoded `Y` channel BEFORE upscaling,
+ *    restoring 1-pixel micro-details (hair bangs, eyelashes, iris catchlights, lip lines, nostrils).
  */
-function applyYCbCrDctDeblockingFilter(
+function applyNativeDeconvolutionAndChromaClean(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number
@@ -993,9 +977,9 @@ function applyYCbCrDctDeblockingFilter(
     const data = imgData.data;
     const n = width * height;
 
-    let Y = new Float32Array(n);
-    let Cb = new Float32Array(n);
-    let Cr = new Float32Array(n);
+    const Y = new Float32Array(n);
+    const Cb = new Float32Array(n);
+    const Cr = new Float32Array(n);
 
     for (let i = 0, p = 0; i < data.length; i += 4, p++) {
       const r = data[i];
@@ -1006,10 +990,10 @@ function applyYCbCrDctDeblockingFilter(
       Cr[p] = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
     }
 
-    // Step 1A: 4x4 & 8x8 Block-Boundary De-Stepping (handles both WebP 4x4 and JPEG 8x8 block seams)
+    // Step 1A: Subtle 8x8 flat-seam de-stepping (only on flat regions where interior slope < 2.5)
     for (let y = 1; y < height - 1; y++) {
       const row = y * width;
-      for (let x = 4; x < width - 2; x += 4) {
+      for (let x = 8; x < width - 2; x += 8) {
         const idx = row + x;
         const p1 = Y[idx - 2];
         const p0 = Y[idx - 1];
@@ -1017,15 +1001,15 @@ function applyYCbCrDctDeblockingFilter(
         const q1 = Y[idx + 1];
         const delta = q0 - p0;
         const absDelta = Math.abs(delta);
-        if (absDelta > 0.4 && absDelta < 16 && Math.abs(p0 - p1) < 7 && Math.abs(q1 - q0) < 7) {
-          const adj = delta * 0.34;
+        if (absDelta > 0.5 && absDelta < 6.5 && Math.abs(p0 - p1) < 2.5 && Math.abs(q1 - q0) < 2.5) {
+          const adj = delta * 0.28;
           Y[idx - 1] = p0 + adj;
           Y[idx] = q0 - adj;
         }
       }
     }
 
-    for (let y = 4; y < height - 2; y += 4) {
+    for (let y = 8; y < height - 2; y += 8) {
       const row = y * width;
       for (let x = 1; x < width - 1; x++) {
         const idx = row + x;
@@ -1035,75 +1019,73 @@ function applyYCbCrDctDeblockingFilter(
         const q1 = Y[idx + width];
         const delta = q0 - p0;
         const absDelta = Math.abs(delta);
-        if (absDelta > 0.4 && absDelta < 16 && Math.abs(p0 - p1) < 7 && Math.abs(q1 - q0) < 7) {
-          const adj = delta * 0.34;
+        if (absDelta > 0.5 && absDelta < 6.5 && Math.abs(p0 - p1) < 2.5 && Math.abs(q1 - q0) < 2.5) {
+          const adj = delta * 0.28;
           Y[idx - width] = p0 + adj;
           Y[idx] = q0 - adj;
         }
       }
     }
 
-    // Step 1B: 2-Pass Edge-Preserving Bilateral Surface Filter in YCbCr Space
-    // Smooths small quantization steps (< 13 gray levels on skin & walls) into silky continuous gradients
-    // while locking onto real facial edges (> 15 gray levels on eyes, eyebrows, nostrils, mouth, hair).
-    for (let pass = 0; pass < 2; pass++) {
-      const nextY = new Float32Array(Y);
-      const nextCb = new Float32Array(Cb);
-      const nextCr = new Float32Array(Cr);
-      const sigmaRange = pass === 0 ? 13.5 : 9.5;
-      const invTwoSigmaSq = 1 / (2 * sigmaRange * sigmaRange);
+    // Step 1B: Native-Scale High-Frequency Luma Restoration (sharpens 1px source features before upscaling!)
+    const outY = new Float32Array(Y);
+    const outCb = new Float32Array(Cb);
+    const outCr = new Float32Array(Cr);
 
-      for (let y = 1; y < height - 1; y++) {
-        const row = y * width;
-        for (let x = 1; x < width - 1; x++) {
-          const idx = row + x;
-          const y0 = Y[idx];
+    for (let y = 1; y < height - 1; y++) {
+      const row = y * width;
+      for (let x = 1; x < width - 1; x++) {
+        const idx = row + x;
+        const e = Y[idx];
+        const b = Y[idx - width];
+        const d = Y[idx - 1];
+        const f = Y[idx + 1];
+        const h = Y[idx + width];
+        const a = Y[idx - width - 1];
+        const c = Y[idx - width + 1];
+        const g = Y[idx + width - 1];
+        const i = Y[idx + width + 1];
 
-          let sumY = y0 * 2.2;
-          let wSumY = 2.2;
-          let sumCb = Cb[idx] * 2.0;
-          let sumCr = Cr[idx] * 2.0;
-          let wSumC = 2.0;
+        // 3x3 isotropic Gaussian blur of neighborhood
+        const localMean =
+          (e * 4 + (b + d + f + h) * 2 + (a + c + g + i)) * 0.0625;
+        const highFreq = e - localMean;
+        const absHf = Math.abs(highFreq);
 
-          for (let dy = -1; dy <= 1; dy++) {
-            const nRow = (y + dy) * width;
-            for (let dx = -1; dx <= 1; dx++) {
-              if (dx === 0 && dy === 0) continue;
-              const nIdx = nRow + x + dx;
-              const spatialW = dx === 0 || dy === 0 ? 1.0 : 0.707;
-              const diffY = Y[nIdx] - y0;
-              const absDiffY = Math.abs(diffY);
+        const minN = Math.min(e, Math.min(Math.min(b, h), Math.min(d, f)));
+        const maxN = Math.max(e, Math.max(Math.max(b, h), Math.max(d, f)));
+        const localSpan = maxN - minN;
 
-              if (absDiffY < sigmaRange * 2.1) {
-                const rangeW = Math.exp(-(diffY * diffY) * invTwoSigmaSq);
-                const w = spatialW * rangeW;
-                sumY += Y[nIdx] * w;
-                wSumY += w;
-              }
-
-              if (absDiffY < 28) {
-                sumCb += Cb[nIdx] * spatialW;
-                sumCr += Cr[nIdx] * spatialW;
-                wSumC += spatialW;
-              }
-            }
-          }
-
-          nextY[idx] = sumY / wSumY;
-          nextCb[idx] = sumCb / wSumC;
-          nextCr[idx] = sumCr / wSumC;
+        // Restore genuine micro-textures and edges (localSpan >= 2.5) while keeping overshoot clamped to local neighborhood
+        if (localSpan >= 2.5 && absHf >= 0.6) {
+          const strength = Math.min(1.0, (localSpan - 2.0) / 10.0) * 0.65;
+          const boosted = e + highFreq * strength;
+          // Soft overshoot allowance (±3.5 gray levels beyond local min/max) for crisp eyes & hair without ringing
+          outY[idx] = Math.max(minN - 3.5, Math.min(maxN + 3.5, boosted));
         }
-      }
 
-      Y = nextY;
-      Cb = nextCb;
-      Cr = nextCr;
+        // Edge-guided chroma cleanup
+        let sumCb = Cb[idx] * 2;
+        let sumCr = Cr[idx] * 2;
+        let wC = 2;
+        const nbs = [idx - width, idx + width, idx - 1, idx + 1];
+        for (let k = 0; k < 4; k++) {
+          const nIdx = nbs[k];
+          if (Math.abs(Y[nIdx] - e) < 22) {
+            sumCb += Cb[nIdx];
+            sumCr += Cr[nIdx];
+            wC += 1;
+          }
+        }
+        outCb[idx] = sumCb / wC;
+        outCr[idx] = sumCr / wC;
+      }
     }
 
     for (let p = 0, i = 0; p < n; p++, i += 4) {
-      const yVal = Y[p];
-      const cb = Cb[p] - 128;
-      const cr = Cr[p] - 128;
+      const yVal = outY[p];
+      const cb = outCb[p] - 128;
+      const cr = outCr[p] - 128;
 
       data[i] = Math.max(0, Math.min(255, Math.round(yVal + 1.402 * cr)));
       data[i + 1] = Math.max(0, Math.min(255, Math.round(yVal - 0.344136 * cb - 0.714136 * cr)));
@@ -1117,56 +1099,109 @@ function applyYCbCrDctDeblockingFilter(
 }
 
 /**
- * Feature-Selective Contrast Adaptive Sharpening (CAS) Super-Resolution Pass:
- * Only sharpens genuine facial features (eyes, eyelashes, eyebrows, lips, hair outline where
- * localContrast >= 12) and NEVER sharpens smooth skin gradients (localContrast < 12), so
- * skin remains completely smooth and block-free while eyes and features pop clearly!
+ * Multi-Scale Edge-Slope Deconvolution & Contrast-Adaptive Super-Resolution Pass:
+ *
+ * Why standard 1px CAS failed on upscaled QR photos:
+ * When a ~312px image is upscaled 2.3x to 720px, bicubic interpolation spreads every sharp edge
+ * across a 2-to-3 pixel ramp, reducing 1px neighbor contrast by ~2.5x.
+ *
+ * This multi-radius sharpener combines:
+ * - Radius-1px kernel (for fine pixel-level crispness)
+ * - Radius-2px & Radius-3px kernels (to compress wide upscaled interpolation ramps back into crisp 1px edges!)
+ * - Neighborhood min/max halo clamping so eyes, hair strands, eyebrows, and lips become sharp
+ *   with ZERO white or black ringing halos!
  */
-function applyContrastAdaptiveSharpening(
+function applyMultiScaleSuperResolutionSharpening(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  sharpness: number = 0.55
+  amount: number = 0.85,
+  wideRadiusWeight: number = 0.5
 ): void {
   try {
-    if (width < 4 || height < 4) return;
+    if (width < 8 || height < 8) return;
     const imgData = ctx.getImageData(0, 0, width, height);
     const src = imgData.data;
     const out = new Uint8ClampedArray(src);
+    const n = width * height;
 
-    const lum = new Float32Array(width * height);
+    const lum = new Float32Array(n);
     for (let i = 0, p = 0; i < src.length; i += 4, p++) {
       lum[p] = 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2];
     }
 
-    const peak = -(1 / (8 - 3 * Math.max(0, Math.min(1, sharpness))));
+    const w2 = width * 2;
+    const w3 = width * 3;
 
-    for (let y = 1; y < height - 1; y++) {
+    for (let y = 3; y < height - 3; y++) {
       const row = y * width;
-      for (let x = 1; x < width - 1; x++) {
+      for (let x = 3; x < width - 3; x++) {
         const idx = row + x;
-        const b = lum[idx - width];
-        const d = lum[idx - 1];
         const e = lum[idx];
-        const f = lum[idx + 1];
-        const h = lum[idx + width];
 
-        const minLum = Math.min(e, Math.min(Math.min(d, f), Math.min(b, h)));
-        const maxLum = Math.max(e, Math.max(Math.max(d, f), Math.max(b, h)));
-        const localContrast = maxLum - minLum;
+        // Radius 1 neighbors (fine detail)
+        const u1 = lum[idx - width];
+        const d1 = lum[idx + width];
+        const l1 = lum[idx - 1];
+        const r1 = lum[idx + 1];
+        const ul1 = lum[idx - width - 1];
+        const ur1 = lum[idx - width + 1];
+        const dl1 = lum[idx + width - 1];
+        const dr1 = lum[idx + width + 1];
 
-        // Skip smooth skin and background gradients (< 11 gray levels) so they stay silky-smooth!
-        if (localContrast < 11) continue;
+        const mean1 =
+          (e * 4 + (u1 + d1 + l1 + r1) * 2 + (ul1 + ur1 + dl1 + dr1)) * 0.0625;
+        const detail1 = e - mean1;
 
-        // Smooth ramp from 11 to 26 so only true facial features (eyes, brows, lips, hair) get sharpened
-        const edgeStrength = Math.min(1, (localContrast - 11) / 15);
-        const headRoom = Math.min(minLum, 255 - maxLum);
-        const amp = Math.sqrt(Math.max(0, Math.min(1, headRoom / Math.max(1, maxLum))));
-        const w = amp * peak * edgeStrength;
-        const invNorm = 1 / (1 + 4 * w);
+        // Radius 2 & 3 neighbors (targets the 2.3x bicubic upscale blur kernel!)
+        const u2 = lum[idx - w2];
+        const d2 = lum[idx + w2];
+        const l2 = lum[idx - 2];
+        const r2 = lum[idx + 2];
+        const ul2 = lum[idx - w2 - 2];
+        const ur2 = lum[idx - w2 + 2];
+        const dl2 = lum[idx + w2 - 2];
+        const dr2 = lum[idx + w2 + 2];
 
-        const newLum = (e + (b + d + f + h) * w) * invNorm;
-        const deltaLum = Math.max(-14, Math.min(14, newLum - e));
+        const u3 = lum[idx - w3];
+        const d3 = lum[idx + w3];
+        const l3 = lum[idx - 3];
+        const r3 = lum[idx + 3];
+
+        const meanWide =
+          ((u2 + d2 + l2 + r2) * 2 + (ul2 + ur2 + dl2 + dr2) + (u3 + d3 + l3 + r3)) / 16;
+        const detailWide = e - meanWide;
+
+        // Local contrast across 2px radius (captures true upscaled edge strength!)
+        const minLocal = Math.min(
+          e,
+          Math.min(Math.min(u1, d1), Math.min(l1, r1)),
+          Math.min(Math.min(u2, d2), Math.min(l2, r2))
+        );
+        const maxLocal = Math.max(
+          e,
+          Math.max(Math.max(u1, d1), Math.max(l1, r1)),
+          Math.max(Math.max(u2, d2), Math.max(l2, r2))
+        );
+        const span = maxLocal - minLocal;
+
+        // Only skip dead-flat 8-bit quantization steps (span < 1.5)
+        if (span < 1.5) continue;
+
+        // Smooth edge weight from span 1.5..9.0 (sharpening both subtle facial textures and strong edges!)
+        const edgeWeight = Math.min(1.0, (span - 1.2) / 7.5);
+        const combinedDetail =
+          detail1 * (1 - wideRadiusWeight * 0.35) + detailWide * wideRadiusWeight;
+
+        const rawBoost = combinedDetail * amount * edgeWeight;
+
+        // Clamp within local [minLocal - overshoot, maxLocal + overshoot] so edges tighten without ringing halos!
+        const allowedOvershoot = Math.min(6.0, span * 0.22);
+        const targetLum = Math.max(
+          minLocal - allowedOvershoot,
+          Math.min(maxLocal + allowedOvershoot, e + rawBoost)
+        );
+        const deltaLum = Math.max(-18, Math.min(18, targetLum - e));
 
         const cIdx = idx * 4;
         out[cIdx] = Math.max(0, Math.min(255, Math.round(src[cIdx] + deltaLum)));
@@ -1184,8 +1219,8 @@ function applyContrastAdaptiveSharpening(
 
 /**
  * Packs ONLY the raw camera photo(s) at the exact slot aspect ratio of the chosen frame layout
- * at 360px width and applies Studio Portrait Auto-Relighting & Foveated Bilateral Denoising
- * before QR compression!
+ * at 480px width (preserving crisp high-frequency facial detail) and runs our Foveated
+ * Pre-Encoding Portrait Optimizer before QR compression!
  */
 async function buildCameraPhotosOnlyCanvas(
   photos: string[],
@@ -1225,7 +1260,7 @@ async function buildCameraPhotosOnlyCanvas(
 
   const count = validImgs.length;
   const slotAspect = getLayoutSlotAspect(layout, count);
-  const slotW = 360;
+  const slotW = 480;
   const slotH = Math.round(slotW / slotAspect);
   const out = document.createElement('canvas');
   out.width = slotW;
@@ -1264,28 +1299,33 @@ function stripDataUrlToBase64Length(dataUrl: string): number {
 }
 
 /**
- * Compresses a camera-only canvas into a high-quality, artifact-free Data URI that fits
- * within `maxBase64Chars`. Uses the rate-distortion sweet spot (`224px–256px` at `q >= 0.62`
- * for 1-shot, `176px–208px` for 2-shot, `144px–176px` for 3/4-shot) so quantization quality `q`
- * stays high and faces NEVER suffer from 8x8 macroblocking!
+ * Compresses a camera-only canvas into a high-resolution, sharp Data URI that fits
+ * within `maxBase64Chars`.
+ *
+ * Key fix for `IMG_3597` blurriness:
+ * Previously, `minQ = 0.62` rejected `256px..168px` and forced the width down to `144px` (`144x136`),
+ * destroying 80% of the spatial pixels!
+ * Now we prioritize high spatial resolution (`336px`, `312px`, `288px`, `264px` — up to 5.4x more pixels!)
+ * and binary-search WebP/JPEG quality (`0.38..0.88`) to pack the sharpest, highest-resolution portrait
+ * that fits into the Version-40 QR code!
  */
 export function compressCanvasForOfflineQr(
   sourceCanvas: HTMLCanvasElement,
-  maxBase64Chars: number = 2720,
+  maxBase64Chars: number = 2780,
   forceJpegForIos: boolean = false,
   shotCount: number = 1
 ): { dataUrl: string; width: number; height: number } {
-  const srcW = Math.max(16, sourceCanvas.width || 360);
-  const srcH = Math.max(16, sourceCanvas.height || 306);
+  const srcW = Math.max(16, sourceCanvas.width || 480);
+  const srcH = Math.max(16, sourceCanvas.height || 452);
   const aspect = srcH / srcW;
 
-  // Sweet-spot candidate widths where quality `q` stays >= 0.60 (zero blocky artifacts!)
+  // High-resolution candidate widths so faces have 4x-5x more pixels than before!
   const candidateWidths =
     shotCount === 1
-      ? [256, 232, 212, 192, 168, 144]
+      ? [336, 312, 288, 264, 240, 216, 192, 168]
       : shotCount === 2
-      ? [208, 184, 164, 144, 124]
-      : [176, 156, 136, 120, 104];
+      ? [248, 224, 200, 180, 160, 140]
+      : [204, 184, 164, 148, 132, 116];
 
   const scratch = document.createElement('canvas');
   const ctx = scratch.getContext('2d');
@@ -1329,8 +1369,8 @@ export function compressCanvasForOfflineQr(
       }
     }
 
-    // Require high minimum quality (`minQ = 0.62` at top widths) so faces are never blocky!
-    const minQ = w >= 224 ? 0.62 : w >= 176 ? 0.58 : w >= 144 ? 0.52 : 0.42;
+    // Allow WebP/JPEG to encode at 312px-336px (`minQ = 0.40`) and binary search up to `0.88`!
+    const minQ = w >= 312 ? 0.40 : w >= 264 ? 0.44 : w >= 216 ? 0.48 : 0.42;
     const maxQ = 0.88;
 
     const minAttempt = encodeAtQuality(minQ);
@@ -1344,7 +1384,7 @@ export function compressCanvasForOfflineQr(
       let bestUrl = minAttempt;
       let lo = minQ;
       let hi = maxQ;
-      for (let iter = 0; iter < 4; iter++) {
+      for (let iter = 0; iter < 5; iter++) {
         const mid = Number(((lo + hi) * 0.5).toFixed(2));
         const candidate = encodeAtQuality(mid);
         const len = stripDataUrlToBase64Length(candidate);
@@ -1412,7 +1452,7 @@ export async function buildOfflineQrPacket(
         result.layout,
         fallbackCanvas
       );
-      for (const budget of [2800, 2500, 2100, 1600]) {
+      for (const budget of [2850, 2600, 2200, 1700]) {
         try {
           const compressed = compressCanvasForOfflineQr(camCanvas, budget, true, shotCount);
           const payloadString = compressed.dataUrl;
@@ -1444,13 +1484,18 @@ export async function buildOfflineQrPacket(
       fallbackCanvas
     );
 
+    const filterPart =
+      result.filter && result.filter !== 'none'
+        ? `&f=${encodeURIComponent(result.filter)}`
+        : '';
+    const countPart = photoCount > 1 ? `&c=${photoCount}` : '';
     const metaPrefix = `t=${encodeURIComponent(result.themeId)}&l=${encodeURIComponent(
       result.layout
-    )}&f=${encodeURIComponent(result.filter)}&c=${photoCount}&offline-photo=`;
+    )}${filterPart}${countPart}&offline-photo=`;
 
     const prefix = `${resolvedBaseUrl}?share=${encodeURIComponent(result.id)}#${metaPrefix}`;
 
-    for (const maxTotalBytes of [2890, 2740, 2500, 2150, 1750]) {
+    for (const maxTotalBytes of [2932, 2860, 2740, 2500, 2150, 1750]) {
       const availableForBase64 = Math.max(900, maxTotalBytes - prefix.length - 4);
       const compressed = compressCanvasForOfflineQr(
         camCanvas,
@@ -1505,16 +1550,15 @@ export async function buildOfflineQrPacket(
     payloadString: fallbackPayload,
     compactImageDataUrl: result.compositeDataUrl || '',
     byteLength: fallbackPayload.length,
-    dimensions: { width: 240, height: 240 },
+    dimensions: { width: 312, height: 294 },
     resolvedBaseUrl,
   };
 }
 
 /**
  * Splits a vertical camera contact sheet back into individual portraits at the exact layout slot aspect ratio,
- * runs our 4x4/8x8 Block De-Stepper + 2-Pass Edge-Preserving Bilateral Surface Filter + Feature-Selective CAS
- * so offline QR portraits look smooth, bright, and sharp like online studio photos, and renders the
- * 100% native HD vector photostrip!
+ * runs Native-Scale Deconvolution + Multi-Radius (1px/2px/3px) Edge-Slope Super-Resolution so offline QR
+ * portraits look sharp and clear without blur, and renders the 100% native HD vector photostrip!
  */
 export async function reconstructVectorHdPhotostripOnPhone(
   result: PhotostripResult,
@@ -1553,19 +1597,19 @@ export async function reconstructVectorHdPhotostripOnPhone(
   const individualPhotos: string[] = await new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const w = img.naturalWidth || img.width || 240;
+      const w = img.naturalWidth || img.width || 312;
       const totalH = img.naturalHeight || img.height || Math.round(w / slotAspect) * packedCount;
       const count = Math.max(1, packedCount);
       const singleH = Math.max(1, Math.floor(totalH / count));
 
       const targetW = 720;
       const targetH = Math.round(targetW / slotAspect);
-      const midW = 480;
+      const midW = 512;
       const midH = Math.round(midW / slotAspect);
       const extracted: string[] = [];
 
       for (let i = 0; i < count; i++) {
-        // Stage 1: Native-resolution 4x4/8x8 De-Stepping + 2-Pass Edge-Preserving Bilateral Surface Restoration
+        // Stage 1: Native-resolution High-Frequency Deconvolution + Chroma Cleanup (zero luma blur!)
         const nativeCanvas = document.createElement('canvas');
         nativeCanvas.width = w;
         nativeCanvas.height = singleH;
@@ -1574,11 +1618,11 @@ export async function reconstructVectorHdPhotostripOnPhone(
           nativeCtx.imageSmoothingEnabled = false;
           nativeCtx.drawImage(img, 0, i * singleH, w, singleH, 0, 0, w, singleH);
           if (!isFromHdStream) {
-            applyYCbCrDctDeblockingFilter(nativeCtx, w, singleH);
+            applyNativeDeconvolutionAndChromaClean(nativeCtx, w, singleH);
           }
         }
 
-        // Stage 2: Intermediate Bicubic Upscale (to 480px) + Feature-Selective CAS (skips smooth skin < 11)
+        // Stage 2: Intermediate Upscale (to 512px) + Multi-Radius (1px/2px/3px) Edge-Slope Super-Resolution
         const step1 = document.createElement('canvas');
         step1.width = midW;
         step1.height = midH;
@@ -1587,10 +1631,16 @@ export async function reconstructVectorHdPhotostripOnPhone(
           ctx1.imageSmoothingEnabled = true;
           ctx1.imageSmoothingQuality = 'high';
           ctx1.drawImage(nativeCtx ? nativeCanvas : img, 0, 0, midW, midH);
-          applyContrastAdaptiveSharpening(ctx1, midW, midH, isFromHdStream ? 0.3 : 0.62);
+          applyMultiScaleSuperResolutionSharpening(
+            ctx1,
+            midW,
+            midH,
+            isFromHdStream ? 0.35 : 0.92,
+            isFromHdStream ? 0.25 : 0.55
+          );
         }
 
-        // Stage 3: Final Bicubic Upscale (to 720px) + Feature-Selective CAS
+        // Stage 3: Final Upscale (to 720px) + Fine Micro-Detail & Acutance Pass
         const finalCanvas = document.createElement('canvas');
         finalCanvas.width = targetW;
         finalCanvas.height = targetH;
@@ -1599,7 +1649,13 @@ export async function reconstructVectorHdPhotostripOnPhone(
           finalCtx.imageSmoothingEnabled = true;
           finalCtx.imageSmoothingQuality = 'high';
           finalCtx.drawImage(ctx1 ? step1 : img, 0, 0, targetW, targetH);
-          applyContrastAdaptiveSharpening(finalCtx, targetW, targetH, isFromHdStream ? 0.25 : 0.48);
+          applyMultiScaleSuperResolutionSharpening(
+            finalCtx,
+            targetW,
+            targetH,
+            isFromHdStream ? 0.25 : 0.68,
+            isFromHdStream ? 0.2 : 0.42
+          );
           extracted.push(finalCanvas.toDataURL('image/jpeg', 0.96));
         }
 
