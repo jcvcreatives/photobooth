@@ -105,6 +105,8 @@ class EnduranceManagerService {
     }
   }
 
+  private batteryPollTimer: ReturnType<typeof setInterval> | null = null;
+
   private async initBatteryMonitor() {
     if (typeof navigator === 'undefined') return;
     try {
@@ -113,14 +115,23 @@ class EnduranceManagerService {
         const battery = await nav.getBattery();
         this.batteryManager = battery;
         const updateBattery = () => {
-          this.batteryLevelPercent =
+          const nextLevel =
             typeof battery.level === 'number' ? Math.round(battery.level * 100) : null;
-          this.isCharging = typeof battery.charging === 'boolean' ? battery.charging : null;
-          this.notify();
+          const nextCharging =
+            typeof battery.charging === 'boolean' ? battery.charging : null;
+          if (nextLevel !== this.batteryLevelPercent || nextCharging !== this.isCharging) {
+            this.batteryLevelPercent = nextLevel;
+            this.isCharging = nextCharging;
+            this.notify();
+          }
         };
         updateBattery();
         battery.addEventListener('levelchange', updateBattery);
         battery.addEventListener('chargingchange', updateBattery);
+
+        if (!this.batteryPollTimer) {
+          this.batteryPollTimer = setInterval(updateBattery, 2000);
+        }
       }
     } catch {
       // Battery Status API not exposed in this browser context

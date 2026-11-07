@@ -220,6 +220,40 @@ class SoundEffects {
       // ignore
     }
   }
+
+  // Urgent two-tone warning alarm when tablet battery drops below 35% and is unplugged
+  public playLowBatteryWarning() {
+    if (!this.soundEnabled) return;
+    try {
+      const ctx = this.getContext();
+      if (!ctx) return;
+
+      const pulses = [
+        { freq: 880, offset: 0, duration: 0.16 },
+        { freq: 587.33, offset: 0.2, duration: 0.22 },
+      ];
+
+      pulses.forEach(({ freq, offset, duration }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
+
+        gain.gain.setValueAtTime(0.28, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + duration);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(ctx.currentTime + offset);
+        osc.stop(ctx.currentTime + offset + duration);
+      });
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export const soundEffects = new SoundEffects();
+

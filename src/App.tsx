@@ -20,7 +20,7 @@ import { analyticsService } from './services/analytics';
 import { storageService, safeStorageGet } from './services/storage';
 import { soundEffects } from './services/soundEffects';
 import { cameraStreamService } from './services/cameraStreamService';
-import { enduranceManager } from './services/enduranceManager';
+import { enduranceManager, TabletPowerStatus } from './services/enduranceManager';
 import { decodeOfflinePhotoFromLocation } from './services/offlineQrTransfer';
 
 // Components
@@ -44,6 +44,10 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenState>('attract');
   const [config, setConfig] = useState<RemoteKioskConfig>(remoteConfigService.getConfig());
   const [telemetry, setTelemetry] = useState<KioskTelemetry>(analyticsService.getTelemetry());
+  const [powerStatus, setPowerStatus] = useState<TabletPowerStatus>(() =>
+    enduranceManager.getStatus()
+  );
+  const [lowBatteryBlinkPhase, setLowBatteryBlinkPhase] = useState(false);
 
   // Session State
   const [sessionStartTime, setSessionStartTime] = useState<number>(Date.now());
@@ -62,6 +66,46 @@ export default function App() {
   // Modals
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showMobileShareModal, setShowMobileShareModal] = useState(false);
+
+  // Subscribe to live battery level & charger state
+  useEffect(() => {
+    const unsubscribe = enduranceManager.subscribe((status) => {
+      setPowerStatus(status);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Low-battery warning (< 35% and NOT plugged in): blink screen red and play warning sound.
+  // Immediately stops all warnings as soon as charger is plugged in (isCharging === true).
+  const isLowBatteryWarningActive =
+    !showMobileShareModal &&
+    powerStatus.batteryLevelPercent !== null &&
+    powerStatus.batteryLevelPercent < 35 &&
+    powerStatus.isCharging === false;
+
+  useEffect(() => {
+    if (!isLowBatteryWarningActive) {
+      setLowBatteryBlinkPhase(false);
+      return;
+    }
+
+    setLowBatteryBlinkPhase(true);
+    soundEffects.playLowBatteryWarning();
+
+    const blinkInterval = setInterval(() => {
+      setLowBatteryBlinkPhase((prev) => !prev);
+    }, 550);
+
+    const soundInterval = setInterval(() => {
+      soundEffects.playLowBatteryWarning();
+    }, 2200);
+
+    return () => {
+      clearInterval(blinkInterval);
+      clearInterval(soundInterval);
+      setLowBatteryBlinkPhase(false);
+    };
+  }, [isLowBatteryWarningActive]);
 
   // Initialize config, telemetry, persistent camera stream, Galaxy Tab A11 12h endurance manager, and check URL for direct mobile guest share (?share=... or #offline-photo=...)
   useEffect(() => {
@@ -429,8 +473,24 @@ export default function App() {
         />
       )}
 
+      {/* Low Battery (<35%) Unplugged Red Blinking Warning Overlay — Stops immediately when plugged in */}
+      {isLowBatteryWarningActive && (
+        <div
+          className={`fixed inset-0 z-100 pointer-events-none transition-opacity duration-200 flex flex-col items-center justify-start pt-4 px-4 ${
+            lowBatteryBlinkPhase
+              ? 'bg-red-600/35 border-8 border-red-600 opacity-100'
+              : 'bg-red-600/5 border-8 border-red-500/30 opacity-60'
+          }`}
+        >
+          <div className="px-5 py-2.5 rounded-2xl bg-red-600 text-white font-black text-xs sm:text-sm tracking-wide uppercase shadow-2xl border-2 border-white flex items-center gap-2">
+            <span>⚠️ LOW BATTERY ({powerStatus.batteryLevelPercent}%) — PLEASE PLUG IN CHARGER ⚡</span>
+          </div>
+        </div>
+      )}
+
       {/* PWA Install Prompt & Offline Connectivity Banner (hidden during guest mobile share modal) */}
       {!showMobileShareModal && <PWAInstallPrompt />}
     </div>
   );
 }
+
