@@ -270,8 +270,12 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
     });
   }, []);
 
-  // Classic DVD Screensaver physics: smoothly moves "Touch Anywhere to Start" around the screen and bounces off all 4 edges
+  const isSavingModeActive = isIdleDimmed && config.tabletEndurance?.enabled !== false;
+
+  // Classic DVD Screensaver physics (active ONLY when screen saving mode is active)
   useEffect(() => {
+    if (!isSavingModeActive) return;
+
     let rafId = 0;
     let x = 36;
     let y = 48;
@@ -326,7 +330,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
 
     rafId = requestAnimationFrame(step);
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [isSavingModeActive]);
 
   // Secret multi-tap on title/logo for kiosk operators (4 rapid taps unlocks to minimize & opens Admin)
   const handleLogoTap = (e: React.MouseEvent) => {
@@ -803,32 +807,31 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
         </div>
       </div>
 
-      {/* Galaxy Tab A11 9–12 Hour Thermal Cooling & Anti-Burn-In Dimmer Backdrop */}
-      {isIdleDimmed && config.tabletEndurance?.enabled !== false && (
+      {/* Galaxy Tab A11 9–12 Hour Thermal Cooling & Screen Saving Mode with DVD-Bouncing "Touch Anywhere to Start" */}
+      {isSavingModeActive && (
         <div
           className="absolute inset-0 z-40 pointer-events-none transition-opacity duration-700"
           style={{
             backgroundColor: `rgba(9, 9, 11, ${(config.tabletEndurance?.idleDimOpacity ?? 45) / 100})`,
           }}
-        />
+        >
+          <div
+            ref={dvdBadgeRef}
+            style={{ transform: 'translate3d(36px, 48px, 0)' }}
+            className={`absolute top-0 left-0 z-50 pointer-events-none will-change-transform px-5 py-2.5 sm:px-6 sm:py-3 rounded-2xl bg-zinc-950/85 border-2 backdrop-blur-md text-center transition-colors duration-300 ${
+              dvdAccentStyles[dvdColorIndex % dvdAccentStyles.length]
+            }`}
+          >
+            <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-white flex items-center justify-center gap-2">
+              <span>📸</span>
+              <span>Touch Anywhere to Start Photo Booth</span>
+            </div>
+            <div className="text-[10px] font-mono mt-0.5 opacity-90">
+              Instant Thermal Print • Ready
+            </div>
+          </div>
+        </div>
       )}
-
-      {/* DVD Screensaver Style "Touch Anywhere to Start" Floating Badge (bounces off all 4 screen edges) */}
-      <div
-        ref={dvdBadgeRef}
-        style={{ transform: 'translate3d(36px, 48px, 0)' }}
-        className={`absolute top-0 left-0 z-50 pointer-events-none will-change-transform px-5 py-2.5 sm:px-6 sm:py-3 rounded-2xl bg-zinc-950/85 border-2 backdrop-blur-md text-center transition-colors duration-300 ${
-          dvdAccentStyles[dvdColorIndex % dvdAccentStyles.length]
-        }`}
-      >
-        <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-white flex items-center justify-center gap-2">
-          <span>📸</span>
-          <span>Touch Anywhere to Start</span>
-        </div>
-        <div className="text-[10px] font-mono mt-0.5 opacity-90">
-          Instant Thermal Print • Ready
-        </div>
-      </div>
     </div>
   );
 };
