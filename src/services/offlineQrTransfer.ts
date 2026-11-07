@@ -32,8 +32,7 @@ export interface OfflineQrPacket {
 
 const HOTSPOT_ORIGIN_KEY = 'jcv_offline_hotspot_origin_v3';
 const PREFERRED_QR_MODE_KEY = 'jcv_offline_qr_mode_v3';
-const CLOUD_FALLBACK_URL =
-  'https://ais-pre-viyeqwfb7gkjv5s5dxi6sd-397788646776.asia-northeast1.run.app/';
+const CLOUD_FALLBACK_URL = 'https://jcvcreatives.github.io/photobooth/';
 
 // Safe 10 KB chunk size for WebRTC DataChannel (well below iOS Safari's 64 KB SCTP limit)
 const WEBRTC_CHUNK_SIZE = 10240;
@@ -51,14 +50,22 @@ const PEER_ICE_SERVERS: RTCIceServer[] = [
 ];
 
 /**
- * Returns the full base URL of the running web app, preserving any GitHub Pages
- * repository subdirectory path (e.g. https://jcvcreatives.github.io/photobooth/)
- * so scanning the QR code on iOS/Android never hits a root-domain 404.
+ * Returns the public, guest-reachable base URL of the web app (`https://jcvcreatives.github.io/photobooth/`)
+ * so scanning the QR code on any iPhone or Android phone never hits a private `.run.app` 404/302 or root-domain 404.
  */
 export function getCurrentAppBaseUrl(): string {
   if (typeof window === 'undefined') return CLOUD_FALLBACK_URL;
-  const { protocol, origin, pathname } = window.location;
-  if (!origin || origin === 'null' || protocol === 'file:' || protocol === 'content:') {
+  const { protocol, origin, hostname, pathname } = window.location;
+  if (
+    !origin ||
+    origin === 'null' ||
+    protocol === 'file:' ||
+    protocol === 'content:' ||
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    /\.run\.app$/i.test(hostname) ||
+    /\.github\.io$/i.test(hostname)
+  ) {
     return CLOUD_FALLBACK_URL;
   }
   const cleanPath = (pathname || '')
@@ -69,7 +76,10 @@ export function getCurrentAppBaseUrl(): string {
 
 export function getSavedHotspotOrigin(): string {
   const saved = (safeStorageGet(HOTSPOT_ORIGIN_KEY) || '').trim();
-  if (/^https?:\/\/[^/]+\.github\.io\/?$/i.test(saved)) {
+  if (
+    /^https?:\/\/[^/]+\.github\.io\/?$/i.test(saved) ||
+    /\.run\.app/i.test(saved)
+  ) {
     return '';
   }
   return saved;
@@ -1421,16 +1431,14 @@ export function compressCanvasForOfflineQr(
  */
 async function resolveReachableBaseUrl(customHostOrigin?: string): Promise<string> {
   const custom = (customHostOrigin || '').trim();
-  const candidate = custom ? custom.replace(/\/+$/, '') + '/' : getCurrentAppBaseUrl();
-
-  if (/^https?:\/\/jcvcreatives\.github\.io\/$/i.test(candidate)) {
-    return 'https://jcvcreatives.github.io/photobooth/';
+  if (
+    custom &&
+    !/\.run\.app/i.test(custom) &&
+    !/^https?:\/\/[^/]+\.github\.io\/?$/i.test(custom)
+  ) {
+    return custom.replace(/\/+$/, '') + '/';
   }
-  if (/^https?:\/\/[^/]+\.github\.io\/$/i.test(candidate)) {
-    return CLOUD_FALLBACK_URL;
-  }
-
-  return candidate;
+  return getCurrentAppBaseUrl();
 }
 
 /**
@@ -1484,14 +1492,9 @@ export async function buildOfflineQrPacket(
       fallbackCanvas
     );
 
-    const filterPart =
-      result.filter && result.filter !== 'none'
-        ? `&f=${encodeURIComponent(result.filter)}`
-        : '';
-    const countPart = photoCount > 1 ? `&c=${photoCount}` : '';
     const metaPrefix = `t=${encodeURIComponent(result.themeId)}&l=${encodeURIComponent(
       result.layout
-    )}${filterPart}${countPart}&offline-photo=`;
+    )}&f=${encodeURIComponent(result.filter || 'none')}&c=${photoCount}&offline-photo=`;
 
     const prefix = `${resolvedBaseUrl}?share=${encodeURIComponent(result.id)}#${metaPrefix}`;
 
