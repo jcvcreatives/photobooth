@@ -301,30 +301,30 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         </button>
       </div>
 
-      {/* Ready Pose & Emoji Animation Banner ABOVE the Camera Frame */}
-      <div className="w-full flex items-center justify-center py-1 shrink-0">
+      {/* Big Ready Pose & Emoji Animation Banner ABOVE the Camera Frame */}
+      <div className="w-full flex items-center justify-center py-1.5 shrink-0">
         <div
-          className={`px-4 py-1.5 rounded-full border shadow-xs flex items-center gap-2 transition-all duration-200 ${
+          className={`px-6 py-2.5 sm:px-8 sm:py-3 rounded-2xl border-2 shadow-md flex items-center gap-3.5 transition-all duration-200 ${
             countdown !== null || isPreparingPose
-              ? 'bg-zinc-900 text-white border-zinc-800 scale-105'
-              : 'bg-white text-zinc-900 border-zinc-200'
+              ? 'bg-zinc-900 text-white border-amber-400 scale-105 shadow-xl'
+              : 'bg-white text-zinc-900 border-zinc-300'
           }`}
         >
           <span
-            className={`text-lg sm:text-xl leading-none inline-block ${
-              countdown !== null || isPreparingPose ? 'animate-bounce' : ''
+            className={`text-3xl sm:text-4xl md:text-5xl leading-none inline-block animate-bounce ${
+              countdown !== null || isPreparingPose ? 'scale-110' : ''
             }`}
           >
             {currentPose.emoji}
           </span>
-          <span className="text-xs sm:text-sm font-extrabold tracking-wide uppercase">
+          <span className="text-base sm:text-xl md:text-2xl font-black tracking-wide uppercase leading-tight">
             {currentPose.label}
           </span>
         </div>
       </div>
 
       {/* Camera Viewfinder matching Still 643ff2f4.jpeg */}
-      <div className="relative w-full aspect-3/4 sm:aspect-4/5 max-h-[52vh] rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-md flex items-center justify-center my-auto">
+      <div className="relative w-full aspect-3/4 sm:aspect-4/5 max-h-[48vh] sm:max-h-[50vh] rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-md flex items-center justify-center my-auto">
         <video
           ref={videoRef}
           autoPlay

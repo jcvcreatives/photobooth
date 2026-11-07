@@ -255,7 +255,11 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
   // Strip shuffle position index (0, 1, 2)
   const [shuffleStep, setShuffleStep] = useState<number>(0);
   const [isIdleDimmed, setIsIdleDimmed] = useState<boolean>(false);
-  const [pixelShiftIndex, setPixelShiftIndex] = useState<number>(0);
+  const [dvdColorIndex, setDvdColorIndex] = useState<number>(0);
+
+  // DVD Screensaver refs for "Touch Anywhere to Start" moving around the Home Screen
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const dvdBadgeRef = React.useRef<HTMLDivElement | null>(null);
 
   const theme = getAttractThemeById(activeThemeId);
 
@@ -266,14 +270,63 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
     });
   }, []);
 
-  // Slow pixel-shift cycle while dimmed so no pixels remain static during 9–12 hour shifts
+  // Classic DVD Screensaver physics: smoothly moves "Touch Anywhere to Start" around the screen and bounces off all 4 edges
   useEffect(() => {
-    if (!isIdleDimmed) return;
-    const t = setInterval(() => {
-      setPixelShiftIndex((i) => (i + 1) % 4);
-    }, 15000);
-    return () => clearInterval(t);
-  }, [isIdleDimmed]);
+    let rafId = 0;
+    let x = 36;
+    let y = 48;
+    // Speed in pixels per second (diagonal DVD glide)
+    let vx = 135;
+    let vy = 105;
+    let lastTime = performance.now();
+
+    const step = (now: number) => {
+      const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+      lastTime = now;
+
+      const container = containerRef.current;
+      const badge = dvdBadgeRef.current;
+      if (container && badge) {
+        const maxX = Math.max(0, container.clientWidth - badge.offsetWidth - 8);
+        const maxY = Math.max(0, container.clientHeight - badge.offsetHeight - 8);
+
+        x += vx * dt;
+        y += vy * dt;
+
+        let bounced = false;
+        if (x <= 8) {
+          x = 8;
+          vx = Math.abs(vx);
+          bounced = true;
+        } else if (x >= maxX) {
+          x = maxX;
+          vx = -Math.abs(vx);
+          bounced = true;
+        }
+
+        if (y <= 8) {
+          y = 8;
+          vy = Math.abs(vy);
+          bounced = true;
+        } else if (y >= maxY) {
+          y = maxY;
+          vy = -Math.abs(vy);
+          bounced = true;
+        }
+
+        if (bounced) {
+          setDvdColorIndex((c) => (c + 1) % 6);
+        }
+
+        badge.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
+      }
+
+      rafId = requestAnimationFrame(step);
+    };
+
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   // Secret multi-tap on title/logo for kiosk operators (4 rapid taps unlocks to minimize & opens Admin)
   const handleLogoTap = (e: React.MouseEvent) => {
@@ -421,8 +474,18 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
     }
   };
 
+  const dvdAccentStyles = [
+    'border-amber-400/90 shadow-[0_8px_30px_rgba(251,191,36,0.35)] text-amber-200',
+    'border-cyan-400/90 shadow-[0_8px_30px_rgba(34,211,238,0.35)] text-cyan-200',
+    'border-rose-400/90 shadow-[0_8px_30px_rgba(251,113,133,0.35)] text-rose-200',
+    'border-emerald-400/90 shadow-[0_8px_30px_rgba(52,211,153,0.35)] text-emerald-200',
+    'border-fuchsia-400/90 shadow-[0_8px_30px_rgba(232,121,249,0.35)] text-fuchsia-200',
+    'border-sky-400/90 shadow-[0_8px_30px_rgba(56,189,248,0.35)] text-sky-200',
+  ];
+
   return (
     <div
+      ref={containerRef}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('button')) return;
         soundEffects.playTap();
@@ -740,36 +803,32 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
         </div>
       </div>
 
-      {/* Galaxy Tab A11 9–12 Hour Thermal Cooling & Anti-Burn-In Dimmer Overlay (wakes & starts session in 0ms on tap) */}
+      {/* Galaxy Tab A11 9–12 Hour Thermal Cooling & Anti-Burn-In Dimmer Backdrop */}
       {isIdleDimmed && config.tabletEndurance?.enabled !== false && (
         <div
-          className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center transition-opacity duration-700"
+          className="absolute inset-0 z-40 pointer-events-none transition-opacity duration-700"
           style={{
             backgroundColor: `rgba(9, 9, 11, ${(config.tabletEndurance?.idleDimOpacity ?? 45) / 100})`,
           }}
-        >
-          <div
-            className="px-6 py-3 rounded-2xl bg-black/75 border border-white/20 text-white shadow-2xl backdrop-blur-md text-center transition-transform duration-1000"
-            style={{
-              transform:
-                pixelShiftIndex === 0
-                  ? 'translate3d(-14px, -18px, 0)'
-                  : pixelShiftIndex === 1
-                  ? 'translate3d(14px, -12px, 0)'
-                  : pixelShiftIndex === 2
-                  ? 'translate3d(12px, 16px, 0)'
-                  : 'translate3d(-12px, 14px, 0)',
-            }}
-          >
-            <div className="text-xs sm:text-sm font-black tracking-widest uppercase">
-              📸 Touch Anywhere to Start Photo Booth
-            </div>
-            <div className="text-[10px] text-zinc-300 font-mono mt-0.5">
-              Instant Thermal Print • Ready
-            </div>
-          </div>
-        </div>
+        />
       )}
+
+      {/* DVD Screensaver Style "Touch Anywhere to Start" Floating Badge (bounces off all 4 screen edges) */}
+      <div
+        ref={dvdBadgeRef}
+        style={{ transform: 'translate3d(36px, 48px, 0)' }}
+        className={`absolute top-0 left-0 z-50 pointer-events-none will-change-transform px-5 py-2.5 sm:px-6 sm:py-3 rounded-2xl bg-zinc-950/85 border-2 backdrop-blur-md text-center transition-colors duration-300 ${
+          dvdAccentStyles[dvdColorIndex % dvdAccentStyles.length]
+        }`}
+      >
+        <div className="text-xs sm:text-sm font-black tracking-widest uppercase text-white flex items-center justify-center gap-2">
+          <span>📸</span>
+          <span>Touch Anywhere to Start</span>
+        </div>
+        <div className="text-[10px] font-mono mt-0.5 opacity-90">
+          Instant Thermal Print • Ready
+        </div>
+      </div>
     </div>
   );
 };
