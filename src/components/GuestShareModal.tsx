@@ -18,6 +18,7 @@ import {
 import { PhotostripResult } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { emailDeliveryService } from '../services/email';
+import { storageService } from '../services/storage';
 import {
   shareOfflineViaQuickShare,
   reconstructVectorHdPhotostripOnPhone,
@@ -34,7 +35,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
   const isAlreadyFullHd = Boolean(
     result.compositeDataUrl &&
       result.compositeDataUrl.length > 55000 &&
-      result.photos.length > 1
+      result.photos.length >= 1
   );
 
   const [activeTab, setActiveTab] = useState<'strip' | 'gif' | 'email' | 'thermal' | 'individual'>('strip');
@@ -57,11 +58,41 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
 
   const isIos = isIosDevice();
 
-  // 1. Reconstruct 100% HD Vector Frame (768x1152 / 768x1824) with 4-Stage YCbCr DCT Deblocking & Bilateral Restoration locally on the phone, AND
-  // 2. Simultaneously stream the uncompressed Camera Sheet if the booth is online
+  // 1. Reconstruct 100% HD Vector Frame (768x1152 / 768x1824) with YCbCr Bilateral Restoration + Feature-Selective CAS locally on the phone, AND
+  // 2. Check local IndexedDB & simultaneously stream the uncompressed Camera Sheet if reachable
   React.useEffect(() => {
     let cancelled = false;
     let hdArrived = isAlreadyFullHd;
+
+    if (isAlreadyFullHd) {
+      setIosReadyJpegUrl(result.compositeDataUrl);
+      setThermalReadyUrl(result.thermalRasterDataUrl || result.compositeDataUrl);
+      setHdPhotos(result.photos);
+      setSyncProgress(100);
+      setIsHdSynced(true);
+    }
+
+    // Check if the uncompressed Full-HD capture is stored in local IndexedDB (e.g. same device offline preview)
+    if (!isAlreadyFullHd && result.id) {
+      storageService
+        .getCapture(result.id)
+        .then((localHdCap) => {
+          if (
+            !cancelled &&
+            localHdCap &&
+            localHdCap.compositeDataUrl &&
+            localHdCap.compositeDataUrl.length > 55000
+          ) {
+            hdArrived = true;
+            setIosReadyJpegUrl(localHdCap.compositeDataUrl);
+            setThermalReadyUrl(localHdCap.thermalRasterDataUrl || localHdCap.compositeDataUrl);
+            setHdPhotos(localHdCap.photos);
+            setIsHdSynced(true);
+            setSyncProgress(100);
+          }
+        })
+        .catch(() => {});
+    }
 
     reconstructVectorHdPhotostripOnPhone(result, false)
       .then((reconstructed) => {

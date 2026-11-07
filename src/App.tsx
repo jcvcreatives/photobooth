@@ -121,6 +121,16 @@ export default function App() {
         if (offlineDecoded) {
           setFinalizedResult(offlineDecoded);
           setShowMobileShareModal(true);
+          if (offlineDecoded.id) {
+            storageService
+              .getCapture(offlineDecoded.id)
+              .then((cap) => {
+                if (cap && cap.compositeDataUrl && cap.compositeDataUrl.length > 55000) {
+                  setFinalizedResult(cap);
+                }
+              })
+              .catch(() => {});
+          }
           return true;
         }
 
