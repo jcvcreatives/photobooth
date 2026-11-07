@@ -171,7 +171,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       getSavedHotspotOrigin()
     )
       .then((packet) => {
-        if (!cancelled) {
+        if (!cancelled && packet?.qrDataUrl) {
           setOfflineQrPacket(packet);
           setQrShareDataUrl(packet.qrDataUrl);
         }
@@ -180,15 +180,19 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeCanvas, result]);
+  }, [activeCanvas, result, showQrModal]);
 
   // Host 100% uncompressed Full-HD photostrip & raw photos via WebRTC P2P for instant iPhone/Android HD sync
   useEffect(() => {
-    const stopPeerHost = startTabletHdPeerHost(result, () => {
-      setCountdownSeconds(60);
-    });
+    let stopPeerHost: (() => void) | null = null;
+    const deferTimer = setTimeout(() => {
+      stopPeerHost = startTabletHdPeerHost(result, () => {
+        setCountdownSeconds(60);
+      });
+    }, 250);
     return () => {
-      stopPeerHost();
+      clearTimeout(deferTimer);
+      stopPeerHost?.();
     };
   }, [result]);
 
