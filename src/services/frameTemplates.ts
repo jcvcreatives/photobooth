@@ -1319,8 +1319,9 @@ export async function renderPhotostripCanvas(options: {
     canvasWidth = 768; // 384 * 2
     canvasHeight = 1152; // 576 * 2 (576 is divisible by 24)
   } else if (layout === 'strip_4') {
+    // 4 photos arranged next to each other by twos (2 columns x 2 rows)
     canvasWidth = 768; // 384 * 2
-    canvasHeight = 2208; // 1104 * 2 (1104 is divisible by 24)
+    canvasHeight = 1440; // 720 * 2 (720 is divisible by 24)
   }
 
   const canvas = document.createElement('canvas');
@@ -1389,7 +1390,7 @@ export async function renderPhotostripCanvas(options: {
     ctx.restore();
   };
 
-  if (layout === 'strip_3' || layout === 'strip_4' || (layout === 'grid_4' && photoCount <= 2)) {
+  if (layout === 'strip_3' || (layout === 'grid_4' && photoCount <= 2)) {
     const margin = 36;
     const photoX = margin + innerPhotoInset;
     // Symmetric top and bottom zones so the photo block is vertically centered in the printout
@@ -1431,15 +1432,16 @@ export async function renderPhotostripCanvas(options: {
       }
       drawPhotoFrameBorder(photoX, slotY, rSlotW, rSlotH, 3);
     });
-  } else if (layout === 'grid_4') {
-    // 2x2 grid centered vertically
-    const margin = 56;
+  } else if (layout === 'strip_4' || layout === 'grid_4') {
+    // 4 photos arranged next to each other by twos (2 columns x 2 rows: [1, 2] on top, [3, 4] on bottom)
+    const isStandardWidth = canvasWidth === 768;
+    const margin = isStandardWidth ? 36 : 56;
     const photoMargin = margin + innerPhotoInset;
-    const headerZoneHeight = 396;
-    const footerZoneHeight = 396;
+    const headerZoneHeight = isStandardWidth ? 264 : 396;
+    const footerZoneHeight = isStandardWidth ? 264 : 396;
     const cols = 2;
     const rows = 2;
-    const gap = 24;
+    const gap = isStandardWidth ? 18 : 24;
 
     const slotWidth = (canvasWidth - photoMargin * 2 - gap) / cols;
     const availableHeight = canvasHeight - headerZoneHeight - footerZoneHeight;

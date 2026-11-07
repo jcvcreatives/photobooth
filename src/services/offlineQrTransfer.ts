@@ -189,11 +189,11 @@ function getLayoutSlotAspect(layout: FrameLayoutType, photoCount: number): numbe
     return 696 / 519;
   }
   if (layout === 'strip_3') {
-    // 3-shot strip: slotWidth = 696, slotHeight = (1824 - 480 - 36)/3 = 436
-    return 696 / 436;
+    // 3-shot strip: slotWidth = 696, slotHeight = (1824 - 528 - 36)/3 = 420
+    return 696 / 420;
   }
-  // 4-shot strip: slotWidth = 696, slotHeight = (2208 - 480 - 54)/4 = 418.5
-  return 696 / 418.5;
+  // 4-shot side-by-side by twos (2x2 pairs): slotWidth = (768 - 72 - 18)/2 = 339, slotHeight = (1440 - 528 - 18)/2 = 447
+  return 339 / 447;
 }
 
 /**
@@ -1576,9 +1576,11 @@ export async function reconstructVectorHdPhotostripOnPhone(
       ? 1
       : result.layout === 'strip_3'
       ? 3
+      : result.layout === 'strip_4'
+      ? 4
       : result.printCopies && result.printCopies > 1
       ? result.printCopies
-      : 1;
+      : 2;
 
   if (
     !isFromHdStream &&

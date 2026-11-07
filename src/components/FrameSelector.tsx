@@ -327,17 +327,17 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
                 )}
 
                 {opt.type === 'strip4' && (
-                  <div className="w-10 h-16 bg-white border border-zinc-200 rounded-xs shadow-xs flex flex-col items-center justify-between py-0.5 px-1 gap-0.5">
-                    <div className="w-7 h-3 bg-zinc-100 rounded-xs overflow-hidden border border-zinc-200/80">
+                  <div className="w-13 h-15 bg-white border border-zinc-200 rounded-xs shadow-xs grid grid-cols-2 items-center justify-items-center p-1 gap-0.5">
+                    <div className="w-5 h-6 bg-zinc-100 rounded-xs overflow-hidden border border-zinc-200/80">
                       <MiniLiveVideo stream={cameraStream} facingMode={facingMode} />
                     </div>
-                    <div className="w-7 h-3 bg-zinc-100 rounded-xs overflow-hidden border border-zinc-200/80">
+                    <div className="w-5 h-6 bg-zinc-100 rounded-xs overflow-hidden border border-zinc-200/80">
                       <MiniLiveVideo stream={cameraStream} facingMode={facingMode} />
                     </div>
-                    <div className="w-7 h-3 bg-zinc-100 rounded-xs overflow-hidden border border-zinc-200/80">
+                    <div className="w-5 h-6 bg-zinc-100 rounded-xs overflow-hidden border border-zinc-200/80">
                       <MiniLiveVideo stream={cameraStream} facingMode={facingMode} />
                     </div>
-                    <div className="w-7 h-3 bg-zinc-100 rounded-xs overflow-hidden border border-zinc-200/80">
+                    <div className="w-5 h-6 bg-zinc-100 rounded-xs overflow-hidden border border-zinc-200/80">
                       <MiniLiveVideo stream={cameraStream} facingMode={facingMode} />
                     </div>
                   </div>
