@@ -28,6 +28,13 @@ interface CaptureBoothProps {
   onSecretAdminTap?: () => void;
 }
 
+const POSE_PROMPTS = [
+  { emoji: '✌️😄', label: 'Ready Pose!' },
+  { emoji: '🫶✨', label: 'Ready Pose!' },
+  { emoji: '🫰😎', label: 'Ready Pose!' },
+  { emoji: '🤩💖', label: 'Ready Pose!' },
+];
+
 export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   layout,
   filter,
@@ -40,6 +47,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   const [currentShotIndex, setCurrentShotIndex] = useState(0);
   const [capturedPhotos, setCapturedPhotos] = useState<string[]>([]);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [isPreparingPose, setIsPreparingPose] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);
   const [facingMode] = useState<'user' | 'environment'>('user');
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
@@ -52,6 +60,8 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   const [timerDuration, setTimerDuration] = useState<3 | 5 | 10>(3);
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
   const [logoTapCount, setLogoTapCount] = useState(0);
+
+  const currentPose = POSE_PROMPTS[currentShotIndex % POSE_PROMPTS.length];
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -120,7 +130,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
 
   // Start Countdown Sequence
   const startCountdown = () => {
-    if (countdown !== null) return;
+    if (countdown !== null || isPreparingPose) return;
     if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
       enterBrowserFullscreenApi();
     }
@@ -225,7 +235,9 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     const nextIndex = currentShotIndex + 1;
     if (nextIndex < targetShotCount) {
       setCurrentShotIndex(nextIndex);
+      setIsPreparingPose(true);
       setTimeout(() => {
+        setIsPreparingPose(false);
         soundEffects.playCountdownBeep(false);
         setCountdown(timerDuration);
       }, 1600);
@@ -268,10 +280,10 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           <h1 className="text-base sm:text-lg font-bold text-zinc-950 leading-tight">
             Photo {Math.min(currentShotIndex + 1, targetShotCount)} of {targetShotCount}
           </h1>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs font-semibold text-zinc-600">
             {countdown !== null
-              ? `Pose now! Capturing in ${countdown}...`
-              : "Tap the shutter when you're ready"}
+              ? `${currentPose.label} ${currentPose.emoji} (${countdown}s)`
+              : `${currentPose.label} ${currentPose.emoji} — Tap shutter when ready`}
           </p>
         </div>
 
@@ -303,12 +315,30 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           className="w-full h-full object-cover transition-all duration-200"
         />
 
-        {/* Countdown Overlay */}
-        {countdown !== null && (
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-30 animate-fadeIn">
-            <span className="font-sans font-light text-8xl text-white drop-shadow-lg animate-pulse">
-              {countdown}
+        {/* Top Floating Ready Pose Badge inside Viewfinder */}
+        <div className="absolute top-3 inset-x-0 flex justify-center z-20 pointer-events-none">
+          <div className="px-4 py-1.5 rounded-full bg-black/55 backdrop-blur-md border border-white/25 text-white shadow-md flex items-center gap-2">
+            <span className="text-base sm:text-lg leading-none">{currentPose.emoji}</span>
+            <span className="text-xs sm:text-sm font-extrabold tracking-wide uppercase">
+              {currentPose.label}
             </span>
+          </div>
+        </div>
+
+        {/* Countdown & Ready Pose Overlay */}
+        {(countdown !== null || isPreparingPose) && (
+          <div className="absolute inset-0 bg-black/25 flex flex-col items-center justify-center z-30 animate-fadeIn pointer-events-none px-4 text-center">
+            <div className="text-5xl sm:text-6xl mb-2 drop-shadow-lg animate-bounce">
+              {currentPose.emoji}
+            </div>
+            <div className="px-5 py-1.5 rounded-2xl bg-black/65 border border-white/30 text-white font-black text-xl sm:text-2xl tracking-wider uppercase shadow-xl mb-2">
+              {currentPose.label}
+            </div>
+            {countdown !== null && (
+              <span className="font-sans font-black text-7xl sm:text-8xl text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.65)] animate-pulse">
+                {countdown}
+              </span>
+            )}
           </div>
         )}
 
