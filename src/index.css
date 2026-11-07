@@ -586,3 +586,34 @@ body {
     padding: 0;
   }
 }
+
+/* Power Saver Mode (Active when running on battery regardless of 35% threshold):
+   Disables non-essential decorative & background animations to conserve battery power */
+.power-saver-active .animate-floatBob,
+.power-saver-active .animate-pulseGlow,
+.power-saver-active .animate-rippleWave,
+.power-saver-active .animate-shimmer,
+.power-saver-active .animate-bounceRight,
+.power-saver-active .sticker-disco-spin,
+.power-saver-active .sticker-disco-rays,
+.power-saver-active .sticker-clown-wiggle,
+.power-saver-active .sticker-candle-flicker,
+.power-saver-active .sticker-cake-bob,
+.power-saver-active .sticker-balloon-rise,
+.power-saver-active .sticker-wing-glide,
+.power-saver-active .sticker-twinkle-shine,
+.power-saver-active .sticker-snow-fall,
+.power-saver-active .sticker-heartbeat,
+.power-saver-active .sticker-ghost-float,
+.power-saver-active .sticker-food-drop,
+.power-saver-active .sticker-food-land,
+.power-saver-active .animate-slotPulse {
+  animation: none !important;
+  will-change: auto !important;
+}
+
+.power-saver-active .strip-card-gpu {
+  transition: none !important;
+  will-change: auto !important;
+}
+

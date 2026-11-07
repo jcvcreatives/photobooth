@@ -255,6 +255,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
   // Strip shuffle position index (0, 1, 2)
   const [shuffleStep, setShuffleStep] = useState<number>(0);
   const [isIdleDimmed, setIsIdleDimmed] = useState<boolean>(false);
+  const [isRunningOnBattery, setIsRunningOnBattery] = useState<boolean>(false);
   const [dvdColorIndex, setDvdColorIndex] = useState<number>(0);
 
   // DVD Screensaver refs for "Touch Anywhere to Start" moving around the Home Screen
@@ -263,13 +264,16 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
 
   const theme = getAttractThemeById(activeThemeId);
 
-  // Subscribe to Galaxy Tab A11 Endurance Manager for thermal idle dimming
+  // Subscribe to Galaxy Tab A11 Endurance Manager for thermal idle dimming & battery state
   useEffect(() => {
     return enduranceManager.subscribe((status) => {
       setIsIdleDimmed(status.isIdleDimmed);
+      setIsRunningOnBattery(status.isCharging === false);
     });
   }, []);
 
+  const isPowerSaverOnBatteryActive =
+    config.tabletEndurance?.powerSaverOnBattery !== false && isRunningOnBattery;
   const isSavingModeActive = isIdleDimmed && config.tabletEndurance?.enabled !== false;
 
   // Classic DVD Screensaver physics (active ONLY when screen saving mode is active)
@@ -414,8 +418,9 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
     };
   }, []);
 
-  // Automatic gentle shuffling of the 3 strips (slows down to 9.5s in Thermal Eco Dim mode to cool GPU while charging)
+  // Automatic gentle shuffling of the 3 strips (paused when Power Saver is active on battery; slows down in Thermal Eco Dim mode)
   useEffect(() => {
+    if (isPowerSaverOnBatteryActive) return;
     const isAutoShuffle = safeStorageGet('jcv_attract_auto_shuffle') !== 'false';
     if (!isAutoShuffle) return;
 
@@ -424,7 +429,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
       setShuffleStep((s) => (s + 1) % 3);
     }, intervalMs);
     return () => clearInterval(interval);
-  }, [isIdleDimmed]);
+  }, [isIdleDimmed, isPowerSaverOnBatteryActive]);
 
   const handleStripTap = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -532,11 +537,13 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
         </div>
       )}
 
-      {/* Choreographed Moving Occasion Stickers (Spinning Disco Ball, Moving Clown, Flickering Candle Cake, Rising Balloons) */}
-      <AnimatedThemeStickers
-        stickers={theme.animatedStickers}
-        opacityClass={theme.floatingOpacityClass}
-      />
+      {/* Choreographed Moving Occasion Stickers (Paused/hidden when Power Saver Mode is active on battery) */}
+      {!isPowerSaverOnBatteryActive && (
+        <AnimatedThemeStickers
+          stickers={theme.animatedStickers}
+          opacityClass={theme.floatingOpacityClass}
+        />
+      )}
 
       {/* Hero Visual Area: Occasion Envelope with Fan-out Photostrips */}
       <div className="my-auto z-10 flex flex-col items-center text-center max-w-md w-full py-4">

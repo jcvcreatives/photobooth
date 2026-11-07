@@ -27,6 +27,7 @@ import { thermalPrinterService } from '../services/thermalPrinter';
 import { emailDeliveryService } from '../services/email';
 import { paymentService, LAYOUT_VOUCHER_META } from '../services/payment';
 import { soundEffects } from '../services/soundEffects';
+import { enduranceManager } from '../services/enduranceManager';
 import {
   OfflineQrPacket,
   buildOfflineQrPacket,
@@ -137,12 +138,17 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             setSilentBridgeReady(thermalPrinterService.isSilentBridgeActive());
           }
           try {
-            confetti({
-              particleCount: 60,
-              spread: 75,
-              origin: { x: 0.5, y: 0.4 },
-              colors: ['#0f172a', '#71717a', '#a1a1aa', '#cbd5e1'],
-            });
+            const isBatteryPowerSaver =
+              config.tabletEndurance?.powerSaverOnBattery !== false &&
+              enduranceManager.getStatus().isCharging === false;
+            if (!isBatteryPowerSaver) {
+              confetti({
+                particleCount: 60,
+                spread: 75,
+                origin: { x: 0.5, y: 0.4 },
+                colors: ['#0f172a', '#71717a', '#a1a1aa', '#cbd5e1'],
+              });
+            }
           } catch {
             // ignore
           }

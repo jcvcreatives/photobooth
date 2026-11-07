@@ -75,6 +75,19 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // Power Saver Mode (when enabled in Admin Dashboard):
+  // Automatically reduces screen brightness and disables non-essential animations whenever
+  // the device is running on battery (isCharging === false), regardless of the 35% warning threshold.
+  const isBatteryPowerSaverActive =
+    !showMobileShareModal &&
+    config.tabletEndurance?.powerSaverOnBattery !== false &&
+    powerStatus.isCharging === false;
+
+  const powerSaverBrightnessReduction = Math.max(
+    10,
+    Math.min(60, config.tabletEndurance?.powerSaverBrightnessReductionPercent ?? 30)
+  );
+
   // Low-battery warning (< 35% and NOT plugged in): blink screen red and play warning sound.
   // Immediately stops all warnings as soon as charger is plugged in (isCharging === true).
   const isLowBatteryWarningActive =
@@ -342,7 +355,7 @@ export default function App() {
     <div
       className={`flex flex-col h-dvh min-h-screen w-full bg-[#fafaf9] text-zinc-900 overflow-hidden font-sans ${
         showMobileShareModal ? 'select-auto' : 'select-none'
-      }`}
+      } ${isBatteryPowerSaverActive ? 'power-saver-active' : ''}`}
     >
       {/* Kiosk Status & Hardware Bar */}
       <KioskNavBar
@@ -356,8 +369,17 @@ export default function App() {
         }}
       />
 
-      {/* Screen Router */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
+      {/* Screen Router (Automatically reduces screen brightness when Power Saver Mode is active on battery) */}
+      <main
+        style={
+          isBatteryPowerSaverActive
+            ? {
+                filter: `brightness(${((100 - powerSaverBrightnessReduction) / 100).toFixed(2)})`,
+              }
+            : undefined
+        }
+        className="flex-1 flex flex-col overflow-hidden relative transition-[filter] duration-500"
+      >
         {/* 1. Attract Screen */}
         {currentScreen === 'attract' && (
           <AttractScreen

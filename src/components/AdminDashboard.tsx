@@ -3160,6 +3160,125 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+                {/* Power Saver Mode (On Battery) Toggle — Reduces Brightness & Disables Non-Essential Animations on Battery */}
+                <div className="p-4 rounded-xl bg-slate-950/95 border-2 border-amber-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs sm:text-sm font-black text-white">
+                        🔋 Power Saver Mode (On Battery)
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          localConfig.tabletEndurance?.powerSaverOnBattery !== false
+                            ? powerStatus.isCharging === false
+                              ? 'bg-amber-400 text-slate-950'
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {localConfig.tabletEndurance?.powerSaverOnBattery !== false
+                          ? powerStatus.isCharging === false
+                            ? '⚡ ACTIVE NOW (RUNNING ON BATTERY)'
+                            : 'ARMED (AUTO-ACTIVATES ON BATTERY)'
+                          : 'DISABLED'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      Automatically reduces screen brightness by{' '}
+                      <strong>
+                        {localConfig.tabletEndurance?.powerSaverBrightnessReductionPercent ?? 30}%
+                      </strong>{' '}
+                      and disables non-essential animations (dropping stickers, strip shuffles, confetti) whenever the device is running on battery, regardless of the 35% warning threshold.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {/* Brightness Reduction Level Selector */}
+                    <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                      {[
+                        { pct: 20, label: '-20% Dim' },
+                        { pct: 30, label: '-30% ★' },
+                        { pct: 45, label: '-45% Max' },
+                      ].map((opt) => {
+                        const active =
+                          (localConfig.tabletEndurance?.powerSaverBrightnessReductionPercent ??
+                            30) === opt.pct;
+                        return (
+                          <button
+                            key={opt.pct}
+                            type="button"
+                            onClick={async () => {
+                              soundEffects.playTap();
+                              const updated: RemoteKioskConfig = {
+                                ...localConfig,
+                                tabletEndurance: {
+                                  ...(localConfig.tabletEndurance || {
+                                    enabled: true,
+                                    idleDimTimeoutSec: 180,
+                                    idleDimOpacity: 45,
+                                    bluetoothKeepAlive: true,
+                                    cameraIdleEcoMode: true,
+                                    abandonedSessionResetSec: 180,
+                                    powerSaverOnBattery: true,
+                                  }),
+                                  powerSaverBrightnessReductionPercent: opt.pct,
+                                },
+                              };
+                              setLocalConfig(updated);
+                              await remoteConfigService.updateConfig(updated);
+                              onUpdateConfig(updated);
+                            }}
+                            className={`px-2 py-1 rounded text-[10px] font-mono font-bold cursor-pointer transition ${
+                              active
+                                ? 'bg-amber-500 text-slate-950'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Main Power Saver Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const currentVal =
+                          localConfig.tabletEndurance?.powerSaverOnBattery !== false;
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          tabletEndurance: {
+                            ...(localConfig.tabletEndurance || {
+                              enabled: true,
+                              idleDimTimeoutSec: 180,
+                              idleDimOpacity: 45,
+                              bluetoothKeepAlive: true,
+                              cameraIdleEcoMode: true,
+                              abandonedSessionResetSec: 180,
+                              powerSaverBrightnessReductionPercent: 30,
+                            }),
+                            powerSaverOnBattery: !currentVal,
+                          },
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                      }}
+                      className={`px-4 py-2 rounded-xl font-bold text-xs cursor-pointer transition ${
+                        localConfig.tabletEndurance?.powerSaverOnBattery !== false
+                          ? 'bg-amber-400 text-slate-950 hover:bg-amber-300 shadow-md'
+                          : 'bg-slate-800 text-slate-300 border border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      {localConfig.tabletEndurance?.powerSaverOnBattery !== false
+                        ? '✓ Power Saver: ON'
+                        : 'Power Saver: OFF'}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Configurable Idle Thermal Dimmer & Abandoned Session Reset Timers */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80 text-xs">
                   {/* 1. Idle Thermal Cooling Dimmer Timeout */}

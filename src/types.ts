@@ -221,6 +221,8 @@ export interface TabletEnduranceConfig {
   bluetoothKeepAlive: boolean; // Auto-reconnect & keep-alive GATT watchdog for 12h shift
   cameraIdleEcoMode: boolean; // Throttle camera sensor power on idle Attract screen without losing permission
   abandonedSessionResetSec: number; // Auto-return to Attract if guest walks away mid-session (default 180s)
+  powerSaverOnBattery?: boolean; // Automatically reduce brightness & disable non-essential animations when on battery (regardless of 35% threshold)
+  powerSaverBrightnessReductionPercent?: number; // Brightness reduction % when running on battery (default 30%)
 }
 
 export interface RemoteKioskConfig {

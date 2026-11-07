@@ -48,6 +48,8 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
     bluetoothKeepAlive: true,
     cameraIdleEcoMode: true,
     abandonedSessionResetSec: 180,
+    powerSaverOnBattery: true,
+    powerSaverBrightnessReductionPercent: 30,
   },
   frontScreenMedia: {
     enabled: false,
@@ -135,8 +137,19 @@ class RemoteConfigService {
           bluetoothKeepAlive: true,
           cameraIdleEcoMode: true,
           abandonedSessionResetSec: 180,
+          powerSaverOnBattery: true,
+          powerSaverBrightnessReductionPercent: 30,
         };
         needsSave = true;
+      } else {
+        if (this.config.tabletEndurance.powerSaverOnBattery === undefined) {
+          this.config.tabletEndurance.powerSaverOnBattery = true;
+          needsSave = true;
+        }
+        if (this.config.tabletEndurance.powerSaverBrightnessReductionPercent === undefined) {
+          this.config.tabletEndurance.powerSaverBrightnessReductionPercent = 30;
+          needsSave = true;
+        }
       }
       if (
         this.config.thermalPrinter &&
