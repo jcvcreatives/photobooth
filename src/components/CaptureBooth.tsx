@@ -250,14 +250,14 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   };
 
   return (
-    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between p-3 sm:p-5 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-lg mx-auto w-full">
+    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between px-2.5 py-2 sm:px-5 sm:py-3 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-3xl lg:max-w-4xl mx-auto w-full">
       {/* Flash effect overlay */}
       {isFlashing && (
         <div className="fixed inset-0 bg-white z-50 pointer-events-none transition-opacity duration-200" />
       )}
 
       {/* Top Header (Left X button removed; center brand badge + shot counter; right camera flip) */}
-      <div className="w-full flex items-center justify-between pb-1 shrink-0">
+      <div className="w-full flex items-center justify-between pb-0.5 shrink-0">
         <div className="w-9" />
 
         <div className="flex flex-col items-center text-center">
@@ -302,9 +302,9 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       </div>
 
       {/* Big Ready Pose & Emoji Animation Banner ABOVE the Camera Frame */}
-      <div className="w-full flex items-center justify-center py-1.5 shrink-0">
+      <div className="w-full flex items-center justify-center py-1 shrink-0">
         <div
-          className={`px-6 py-2.5 sm:px-8 sm:py-3 rounded-2xl border-2 shadow-md flex items-center gap-3.5 transition-all duration-200 ${
+          className={`px-6 py-2 sm:px-8 sm:py-2.5 rounded-2xl border-2 shadow-md flex items-center gap-3.5 transition-all duration-200 ${
             countdown !== null || isPreparingPose
               ? 'bg-zinc-900 text-white border-amber-400 scale-105 shadow-xl'
               : 'bg-white text-zinc-900 border-zinc-300'
@@ -323,8 +323,8 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         </div>
       </div>
 
-      {/* Camera Viewfinder matching Still 643ff2f4.jpeg */}
-      <div className="relative w-full aspect-3/4 sm:aspect-4/5 max-h-[48vh] sm:max-h-[50vh] rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-md flex items-center justify-center my-auto">
+      {/* Expanded Full-Size Camera Viewfinder */}
+      <div className="relative flex-1 w-full min-h-[52vh] max-h-[66vh] sm:max-h-[68vh] rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-lg flex items-center justify-center my-1">
         <video
           ref={videoRef}
           autoPlay
@@ -340,13 +340,13 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         {/* Countdown Number Only inside Camera Screen */}
         {countdown !== null && (
           <div className="absolute inset-0 bg-black/20 flex items-center justify-center z-30 animate-fadeIn pointer-events-none">
-            <span className="font-sans font-light text-8xl text-white drop-shadow-lg animate-pulse">
+            <span className="font-sans font-light text-8xl sm:text-9xl text-white drop-shadow-lg animate-pulse">
               {countdown}
             </span>
           </div>
         )}
 
-        {/* Brightness / Exposure Slider matching Still 643ff2f4.jpeg */}
+        {/* Brightness / Exposure Slider */}
         <div className="absolute bottom-3 inset-x-6 z-20 flex items-center justify-center">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/20 shadow-xs max-w-xs w-full">
             <Sun className="w-3.5 h-3.5 text-white/80 shrink-0" />
@@ -376,8 +376,8 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         )}
       </div>
 
-      {/* Shot Progress Numbers matching Still 643ff2f4.jpeg: 1 2 3 4 */}
-      <div className="flex items-center justify-center gap-6 my-2 text-xs font-medium text-zinc-400">
+      {/* Shot Progress Numbers: 1 2 3 4 */}
+      <div className="flex items-center justify-center gap-6 my-1 text-xs font-medium text-zinc-400 shrink-0">
         {Array.from({ length: targetShotCount }).map((_, idx) => {
           const isDone = idx < capturedPhotos.length;
           const isCurrent = idx === currentShotIndex;
@@ -398,8 +398,8 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         })}
       </div>
 
-      {/* Shutter Row Controls matching Still 643ff2f4.jpeg */}
-      <div className="w-full flex items-center justify-between px-6 pt-1">
+      {/* Shutter Row Controls */}
+      <div className="w-full max-w-xl flex items-center justify-between px-6 pt-0.5 shrink-0">
         {/* Flash Toggle */}
         <button
           onClick={() => {
@@ -442,8 +442,8 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         </button>
       </div>
 
-      {/* Timer Selector Pills matching Still 643ff2f4.jpeg: 3s 5s 10s */}
-      <div className="flex items-center gap-2 mt-3 text-xs">
+      {/* Timer Selector Pills: 3s 5s 10s */}
+      <div className="flex items-center gap-2 mt-1.5 text-xs shrink-0">
         <Timer className="w-3.5 h-3.5 text-zinc-400" />
         {([3, 5, 10] as const).map((sec) => (
           <button
