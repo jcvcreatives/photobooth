@@ -152,7 +152,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'analytics' | 'frontscreen' | 'printer' | 'config' | 'vouchers' | 'gallery'>('analytics');
+  const [activeTab, setActiveTab] = useState<'printer' | 'vouchers' | 'frontscreen' | 'gallery' | 'config' | 'analytics'>('printer');
   const [telemetry, setTelemetry] = useState<KioskTelemetry>(analyticsService.getTelemetry());
   const [printerStatus, setPrinterStatus] = useState<PrinterDeviceStatus>(thermalPrinterService.getStatus());
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -1072,60 +1072,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       data-admin-scrollable="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-2 sm:p-6 select-none animate-fadeIn"
     >
-      <div className="relative w-full max-w-5xl bg-slate-950 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[94vh]">
-        {/* Admin Header */}
-        <div className="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+      <div className="relative w-full max-w-5xl bg-slate-950 border border-slate-800/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[94vh]">
+        {/* Minimalist Admin Header */}
+        <div className="px-5 py-3.5 bg-slate-950 border-b border-slate-800/80 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md">
-              <Sliders className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-white">
+              <Sliders className="w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-black text-white">JCVcreatives Photobooth Console</h1>
-                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-mono">
-                  {config.version}
+                <h1 className="text-sm sm:text-base font-bold text-white tracking-tight">Admin Settings</h1>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {config.locationName}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">{config.locationName} • Station {config.kioskId}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <a
-              href="https://github.com/jcvcreatives/photobooth/releases/latest/download/JCVcreatives-Photobooth.apk"
-              download="JCVcreatives-Photobooth.apk"
-              onClick={() => soundEffects.playTap()}
-              title="Download Standalone Offline Android APK from GitHub Releases"
-              className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download .APK</span>
-            </a>
+          <div className="flex items-center gap-2">
             <button
               type="button"
               data-no-fullscreen-enforce="true"
               onClick={handleToggleFullscreenKiosk}
-              title={
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition cursor-pointer border ${
                 isFullscreenLocked
-                  ? 'Full Screen Kiosk Mode Locked — Click to Exit Full Screen'
-                  : 'Enter & Lock Full Screen Kiosk Display'
-              }
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border ${
-                isFullscreenLocked
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 shadow-md'
-                  : 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border-indigo-500/40'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
               }`}
             >
               {isFullscreenLocked ? (
                 <>
-                  <Lock className="w-3.5 h-3.5" />
                   <Minimize className="w-3.5 h-3.5" />
-                  <span>Full Screen Locked (Exit)</span>
+                  <span>Exit Full Screen</span>
                 </>
               ) : (
                 <>
                   <Maximize className="w-3.5 h-3.5" />
-                  <span>Full Screen Toggle</span>
+                  <span>Full Screen</span>
                 </>
               )}
             </button>
@@ -1134,8 +1117,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 soundEffects.playTap();
                 setIsAuthenticated(false);
               }}
-              title="Lock Admin Console"
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition"
+              title="Lock Admin"
+              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
             >
               <Lock className="w-3.5 h-3.5" />
               <span>Lock</span>
@@ -1145,22 +1128,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 soundEffects.playTap();
                 onClose();
               }}
-              className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+              className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-6 bg-slate-900/60 border-b border-slate-800 overflow-x-auto text-xs">
+        {/* Simple, Minimalist Tab Navigation */}
+        <div className="flex items-center gap-1.5 px-5 py-2 bg-slate-950 border-b border-slate-800/80 overflow-x-auto text-xs">
           {[
-            { id: 'analytics', label: 'Live Telemetry', icon: BarChart3 },
-            { id: 'frontscreen', label: 'Front Screen & Media', icon: Sparkles },
-            { id: 'printer', label: 'Thermal Driver', icon: Printer },
-            { id: 'config', label: 'Remote Config & OTA', icon: Cloud },
-            { id: 'vouchers', label: 'Price & Vouchers', icon: Ticket },
-            { id: 'gallery', label: 'Capture Archive & Queue', icon: History },
+            { id: 'printer', label: 'Printer', icon: Printer },
+            { id: 'vouchers', label: 'Prices & Vouchers', icon: Ticket },
+            { id: 'frontscreen', label: 'Home Screen', icon: Sparkles },
+            { id: 'gallery', label: 'Photos', icon: ImageIcon },
+            { id: 'config', label: 'Settings', icon: Sliders },
+            { id: 'analytics', label: 'Stats', icon: BarChart3 },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -1171,13 +1154,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   soundEffects.playTap();
                   setActiveTab(tab.id as typeof activeTab);
                 }}
-                className={`flex items-center gap-2 py-3 px-3.5 border-b-2 font-bold transition whitespace-nowrap ${
+                className={`flex items-center gap-2 py-2 px-3.5 rounded-lg font-semibold transition whitespace-nowrap cursor-pointer ${
                   active
-                    ? 'border-indigo-500 text-white bg-slate-800/40'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
               </button>
             );
@@ -1185,149 +1168,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* Tab Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 text-white space-y-6">
-          {/* PINNED TOP COST & PRICING SETTINGS CARD (Always at the top of Admin Dashboard) */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-emerald-950/35 to-slate-900 border-2 border-emerald-500/60 shadow-xl space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <DollarSign className="w-5 h-5 text-emerald-400" />
-                  <h2 className="text-sm sm:text-base font-black text-white">
-                    Cost &amp; Layout Pricing Settings
-                  </h2>
-                  <span
-                    className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full ${
-                      localConfig.freePlayMode
-                        ? 'bg-emerald-500 text-slate-950'
-                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                    }`}
-                  >
-                    {localConfig.freePlayMode ? 'FREE PLAY ACTIVE (₱0)' : 'PAID / VOUCHER MODE'}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Set the cost for each photo layout (<strong className="text-white">1-Shot, 2-Shot, 3-Shot, 4-Shot</strong>) or toggle <strong className="text-emerald-300">Free Play Mode</strong>. Changes save automatically.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    soundEffects.playTap();
-                    const nextFreePlay = !localConfig.freePlayMode;
-                    const updated: RemoteKioskConfig = {
-                      ...localConfig,
-                      freePlayMode: nextFreePlay,
-                    };
-                    setLocalConfig(updated);
-                    await remoteConfigService.updateConfig(updated);
-                    onUpdateConfig(updated);
-                  }}
-                  className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer ${
-                    localConfig.freePlayMode
-                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
-                      : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-600'
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    {localConfig.freePlayMode ? 'Free Play: ON (Tap for Paid)' : 'Free Play: OFF (Tap for Free)'}
-                  </span>
-                </button>
-
-                {activeTab !== 'vouchers' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEffects.playTap();
-                      setActiveTab('vouchers');
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-400/40 text-indigo-200 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Ticket className="w-3.5 h-3.5" />
-                    <span>Cashier Vouchers</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* 4 Layout Cost Inputs + Currency Symbol */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {(
-                [
-                  { id: 'single_polaroid' as FrameLayoutType, label: '1. Polaroid (1 Shot)', fallback: 20 },
-                  { id: 'grid_4' as FrameLayoutType, label: '2. Grid (2 Shots)', fallback: 25 },
-                  { id: 'strip_3' as FrameLayoutType, label: '3. Grid (3 Shots)', fallback: 30 },
-                  { id: 'strip_4' as FrameLayoutType, label: '4. 4-Cut (4 Shots by 2s)', fallback: 40 },
-                ]
-              ).map((item) => {
-                const priceVal = localConfig.layoutPrices?.[item.id] ?? item.fallback;
-                return (
-                  <div
-                    key={item.id}
-                    className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-1"
-                  >
-                    <label className="text-[11px] font-bold text-slate-300 truncate">
-                      {item.label}
-                    </label>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-mono text-emerald-400 font-bold">
-                        {localConfig.currencySymbol || '₱'}
-                      </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={5}
-                        value={priceVal}
-                        onChange={(e) =>
-                          handleUpdateLayoutPrice(item.id, Number(e.target.value))
-                        }
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono font-bold text-xs focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Currency Symbol Selector */}
-              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-1 col-span-2 sm:col-span-1">
-                <label className="text-[11px] font-bold text-slate-300 truncate">
-                  Currency Symbol
-                </label>
-                <div className="flex items-center gap-1">
-                  {['₱', '$', '€', '¥'].map((sym) => {
-                    const activeSym = (localConfig.currencySymbol || '₱') === sym;
-                    return (
-                      <button
-                        key={sym}
-                        type="button"
-                        onClick={async () => {
-                          soundEffects.playTap();
-                          const updated: RemoteKioskConfig = {
-                            ...localConfig,
-                            currencySymbol: sym,
-                          };
-                          setLocalConfig(updated);
-                          await remoteConfigService.updateConfig(updated);
-                          onUpdateConfig(updated);
-                        }}
-                        className={`flex-1 py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${
-                          activeSym
-                            ? 'bg-emerald-600 border-emerald-400 text-white'
-                            : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {sym}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* TAB 1: Live Telemetry */}
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 text-white space-y-5">
+          {/* TAB:Stats */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
               {/* Top Key Metrics Grid */}
@@ -2266,281 +2108,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* TAB 2: Universal USB & Wireless Printer Hub */}
+          {/* TAB: Printer */}
           {activeTab === 'printer' && (
-            <div className="space-y-6">
-              {/* DEDICATED XPRINTER 58iiB (USB + BLUETOOTH) HARDWARE PROFILE & QUICK SETUP CARD */}
-              <div className="p-5 bg-gradient-to-br from-slate-900 via-indigo-950/50 to-slate-900 border-2 border-indigo-500/70 rounded-2xl space-y-4 shadow-xl">
+            <div className="space-y-5">
+              {/* #1 TOP CARD: VOZY G80 RECEIPT PRINTER (80mm • DEFAULT PRINTER • BLUETOOTH & USB WIRED) */}
+              <div className="p-5 bg-slate-900 border-2 border-cyan-500/70 rounded-2xl space-y-4 shadow-lg">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="space-y-1.5">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-md bg-indigo-500 text-white text-[10px] font-black uppercase tracking-wider">
-                        Primary Booth Printer
+                      <span className="px-2.5 py-0.5 rounded-md bg-cyan-400 text-slate-950 text-[10px] font-black uppercase tracking-wider">
+                        Default Printer
                       </span>
-                      <h3 className="text-base sm:text-lg font-black text-white">
-                        Xprinter 58iiB — 58mm Thermal POS Printer (USB + BT)
+                      <h3 className="text-base sm:text-lg font-bold text-white">
+                        VOZY G80 Receipt Printer (80mm • Bluetooth &amp; USB)
                       </h3>
-                      {(localConfig.thermalPrinter.printerModel || 'xprinter_58iib') === 'xprinter_58iib' && (
+                      {(localConfig.thermalPrinter.printerModel || 'vozy_g80') === 'vozy_g80' && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-mono font-bold">
                           <CheckCircle2 className="w-3 h-3" />
-                          <span>Xprinter 58iiB Profile Active</span>
+                          <span>Active Default</span>
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      Pre-calibrated for your <strong>Xprinter 58iiB</strong>: <strong>58mm Paper Width (384 dots/line)</strong> • <strong>203 DPI (8 dots/mm)</strong> • <strong>Up to 90mm/s High-Speed AC Thermal Head</strong> • <strong>USB + Dual Bluetooth</strong> • <strong>5-Line Tear-Bar Advance</strong>.
-                    </p>
-                  </div>
-
-                  {/* 1-Tap Apply Optimal Xprinter 58iiB Settings Button */}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      soundEffects.playTap();
-                      const updated: RemoteKioskConfig = {
-                        ...localConfig,
-                        thermalPrinter: {
-                          ...localConfig.thermalPrinter,
-                          printerModel: 'xprinter_58iib',
-                          paperWidthMm: 58,
-                          dotsPerLine: 384,
-                          contrast: 40,
-                          brightness: 45,
-                          printDarkness: 38,
-                          density: 'normal',
-                          escPosCommandMode: 'gs_v_0',
-                          feedLines: 5,
-                          autoCut: false,
-                        },
-                      };
-                      setLocalConfig(updated);
-                      await remoteConfigService.updateConfig(updated);
-                      onUpdateConfig(updated);
-                      setTestPrintFeedback(
-                        '✓ Xprinter 58iiB optimal settings applied (58mm / 384px, 203 DPI, 90mm/s AC head heating, 5 tear-bar feed lines, 38% balanced darkness).'
-                      );
-                    }}
-                    className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer shrink-0 flex items-center gap-2"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Apply Xprinter 58iiB Optimal Settings</span>
-                  </button>
-                </div>
-
-                {/* Spec Badges & Hardware Model Selector */}
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-1">
-                  {[
-                    { label: 'Model', val: 'Xprinter 58iiB' },
-                    { label: 'Paper Width', val: '58mm (384 dots)' },
-                    { label: 'Resolution', val: '203 DPI (8 dots/mm)' },
-                    { label: 'Print Speed', val: 'Up to 90mm/s' },
-                    { label: 'Interface', val: 'USB + Bluetooth' },
-                    { label: 'Roll / Tear', val: '60mm Roll • 5-Line Tear' },
-                  ].map((spec) => (
-                    <div
-                      key={spec.label}
-                      className="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800/90 flex flex-col justify-between"
-                    >
-                      <span className="text-[9px] uppercase font-mono text-slate-400">{spec.label}</span>
-                      <span className="text-xs font-bold text-indigo-200 mt-0.5">{spec.val}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Quick Connect Buttons for Xprinter 58iiB (Bluetooth + USB + Test Print) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      soundEffects.playTap();
-                      const updated: RemoteKioskConfig = {
-                        ...localConfig,
-                        thermalPrinter: {
-                          ...localConfig.thermalPrinter,
-                          printerModel: 'xprinter_58iib',
-                          paperWidthMm: 58,
-                          dotsPerLine: 384,
-                          feedLines: 6,
-                          autoCut: true,
-                          escPosCommandMode: 'gs_v_0',
-                        },
-                      };
-                      setLocalConfig(updated);
-                      await remoteConfigService.updateConfig(updated);
-                      onUpdateConfig(updated);
-                      await thermalPrinterService.connectBluetooth();
-                    }}
-                    className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
-                      printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
-                        ? 'bg-emerald-950/60 border-emerald-400 text-emerald-200'
-                        : 'bg-indigo-600/20 border-indigo-500/50 hover:bg-indigo-600/30 text-white'
-                    }`}
-                  >
-                    <div>
-                      <div className="font-bold text-xs sm:text-sm">1. Pair Xprinter 58iiB Bluetooth</div>
-                      <div className="text-[11px] text-slate-300 mt-0.5">
-                        Wireless BT connection (PIN: <strong>0000</strong> or <strong>1234</strong>)
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-indigo-300 shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      soundEffects.playTap();
-                      const updated: RemoteKioskConfig = {
-                        ...localConfig,
-                        thermalPrinter: {
-                          ...localConfig.thermalPrinter,
-                          printerModel: 'xprinter_58iib',
-                          paperWidthMm: 58,
-                          dotsPerLine: 384,
-                          feedLines: 6,
-                          autoCut: true,
-                          escPosCommandMode: 'gs_v_0',
-                        },
-                      };
-                      setLocalConfig(updated);
-                      await remoteConfigService.updateConfig(updated);
-                      onUpdateConfig(updated);
-                      await thermalPrinterService.connectUSB();
-                    }}
-                    className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
-                      printerStatus.connectionType === 'usb' && printerStatus.isConnected
-                        ? 'bg-emerald-950/60 border-emerald-400 text-emerald-200'
-                        : 'bg-emerald-600/20 border-emerald-500/50 hover:bg-emerald-600/30 text-white'
-                    }`}
-                  >
-                    <div>
-                      <div className="font-bold text-xs sm:text-sm">2. Connect Xprinter 58iiB USB Cord</div>
-                      <div className="text-[11px] text-slate-300 mt-0.5">
-                        Direct USB Type-B cable / USB OTG adapter
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-emerald-300 shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isTestPrinting}
-                    onClick={handleTestPrint}
-                    className="p-3.5 rounded-xl border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500/25 text-left transition cursor-pointer flex items-center justify-between text-white disabled:opacity-50"
-                  >
-                    <div>
-                      <div className="font-bold text-xs sm:text-sm">
-                        {isTestPrinting ? 'Printing Xprinter 58iiB Test...' : '3. Test Print on Xprinter 58iiB'}
-                      </div>
-                      <div className="text-[11px] text-amber-200/90 mt-0.5">
-                        Verify 58mm alignment, darkness &amp; tear bar
-                      </div>
-                    </div>
-                    <Printer className="w-4 h-4 text-amber-300 shrink-0" />
-                  </button>
-                </div>
-
-                {/* Printer Hardware Model Profile & Tear-Bar Feed Lines */}
-                <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-slate-400 font-mono">Hardware Profile:</span>
-                    {(
-                      [
-                        { id: 'xprinter_58iib', label: 'Xprinter 58iiB (58mm • USB + BT) ★' },
-                        { id: 'vozy_g80', label: 'VOZY G80 (80mm • BT + USB + Auto-Cut) ★' },
-                        { id: 'kprinter_461a', label: 'KPrinter_461a / MP58-09' },
-                        { id: 'epson_80mm', label: '80mm Desktop POS' },
-                      ] as const
-                    ).map((modelItem) => {
-                      const activeModel =
-                        (localConfig.thermalPrinter.printerModel || 'xprinter_58iib') === modelItem.id;
-                      return (
-                        <button
-                          key={modelItem.id}
-                          type="button"
-                          onClick={async () => {
-                            soundEffects.playTap();
-                            const is80 = modelItem.id === 'vozy_g80' || modelItem.id === 'epson_80mm';
-                            const updated: RemoteKioskConfig = {
-                              ...localConfig,
-                              thermalPrinter: {
-                                ...localConfig.thermalPrinter,
-                                printerModel: modelItem.id,
-                                paperWidthMm: is80 ? 80 : 58,
-                                dotsPerLine: is80 ? 576 : 384,
-                                feedLines: modelItem.id === 'vozy_g80' ? 5 : modelItem.id === 'xprinter_58iib' ? 6 : 4,
-                                autoCut: is80 || modelItem.id === 'xprinter_58iib',
-                                buzzerReminder: false,
-                              },
-                            };
-                            setLocalConfig(updated);
-                            await remoteConfigService.updateConfig(updated);
-                            onUpdateConfig(updated);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
-                            activeModel
-                              ? 'bg-indigo-600 border-indigo-400 text-white'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {modelItem.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Tear-Bar Paper Advance Lines */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-slate-400 font-mono">Tear-Bar / Cutter Advance:</span>
-                    {[3, 4, 5, 6, 7].map((lines) => (
-                      <button
-                        key={lines}
-                        type="button"
-                        onClick={async () => {
-                          soundEffects.playTap();
-                          const updated: RemoteKioskConfig = {
-                            ...localConfig,
-                            thermalPrinter: {
-                              ...localConfig.thermalPrinter,
-                              feedLines: lines,
-                            },
-                          };
-                          setLocalConfig(updated);
-                          await remoteConfigService.updateConfig(updated);
-                          onUpdateConfig(updated);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
-                          (localConfig.thermalPrinter.feedLines ?? 5) === lines
-                            ? 'bg-emerald-600 border-emerald-400 text-white'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {lines}L
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* DEDICATED VOZY G80 RECEIPT PRINTER (80mm • BLUETOOTH + USB WIRED • AUTO-CUT) PROFILE CARD */}
-              <div className="p-5 bg-gradient-to-br from-slate-900 via-cyan-950/45 to-slate-900 border-2 border-cyan-500/70 rounded-2xl space-y-4 shadow-xl">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-md bg-cyan-500 text-slate-950 text-[10px] font-black uppercase tracking-wider">
-                        80mm Auto-Cut Booth Printer
-                      </span>
-                      <h3 className="text-base sm:text-lg font-black text-white">
-                        VOZY G80 Receipt Printer — 80mm (Bluetooth &amp; USB Wired)
-                      </h3>
-                      {localConfig.thermalPrinter.printerModel === 'vozy_g80' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-mono font-bold">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>VOZY G80 Profile Active (80mm)</span>
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      Full compatibility for your <strong>VOZY G80 Receipt Printer</strong>: <strong>80mm Print Width (576 dots/line)</strong> • <strong>Automatic Paper Cutter (GS V)</strong> • <strong>Visual &amp; Auditory Reminder Beep</strong> • <strong>Cellphone / Tablet / PC Connection (Wireless Bluetooth &amp; USB Wired)</strong>.
+                    <p className="text-xs text-slate-400">
+                      80mm Print Width (576 dots/line) • Continuous Non-Stop Printing • Automatic Paper Cut • Bluetooth &amp; USB Wired
                     </p>
                   </div>
 
@@ -2570,38 +2160,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       await remoteConfigService.updateConfig(updated);
                       onUpdateConfig(updated);
                       setTestPrintFeedback(
-                        '✓ VOZY G80 (80mm) continuous non-stop print settings applied (80mm / 576 dots per line, Continuous Single-Stream GS v 0, Automatic Cut enabled).'
+                        '✓ VOZY G80 (80mm) set as Default Printer with continuous non-stop printing and auto-cut.'
                       );
                     }}
-                    className="px-4 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer shrink-0 flex items-center gap-2"
+                    className="px-4 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs sm:text-sm transition cursor-pointer shrink-0 flex items-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Apply VOZY G80 (80mm) Settings</span>
+                    <span>Apply VOZY G80 Default Settings</span>
                   </button>
                 </div>
 
-                {/* VOZY G80 Hardware Spec Badges */}
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-1">
-                  {[
-                    { label: 'Model', val: 'VOZY G80' },
-                    { label: 'Print Width', val: '80mm (576 dots)' },
-                    { label: 'Print Mode', val: 'Continuous Non-Stop' },
-                    { label: 'Auto-Cutter', val: 'Automatic Cut (GS V)' },
-                    { label: 'Interface', val: 'Bluetooth + USB Wired' },
-                    { label: 'Device Support', val: 'Cellphone / Tablet / PC' },
-                  ].map((spec) => (
-                    <div
-                      key={spec.label}
-                      className="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800/90 flex flex-col justify-between"
-                    >
-                      <span className="text-[9px] uppercase font-mono text-slate-400">{spec.label}</span>
-                      <span className="text-xs font-bold text-cyan-200 mt-0.5">{spec.val}</span>
-                    </div>
-                  ))}
-                </div>
-
                 {/* Quick Connect Buttons for VOZY G80 (Bluetooth + USB Wired + Test Print) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <button
                     type="button"
                     onClick={async () => {
@@ -2625,20 +2195,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       await thermalPrinterService.connectBluetooth();
                     }}
                     className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
-                      localConfig.thermalPrinter.printerModel === 'vozy_g80' &&
+                      (localConfig.thermalPrinter.printerModel || 'vozy_g80') === 'vozy_g80' &&
                       printerStatus.connectionType === 'bluetooth' &&
                       printerStatus.isConnected
                         ? 'bg-emerald-950/60 border-emerald-400 text-emerald-200'
-                        : 'bg-cyan-600/20 border-cyan-500/50 hover:bg-cyan-600/30 text-white'
+                        : 'bg-slate-950 border-slate-800 hover:border-cyan-500/60 text-white'
                     }`}
                   >
                     <div>
-                      <div className="font-bold text-xs sm:text-sm">1. Pair VOZY G80 Bluetooth</div>
-                      <div className="text-[11px] text-slate-300 mt-0.5">
-                        Wireless Cellphone / Tablet / PC Bluetooth (BLE &amp; SPP)
+                      <div className="font-bold text-xs sm:text-sm">1. Connect Bluetooth</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Wireless VOZY G80 Bluetooth
                       </div>
                     </div>
-                    <ArrowRight className="w-4 h-4 text-cyan-300 shrink-0" />
+                    <ArrowRight className="w-4 h-4 text-cyan-400 shrink-0" />
                   </button>
 
                   <button
@@ -2664,41 +2234,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       await thermalPrinterService.connectUSB();
                     }}
                     className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
-                      localConfig.thermalPrinter.printerModel === 'vozy_g80' &&
+                      (localConfig.thermalPrinter.printerModel || 'vozy_g80') === 'vozy_g80' &&
                       printerStatus.connectionType === 'usb' &&
                       printerStatus.isConnected
                         ? 'bg-emerald-950/60 border-emerald-400 text-emerald-200'
-                        : 'bg-emerald-600/20 border-emerald-500/50 hover:bg-emerald-600/30 text-white'
+                        : 'bg-slate-950 border-slate-800 hover:border-emerald-500/60 text-white'
                     }`}
                   >
                     <div>
-                      <div className="font-bold text-xs sm:text-sm">2. Connect VOZY G80 USB Wired</div>
-                      <div className="text-[11px] text-slate-300 mt-0.5">
-                        Direct USB Cable (Tablet USB OTG / PC USB Port)
+                      <div className="font-bold text-xs sm:text-sm">2. Connect USB Cable</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Direct USB Wired / USB OTG
                       </div>
                     </div>
-                    <ArrowRight className="w-4 h-4 text-emerald-300 shrink-0" />
+                    <ArrowRight className="w-4 h-4 text-emerald-400 shrink-0" />
                   </button>
 
                   <button
                     type="button"
                     disabled={isTestPrinting}
                     onClick={handleTestPrint}
-                    className="p-3.5 rounded-xl border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500/25 text-left transition cursor-pointer flex items-center justify-between text-white disabled:opacity-50"
+                    className="p-3.5 rounded-xl border border-slate-800 bg-slate-950 hover:border-amber-500/60 text-left transition cursor-pointer flex items-center justify-between text-white disabled:opacity-50"
                   >
                     <div>
                       <div className="font-bold text-xs sm:text-sm">
-                        {isTestPrinting ? 'Printing VOZY G80 Test...' : '3. Test Print on VOZY G80 (80mm)'}
+                        {isTestPrinting ? 'Printing Test...' : '3. Test Print VOZY G80'}
                       </div>
-                      <div className="text-[11px] text-amber-200/90 mt-0.5">
-                        Verify 80mm continuous non-stop print &amp; auto-cut
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        80mm continuous print &amp; auto-cut
                       </div>
                     </div>
-                    <Printer className="w-4 h-4 text-amber-300 shrink-0" />
+                    <Printer className="w-4 h-4 text-amber-400 shrink-0" />
                   </button>
                 </div>
 
-                {/* VOZY G80 Hardware Feature Toggles: Automatic Cut & Visual/Auditory Reminder */}
+                {/* VOZY G80 Hardware Feature Toggles & Profile Switcher */}
                 <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
                     <button
@@ -2722,7 +2292,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      ✂️ Automatic Cut: {localConfig.thermalPrinter.autoCut ? 'ON' : 'OFF'}
+                      Automatic Cut: {localConfig.thermalPrinter.autoCut ? 'ON' : 'OFF'}
                     </button>
 
                     <button
@@ -2747,13 +2317,135 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      🔔 Buzzer Reminder Beep: {Boolean(localConfig.thermalPrinter.buzzerReminder) ? 'ON' : 'OFF'}
+                      Buzzer Beep: {Boolean(localConfig.thermalPrinter.buzzerReminder) ? 'ON' : 'OFF'}
                     </button>
                   </div>
 
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    80mm Roll (576 dots/line • 72 bytes/row • Auto-Cutter Ready)
-                  </span>
+                  {/* Printer Model Selector & Feed Lines */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-slate-400 font-mono text-[11px]">Model:</span>
+                    {(
+                      [
+                        { id: 'vozy_g80', label: 'VOZY G80 (80mm Default)' },
+                        { id: 'xprinter_58iib', label: 'Xprinter 58iiB (58mm)' },
+                        { id: 'kprinter_461a', label: 'MP58-09 (58mm)' },
+                        { id: 'epson_80mm', label: '80mm POS' },
+                      ] as const
+                    ).map((modelItem) => {
+                      const activeModel =
+                        (localConfig.thermalPrinter.printerModel || 'vozy_g80') === modelItem.id;
+                      return (
+                        <button
+                          key={modelItem.id}
+                          type="button"
+                          onClick={async () => {
+                            soundEffects.playTap();
+                            const is80 = modelItem.id === 'vozy_g80' || modelItem.id === 'epson_80mm';
+                            const updated: RemoteKioskConfig = {
+                              ...localConfig,
+                              thermalPrinter: {
+                                ...localConfig.thermalPrinter,
+                                printerModel: modelItem.id,
+                                paperWidthMm: is80 ? 80 : 58,
+                                dotsPerLine: is80 ? 576 : 384,
+                                feedLines: modelItem.id === 'vozy_g80' ? 5 : modelItem.id === 'xprinter_58iib' ? 6 : 4,
+                                autoCut: is80 || modelItem.id === 'xprinter_58iib',
+                                buzzerReminder: false,
+                              },
+                            };
+                            setLocalConfig(updated);
+                            await remoteConfigService.updateConfig(updated);
+                            onUpdateConfig(updated);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
+                            activeModel
+                              ? 'bg-white border-white text-slate-950'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {modelItem.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECONDARY PRINTER CARD: Xprinter 58iiB (58mm) */}
+              <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono uppercase">
+                        58mm Option
+                      </span>
+                      <h3 className="text-sm font-bold text-white">
+                        Xprinter 58iiB — 58mm Thermal Printer (USB + Bluetooth)
+                      </h3>
+                      {localConfig.thermalPrinter.printerModel === 'xprinter_58iib' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-mono font-bold">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Active</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      58mm Paper Width (384 dots/line) • 203 DPI • USB &amp; Bluetooth
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          thermalPrinter: {
+                            ...localConfig.thermalPrinter,
+                            printerModel: 'xprinter_58iib',
+                            paperWidthMm: 58,
+                            dotsPerLine: 384,
+                            feedLines: 6,
+                            autoCut: false,
+                            escPosCommandMode: 'gs_v_0',
+                          },
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                        await thermalPrinterService.connectBluetooth();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-white transition cursor-pointer"
+                    >
+                      Pair 58iiB Bluetooth
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          thermalPrinter: {
+                            ...localConfig.thermalPrinter,
+                            printerModel: 'xprinter_58iib',
+                            paperWidthMm: 58,
+                            dotsPerLine: 384,
+                            feedLines: 6,
+                            autoCut: false,
+                            escPosCommandMode: 'gs_v_0',
+                          },
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                        await thermalPrinterService.connectUSB();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-white transition cursor-pointer"
+                    >
+                      Connect 58iiB USB
+                    </button>
+                  </div>
                 </div>
               </div>
 

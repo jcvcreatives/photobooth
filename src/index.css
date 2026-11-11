@@ -437,107 +437,102 @@
   animation: thermalSlotPulse 1.8s infinite ease-in-out;
 }
 
-/* Looping Scissors Cutting Receipt Animation */
-@keyframes scissorsCutAcross {
-  0% {
-    left: -14%;
-    opacity: 0;
-    transform: translateY(-50%) scale(0.9);
-  }
-  8% {
-    left: 0%;
-    opacity: 1;
-    transform: translateY(-50%) scale(1);
-  }
-  74% {
-    left: 92%;
-    opacity: 1;
-    transform: translateY(-50%) scale(1);
-  }
-  84% {
-    left: 106%;
-    opacity: 0;
-    transform: translateY(-50%) scale(0.92);
-  }
-  100% {
-    left: 106%;
-    opacity: 0;
-    transform: translateY(-50%) scale(0.92);
-  }
-}
-
-@keyframes scissorBladeTopSnip {
-  0%, 100% {
-    transform: rotate(-24deg);
-  }
-  50% {
-    transform: rotate(4deg);
-  }
-}
-
-@keyframes scissorBladeBottomSnip {
-  0%, 100% {
-    transform: rotate(24deg);
-  }
-  50% {
-    transform: rotate(-4deg);
-  }
-}
-
-@keyframes cutTrailProgress {
-  0%, 6% {
+/* Looping Careful Receipt Tearing Animation */
+@keyframes tearLineProgress {
+  0%, 8% {
     width: 0%;
-    opacity: 1;
+    opacity: 0.95;
   }
-  74% {
+  68% {
     width: 100%;
     opacity: 1;
   }
-  88%, 100% {
+  86%, 100% {
     width: 100%;
     opacity: 0;
   }
 }
 
-@keyframes receiptSeverDrop {
-  0%, 70% {
-    transform: translateY(0px) rotate(0deg);
+@keyframes receiptTearCarefully {
+  0%, 15% {
+    transform: translate3d(0px, 0px, 0) rotate(0deg);
   }
-  78% {
-    transform: translateY(6px) rotate(0.8deg);
+  45% {
+    transform: translate3d(2px, 3px, 0) rotate(1.1deg);
   }
-  88% {
-    transform: translateY(6px) rotate(0.8deg);
-    opacity: 0.96;
+  72% {
+    transform: translate3d(4px, 8px, 0) rotate(2.2deg);
+  }
+  86% {
+    transform: translate3d(4px, 9px, 0) rotate(2.2deg);
+    opacity: 0.94;
   }
   96%, 100% {
+    transform: translate3d(0px, 0px, 0) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes tearHandGuide {
+  0%, 8% {
+    left: 2%;
+    opacity: 0;
+    transform: translateY(-2px) rotate(0deg) scale(0.92);
+  }
+  16% {
+    left: 8%;
+    opacity: 1;
+    transform: translateY(1px) rotate(-6deg) scale(1);
+  }
+  68% {
+    left: 86%;
+    opacity: 1;
+    transform: translateY(5px) rotate(8deg) scale(1);
+  }
+  82%, 100% {
+    left: 92%;
+    opacity: 0;
+    transform: translateY(7px) rotate(10deg) scale(0.92);
+  }
+}
+
+@keyframes miniReceiptTearOff {
+  0%, 18% {
+    transform: translateY(0px) rotate(0deg);
+    opacity: 1;
+  }
+  62% {
+    transform: translateY(3px) rotate(4deg);
+    opacity: 1;
+  }
+  80% {
+    transform: translateY(6px) rotate(7deg);
+    opacity: 0.85;
+  }
+  95%, 100% {
     transform: translateY(0px) rotate(0deg);
     opacity: 1;
   }
 }
 
-.animate-scissors-across {
-  animation: scissorsCutAcross 2.8s infinite ease-in-out;
-  will-change: left, opacity, transform;
+.animate-tear-line {
+  animation: tearLineProgress 2.8s infinite ease-in-out;
 }
 
-.animate-scissor-blade-top {
-  transform-origin: 10px 12px;
-  animation: scissorBladeTopSnip 0.28s infinite ease-in-out;
-}
-
-.animate-scissor-blade-bottom {
-  transform-origin: 10px 12px;
-  animation: scissorBladeBottomSnip 0.28s infinite ease-in-out;
-}
-
-.animate-cut-trail {
-  animation: cutTrailProgress 2.8s infinite ease-in-out;
-}
-
-.animate-receipt-sever {
-  animation: receiptSeverDrop 2.8s infinite ease-in-out;
+.animate-receipt-tear {
+  transform-origin: top left;
+  animation: receiptTearCarefully 2.8s infinite ease-in-out;
   will-change: transform;
+}
+
+.animate-tear-hand {
+  animation: tearHandGuide 2.8s infinite ease-in-out;
+  will-change: left, transform, opacity;
+}
+
+.animate-mini-receipt-tear {
+  transform-origin: top left;
+  animation: miniReceiptTearOff 2.4s infinite ease-in-out;
 }
 
 /* Optimize touch tablet kiosk interaction & prevent iPadOS WebKit overscroll fullscreen exit */

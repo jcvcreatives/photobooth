@@ -1544,9 +1544,9 @@ class ThermalPrinterService {
     config: ThermalPrinterConfig
   ): Uint8Array[] {
     const commandMode = config.escPosCommandMode || 'gs_v_0';
-    const isXprinter58iiB = (config.printerModel || 'xprinter_58iib') === 'xprinter_58iib';
+    const isXprinter58iiB = config.printerModel === 'xprinter_58iib';
     const isVozyG80 =
-      config.printerModel === 'vozy_g80' ||
+      (config.printerModel || 'vozy_g80') === 'vozy_g80' ||
       /vozy|g80/i.test(this.currentStatus.deviceName || '');
     const feedLinesCount = Math.max(
       1,
@@ -1797,7 +1797,7 @@ class ThermalPrinterService {
     const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
     // VOZY G80 and 80mm POS printers use 576 dots/line (72 bytes/row); Xprinter 58iiB / KPrinter_461a / 58mm printers use 384 dots/line (48 bytes/row)
     const is80mmModel =
-      config.printerModel === 'vozy_g80' ||
+      (config.printerModel || 'vozy_g80') === 'vozy_g80' ||
       config.printerModel === 'epson_80mm' ||
       /vozy|g80|pos-?80|xp-?80|80mm|tm-?t88|tm-?t20/i.test(
         this.currentStatus.deviceName || ''
