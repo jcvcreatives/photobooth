@@ -2180,6 +2180,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         ...localConfig,
                         thermalPrinter: {
                           ...localConfig.thermalPrinter,
+                          connectionType: 'bluetooth',
                           printerModel: 'vozy_g80',
                           paperWidthMm: 80,
                           dotsPerLine: 576,
@@ -2219,6 +2220,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         ...localConfig,
                         thermalPrinter: {
                           ...localConfig.thermalPrinter,
+                          connectionType: 'usb',
                           printerModel: 'vozy_g80',
                           paperWidthMm: 80,
                           dotsPerLine: 576,

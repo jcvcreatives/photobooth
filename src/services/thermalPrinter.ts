@@ -114,6 +114,7 @@ class ThermalPrinterService {
     const savedIp = safeStorageGet('snapkiosk_printer_ip');
     const savedPort = safeStorageGet('snapkiosk_printer_port');
     const savedBaud = safeStorageGet('snapkiosk_printer_baud');
+    const savedName = safeStorageGet('snapkiosk_printer_name');
     if (savedIp) this.networkIp = savedIp;
     if (savedPort) this.networkPort = Number(savedPort) || 9100;
     if (savedBaud) this.serialBaudRate = Number(savedBaud) || 9600;
@@ -123,26 +124,35 @@ class ThermalPrinterService {
       this.currentStatus = {
         isConnected: true,
         connectionType: 'system',
-        deviceName: 'Universal USB / Wireless System Printer',
+        deviceName: savedName || 'Universal USB / Wireless System Printer',
         details: 'Prints via OS / Browser Print Spooler (USB Cord, Wi-Fi, AirPrint, Mopria)',
       };
     } else if (savedType === 'network' && savedIp) {
       this.currentStatus = {
         isConnected: true,
         connectionType: 'network',
-        deviceName: `Wireless Printer (${this.networkIp}:${this.networkPort})`,
+        deviceName: savedName || `Wireless Printer (${this.networkIp}:${this.networkPort})`,
         details: 'Wi-Fi / LAN Raw ESC/POS & HTTP',
       };
     } else if (savedType === 'bluetooth' || savedType === 'usb' || savedType === 'serial') {
+      const fallbackLabel =
+        savedName ||
+        (savedType === 'bluetooth'
+          ? 'VOZY G80 (Bluetooth)'
+          : savedType === 'usb'
+          ? 'VOZY G80 (USB Wired)'
+          : `USB-Serial Printer (${this.serialBaudRate} baud)`);
       this.currentStatus = {
-        isConnected: false,
+        isConnected: true,
         connectionType: savedType,
-        deviceName: `Saved ${savedType.toUpperCase()} Printer (tap to connect)`,
+        deviceName: fallbackLabel,
+        details: 'Remembered printer • Auto-reconnects on wake & print',
       };
     }
 
     this.setupUsbHotplugListeners();
     this.setupBluetoothKeepAliveWatchdog();
+    this.setupTabletLockWakeListeners();
     this.setupSilentBridgeListener();
     this.probeSilentBridge();
   }
@@ -225,37 +235,228 @@ class ThermalPrinterService {
   private setupUsbHotplugListeners() {
     if (typeof navigator !== 'undefined' && 'usb' in navigator && navigator.usb) {
       // Auto-reconnect previously authorized WebUSB printer on startup
-      navigator.usb
-        .getDevices()
-        .then(async (devices) => {
-          if (devices && devices.length > 0) {
-            await this.openAndClaimUsbDevice(devices[0]);
-          }
-        })
-        .catch(() => {});
+      this.reconnectRememberedUsb().catch(() => {});
 
       // Hotplug: automatically connect when USB cord is plugged in
       navigator.usb.addEventListener('connect', async (event: any) => {
         if (event?.device) {
-          await this.openAndClaimUsbDevice(event.device);
+          await this.openAndClaimUsbDevice(event.device).catch(() => {});
         }
       });
 
       navigator.usb.addEventListener('disconnect', (event: any) => {
         if (this.usbDevice && event?.device === this.usbDevice) {
+          const rememberedName =
+            safeStorageGet('snapkiosk_printer_name') ||
+            this.currentStatus.deviceName ||
+            'USB Cord Printer';
           this.usbDevice = null;
           this.usbInterfaceNumber = null;
           this.usbEndpointNumber = null;
           this.currentStatus = {
-            isConnected: false,
+            isConnected: true,
             connectionType: 'usb',
-            deviceName: 'USB Printer Disconnected',
-            error: 'USB cable unplugged. Plug back in to auto-reconnect.',
+            deviceName: rememberedName,
+            details: 'Remembered USB printer — auto-reconnects when tablet wakes or cable is ready',
           };
           this.notify();
         }
       });
     }
+
+    if (typeof navigator !== 'undefined' && 'serial' in navigator) {
+      this.reconnectRememberedSerial().catch(() => {});
+    }
+  }
+
+  /**
+   * Automatically wakes and re-establishes Bluetooth, USB, or Serial printer connections
+   * whenever the tablet screen is unlocked (`visibilitychange` -> `visible`), window regains focus,
+   * or the user touches the screen after a lock cycle.
+   */
+  private lastWakeAttemptTs = 0;
+
+  private setupTabletLockWakeListeners() {
+    if (typeof window === 'undefined') return;
+
+    const handleWakeUp = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - this.lastWakeAttemptTs < 1500) return;
+      this.lastWakeAttemptTs = now;
+      this.wakeAndReconnectRememberedPrinter().catch(() => {});
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          handleWakeUp();
+        }
+      });
+    }
+
+    window.addEventListener('focus', handleWakeUp);
+    window.addEventListener('pageshow', handleWakeUp);
+    window.addEventListener('pointerdown', handleWakeUp, { passive: true });
+    window.addEventListener('touchstart', handleWakeUp, { passive: true });
+  }
+
+  public async wakeAndReconnectRememberedPrinter(): Promise<boolean> {
+    if (this.isPrintingBusy) return true;
+    const savedType =
+      (safeStorageGet('snapkiosk_printer_type') as PrinterConnectionType | null) ||
+      this.currentStatus.connectionType;
+
+    if (savedType === 'bluetooth') {
+      return await this.reconnectRememberedBluetooth();
+    }
+    if (savedType === 'usb') {
+      return await this.reconnectRememberedUsb();
+    }
+    if (savedType === 'serial') {
+      return await this.reconnectRememberedSerial();
+    }
+    return true;
+  }
+
+  private async reconnectRememberedBluetooth(): Promise<boolean> {
+    // 1. Check Native Android Bluetooth SPP Bridge first
+    if (typeof window !== 'undefined' && window.AndroidPrinter?.connectBluetooth) {
+      try {
+        const res = window.AndroidPrinter.connectBluetooth();
+        if (res && res.startsWith('OK:')) {
+          const devName = res.slice(3) || safeStorageGet('snapkiosk_printer_name') || 'VOZY G80 (Bluetooth)';
+          this.nativeBluetoothActive = true;
+          this.currentStatus = {
+            isConnected: true,
+            connectionType: 'bluetooth',
+            deviceName: devName,
+            details: 'Remembered & Connected via Android Bluetooth SPP',
+          };
+          safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+          safeStorageSet('snapkiosk_printer_name', devName);
+          this.notify();
+          return true;
+        }
+      } catch {}
+    }
+
+    // 2. If BluetoothDevice handle is still in memory from before the tablet locked
+    if (this.bluetoothDevice) {
+      if (this.bluetoothDevice.gatt?.connected && this.bluetoothCharacteristic) {
+        return true;
+      }
+      const ok = await this.trySilentBluetoothReconnect(this.bluetoothDevice);
+      if (ok) return true;
+    }
+
+    // 3. Query Chrome Web Bluetooth persistent permissions (`navigator.bluetooth.getDevices()`)
+    if (typeof navigator !== 'undefined' && 'bluetooth' in navigator && navigator.bluetooth) {
+      const btNav = navigator.bluetooth as any;
+      if (typeof btNav.getDevices === 'function') {
+        try {
+          const devices: BluetoothDevice[] = await btNav.getDevices();
+          if (devices && devices.length > 0) {
+            const savedId = safeStorageGet('snapkiosk_printer_id');
+            const savedName = (safeStorageGet('snapkiosk_printer_name') || '').toLowerCase();
+            const matched =
+              devices.find((d) => savedId && d.id === savedId) ||
+              devices.find((d) => savedName && (d.name || '').toLowerCase() === savedName) ||
+              devices.find((d) => /vozy|g80|xprinter|58iib|printer|pos/i.test(d.name || '')) ||
+              devices[0];
+            if (matched) {
+              return await this.trySilentBluetoothReconnect(matched);
+            }
+          }
+        } catch {}
+      }
+    }
+
+    return false;
+  }
+
+  private async reconnectRememberedUsb(): Promise<boolean> {
+    // 1. Check Native Android USB OTG Host Bridge
+    if (typeof window !== 'undefined' && window.AndroidPrinter?.connectUsb) {
+      try {
+        const res = window.AndroidPrinter.connectUsb();
+        if (res && res.startsWith('OK:')) {
+          const usbName = res.slice(3) || safeStorageGet('snapkiosk_printer_name') || 'VOZY G80 (USB Wired)';
+          this.nativeUsbActive = true;
+          this.currentStatus = {
+            isConnected: true,
+            connectionType: 'usb',
+            deviceName: usbName,
+            details: 'Remembered & Connected via Android USB OTG',
+          };
+          safeStorageSet('snapkiosk_printer_type', 'usb');
+          safeStorageSet('snapkiosk_printer_name', usbName);
+          this.notify();
+          return true;
+        }
+      } catch {}
+    }
+
+    // 2. If WebUSB device is already open and claimed
+    if (this.usbDevice && (this.usbDevice as any).opened && this.usbEndpointNumber !== null) {
+      return true;
+    }
+
+    // 3. Re-open from in-memory usbDevice or `navigator.usb.getDevices()`
+    if (this.usbDevice) {
+      try {
+        return await this.openAndClaimUsbDevice(this.usbDevice);
+      } catch {}
+    }
+
+    if (typeof navigator !== 'undefined' && 'usb' in navigator && navigator.usb) {
+      try {
+        const devices = await navigator.usb.getDevices();
+        if (devices && devices.length > 0) {
+          const savedVid = Number(safeStorageGet('snapkiosk_usb_vid') || 0);
+          const savedPid = Number(safeStorageGet('snapkiosk_usb_pid') || 0);
+          const matched =
+            devices.find(
+              (d: any) =>
+                savedVid && savedPid && d.vendorId === savedVid && d.productId === savedPid
+            ) || devices[0];
+          if (matched) {
+            return await this.openAndClaimUsbDevice(matched);
+          }
+        }
+      } catch {}
+    }
+
+    return false;
+  }
+
+  private async reconnectRememberedSerial(): Promise<boolean> {
+    if (this.serialPort && this.serialPort.writable) return true;
+    const nav = navigator as any;
+    if (typeof navigator !== 'undefined' && 'serial' in navigator && nav.serial?.getPorts) {
+      try {
+        const ports = await nav.serial.getPorts();
+        if (ports && ports.length > 0) {
+          const port = ports[0];
+          if (!port.writable) {
+            await port.open({ baudRate: this.serialBaudRate });
+          }
+          this.serialPort = port;
+          this.currentStatus = {
+            isConnected: true,
+            connectionType: 'serial',
+            deviceName:
+              safeStorageGet('snapkiosk_printer_name') ||
+              `USB-Serial Printer (${this.serialBaudRate} baud)`,
+            details: 'Remembered & Connected via USB Serial Port',
+          };
+          safeStorageSet('snapkiosk_printer_type', 'serial');
+          this.notify();
+          return true;
+        }
+      } catch {}
+    }
+    return false;
   }
 
   public subscribe(listener: (status: PrinterDeviceStatus) => void): () => void {
@@ -382,41 +583,54 @@ class ThermalPrinterService {
    *   reconnects if the printer or Android Bluetooth stack dropped the idle link.
    */
   private setupBluetoothKeepAliveWatchdog() {
-    if (typeof navigator !== 'undefined' && 'bluetooth' in navigator && navigator.bluetooth) {
-      const btNav = navigator.bluetooth as any;
-      if (typeof btNav.getDevices === 'function') {
-        btNav
-          .getDevices()
-          .then(async (devices: BluetoothDevice[]) => {
-            if (devices && devices.length > 0 && !this.bluetoothDevice) {
-              const savedDevice = devices[0];
-              await this.trySilentBluetoothReconnect(savedDevice);
-            }
-          })
-          .catch(() => {});
-      }
-    }
+    this.reconnectRememberedBluetooth().catch(() => {});
 
     if (!this.btKeepAliveTimer && typeof window !== 'undefined') {
       this.btKeepAliveTimer = setInterval(async () => {
         if (this.isPrintingBusy || this.btReconnecting) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
 
-        // If Native Android Bluetooth SPP is active, keep it warm
-        if (
-          this.nativeBluetoothActive &&
-          typeof window !== 'undefined' &&
-          window.AndroidPrinter?.connectBluetooth
-        ) {
-          return;
-        }
+        await this.wakeAndReconnectRememberedPrinter().catch(() => {});
+      }, 15000);
+    }
+  }
 
-        // If Web Bluetooth device was paired during this shift, verify GATT is still connected
-        if (this.bluetoothDevice) {
-          if (!this.bluetoothDevice.gatt?.connected || !this.bluetoothCharacteristic) {
-            await this.trySilentBluetoothReconnect(this.bluetoothDevice);
+  private attachBluetoothDisconnectListener(device: BluetoothDevice) {
+    const anyDev = device as any;
+    if (anyDev.__jcvDisconnectBound) return;
+    anyDev.__jcvDisconnectBound = true;
+
+    device.addEventListener('gattserverdisconnected', async () => {
+      // Clear active characteristic handle so next print knows to wake GATT,
+      // but KEEP bluetoothDevice in memory and KEEP isConnected = true so locking the tablet never forgets the printer!
+      this.bluetoothCharacteristic = null;
+      const rememberedName =
+        device.name || safeStorageGet('snapkiosk_printer_name') || 'VOZY G80 (Bluetooth)';
+
+      this.currentStatus = {
+        isConnected: true,
+        connectionType: 'bluetooth',
+        deviceName: rememberedName,
+        details: 'Remembered printer • Auto-wakes on unlock or print',
+      };
+      this.notify();
+
+      // Only attempt immediate reconnect if tablet screen is currently unlocked/visible
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        await this.trySilentBluetoothReconnect(device);
+      }
+    });
+
+    // If watchAdvertisements is supported, enable it so Chrome automatically wakes GATT when printer advertises
+    if (typeof anyDev.watchAdvertisements === 'function') {
+      try {
+        anyDev.watchAdvertisements().catch(() => {});
+        device.addEventListener('advertisementreceived', () => {
+          if (!device.gatt?.connected && !this.btReconnecting) {
+            this.trySilentBluetoothReconnect(device).catch(() => {});
           }
-        }
-      }, 45000);
+        });
+      } catch {}
     }
   }
 
@@ -426,24 +640,33 @@ class ThermalPrinterService {
     this.btReconnecting = true;
 
     try {
-      for (let attempt = 0; attempt < 3; attempt++) {
+      this.attachBluetoothDisconnectListener(targetDevice);
+      for (let attempt = 0; attempt < 4; attempt++) {
         try {
           const writeChar = await this.openBluetoothGattCharacteristic(targetDevice);
           if (writeChar) {
+            const devName =
+              targetDevice.name ||
+              safeStorageGet('snapkiosk_printer_name') ||
+              'VOZY G80 (Bluetooth)';
             this.bluetoothDevice = targetDevice;
             this.bluetoothCharacteristic = writeChar;
             this.currentStatus = {
               isConnected: true,
               connectionType: 'bluetooth',
-              deviceName: targetDevice.name || 'Xprinter 58iiB (Bluetooth)',
-              details: '12h Auto-Reconnect & Keep-Alive Active',
+              deviceName: devName,
+              details: 'Remembered & Connected • Auto-Wake Active',
             };
             safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+            safeStorageSet('snapkiosk_printer_name', devName);
+            if (targetDevice.id) {
+              safeStorageSet('snapkiosk_printer_id', targetDevice.id);
+            }
             this.notify();
             return true;
           }
         } catch {
-          await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
       }
       return false;
@@ -519,28 +742,20 @@ class ThermalPrinterService {
 
       this.bluetoothDevice = device;
       this.bluetoothCharacteristic = writeChar;
+      this.attachBluetoothDisconnectListener(device);
 
-      device.addEventListener('gattserverdisconnected', async () => {
-        // Immediately attempt automatic silent reconnection so 9–12 hour Galaxy Tab A11 operation never drops
-        const reconnected = await this.trySilentBluetoothReconnect(device);
-        if (!reconnected) {
-          this.currentStatus = {
-            isConnected: false,
-            connectionType: 'bluetooth',
-            deviceName: device.name || 'Bluetooth Printer',
-            error: 'Bluetooth printer sleeping — will auto-reconnect on next print or tap.',
-          };
-          this.notify();
-        }
-      });
-
+      const connectedName = device.name || 'VOZY G80 (Bluetooth)';
       this.currentStatus = {
         isConnected: true,
         connectionType: 'bluetooth',
-        deviceName: device.name || 'Wireless Bluetooth Printer',
-        details: '12h Auto-Reconnect & Keep-Alive Active',
+        deviceName: connectedName,
+        details: 'Remembered & Connected • Auto-Wake Active',
       };
       safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+      safeStorageSet('snapkiosk_printer_name', connectedName);
+      if (device.id) {
+        safeStorageSet('snapkiosk_printer_id', device.id);
+      }
       this.notify();
       return true;
     } catch (err: unknown) {
@@ -639,15 +854,20 @@ class ThermalPrinterService {
 
     const label =
       [device.manufacturerName, device.productName].filter(Boolean).join(' ') ||
-      'USB Cord Printer';
+      safeStorageGet('snapkiosk_printer_name') ||
+      'VOZY G80 (USB Wired)';
 
     this.currentStatus = {
       isConnected: true,
       connectionType: 'usb',
       deviceName: label,
-      details: `USB Interface #${chosenInterfaceNum} • Endpoint OUT #${chosenOutEndpoint}`,
+      details: `Remembered USB Printer • Interface #${chosenInterfaceNum} OUT #${chosenOutEndpoint}`,
     };
     safeStorageSet('snapkiosk_printer_type', 'usb');
+    safeStorageSet('snapkiosk_printer_name', label);
+    const anyUsb = device as any;
+    if (anyUsb.vendorId) safeStorageSet('snapkiosk_usb_vid', String(anyUsb.vendorId));
+    if (anyUsb.productId) safeStorageSet('snapkiosk_usb_pid', String(anyUsb.productId));
     this.notify();
     return true;
   }
@@ -1885,17 +2105,31 @@ class ThermalPrinterService {
         }
       }
 
-      // B. WebUSB Direct Continuous Bulk Transfer
+      // B. WebUSB Direct Continuous Bulk Transfer (with automatic wake-reconnect if tablet was locked)
+      if (!this.usbDevice || this.usbEndpointNumber === null || !(this.usbDevice as any).opened) {
+        onProgress?.(45, 'Waking remembered USB printer...');
+        await this.reconnectRememberedUsb();
+      }
+
       if (this.usbDevice && this.usbEndpointNumber !== null) {
         try {
           for (let c = 0; c < copies; c++) {
             const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
             onProgress?.(60, `Streaming continuously to USB printer${copyLabel}...`);
             for (let p = 0; p < usbBulkChunks.length; p++) {
-              await this.usbDevice.transferOut(
-                this.usbEndpointNumber,
-                usbBulkChunks[p] as unknown as BufferSource
-              );
+              try {
+                await this.usbDevice.transferOut(
+                  this.usbEndpointNumber,
+                  usbBulkChunks[p] as unknown as BufferSource
+                );
+              } catch {
+                // Re-claim USB interface once if tablet lock suspended the endpoint
+                await this.openAndClaimUsbDevice(this.usbDevice);
+                await this.usbDevice.transferOut(
+                  this.usbEndpointNumber!,
+                  usbBulkChunks[p] as unknown as BufferSource
+                );
+              }
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -1916,30 +2150,35 @@ class ThermalPrinterService {
     }
 
     // 3. USB-Serial Cord Flow (Web Serial API) — Continuous Stream with 0ms Delay
-    if (mode === 'serial' && this.serialPort && this.serialPort.writable) {
-      try {
-        const writer = this.serialPort.writable.getWriter();
-        for (let c = 0; c < copies; c++) {
-          const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-          onProgress?.(60, `Writing continuously to Serial USB${copyLabel}...`);
-          for (let p = 0; p < usbBulkChunks.length; p++) {
-            await writer.write(usbBulkChunks[p]);
+    if (mode === 'serial') {
+      if (!this.serialPort || !this.serialPort.writable) {
+        await this.reconnectRememberedSerial();
+      }
+      if (this.serialPort && this.serialPort.writable) {
+        try {
+          const writer = this.serialPort.writable.getWriter();
+          for (let c = 0; c < copies; c++) {
+            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+            onProgress?.(60, `Writing continuously to Serial USB${copyLabel}...`);
+            for (let p = 0; p < usbBulkChunks.length; p++) {
+              await writer.write(usbBulkChunks[p]);
+            }
+            soundEffects.playPaperCut();
+            if (c < copies - 1) {
+              await new Promise((r) => setTimeout(r, 700));
+            }
           }
-          soundEffects.playPaperCut();
-          if (c < copies - 1) {
-            await new Promise((r) => setTimeout(r, 700));
-          }
+          writer.releaseLock();
+          onProgress?.(100, 'Print complete!');
+          return { success: true, previewDataUrl: dithered.previewDataUrl };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return {
+            success: false,
+            previewDataUrl: dithered.previewDataUrl,
+            error: `USB-Serial print failed: ${msg}`,
+          };
         }
-        writer.releaseLock();
-        onProgress?.(100, 'Print complete!');
-        return { success: true, previewDataUrl: dithered.previewDataUrl };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return {
-          success: false,
-          previewDataUrl: dithered.previewDataUrl,
-          error: `USB-Serial print failed: ${msg}`,
-        };
       }
     }
 
@@ -1980,24 +2219,29 @@ class ThermalPrinterService {
           }
         }
 
-        // If Bluetooth GATT slept during an idle period on the Galaxy Tab A11, auto-reconnect before printing!
-        if (
-          this.bluetoothDevice &&
-          (!this.bluetoothDevice.gatt?.connected || !this.bluetoothCharacteristic)
-        ) {
-          onProgress?.(42, 'Waking up Bluetooth printer connection...');
-          await this.trySilentBluetoothReconnect(this.bluetoothDevice);
+        // If Bluetooth GATT slept while the tablet was locked, automatically wake and reconnect it before printing!
+        if (!this.bluetoothDevice?.gatt?.connected || !this.bluetoothCharacteristic) {
+          onProgress?.(42, 'Waking remembered Bluetooth printer...');
+          await this.reconnectRememberedBluetooth();
         }
 
         if (this.bluetoothCharacteristic) {
           try {
             this.bleMaxChunkBytes = 512;
-            const char = this.bluetoothCharacteristic;
 
             for (let c = 0; c < copies; c++) {
               const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
               onProgress?.(60, `Transmitting continuously via Bluetooth${copyLabel}...`);
-              await this.writeBleChunkSafe(char, escposBytes);
+              try {
+                await this.writeBleChunkSafe(this.bluetoothCharacteristic!, escposBytes);
+              } catch {
+                // Reconnect once if GATT dropped during wake transition and retry
+                await this.reconnectRememberedBluetooth();
+                if (!this.bluetoothCharacteristic) {
+                  throw new Error('Printer still waking up — tap Print again');
+                }
+                await this.writeBleChunkSafe(this.bluetoothCharacteristic, escposBytes);
+              }
               soundEffects.playPaperCut();
               if (c < copies - 1) {
                 await new Promise((r) => setTimeout(r, 800));

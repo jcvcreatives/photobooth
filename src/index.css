@@ -437,6 +437,51 @@
   animation: thermalSlotPulse 1.8s infinite ease-in-out;
 }
 
+/* Full-Screen Big Receipt Printout Sliding Downward Toward Physical Printer Below Tablet */
+@keyframes bigReceiptSlideDownBelow {
+  0% {
+    transform: translate3d(0, -82%, 0);
+    opacity: 0.92;
+  }
+  18% {
+    transform: translate3d(0, -52%, 0);
+    opacity: 1;
+  }
+  42% {
+    transform: translate3d(0, -18%, 0);
+  }
+  68% {
+    transform: translate3d(0, 8%, 0);
+  }
+  88% {
+    transform: translate3d(0, 32%, 0);
+  }
+  100% {
+    transform: translate3d(0, 46%, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes arrowSlideDownBelow {
+  0%, 100% {
+    transform: translateY(0px);
+    opacity: 0.75;
+  }
+  50% {
+    transform: translateY(8px);
+    opacity: 1;
+  }
+}
+
+.animate-big-receipt-slide-below {
+  animation: bigReceiptSlideDownBelow 3.1s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  will-change: transform;
+}
+
+.animate-arrow-down-below {
+  animation: arrowSlideDownBelow 1s infinite ease-in-out;
+}
+
 /* Looping Careful Receipt Tearing Animation */
 @keyframes tearLineProgress {
   0%, 8% {
@@ -612,3 +657,22 @@ body {
   will-change: auto !important;
 }
 
+@keyframes poseEmojiWiggle {
+  0%, 100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-2px) scale(1.08) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(0) scale(1.04) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-2px) scale(1.08) rotate(6deg);
+  }
+}
+
+.animate-pose-emoji {
+  animation: poseEmojiWiggle 1.6s infinite ease-in-out;
+  will-change: transform;
+}

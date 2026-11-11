@@ -20,6 +20,7 @@ import {
   Ticket,
   Share2,
   WifiOff,
+  ChevronDown,
 } from 'lucide-react';
 import { PhotostripResult, ThermalPrinterConfig, RemoteKioskConfig } from '../types';
 import { thermalPrinterService } from '../services/thermalPrinter';
@@ -104,7 +105,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     const timer = setTimeout(() => {
       setIsFeeding(false);
       if (playSound) soundEffects.playPaperCut();
-    }, 2400);
+    }, 3200);
     return timer;
   };
 
@@ -327,6 +328,90 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
 
   return (
     <div className="flex-1 h-full min-h-0 flex flex-col items-center justify-between p-3 sm:p-4 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-md mx-auto w-full">
+      {/* FULL-SCREEN DEDICATED BIG RECEIPT PRINTING SCREEN (Slides Printout Downward Toward Physical Printer Below Tablet) */}
+      {isFeeding && (
+        <div className="fixed inset-0 z-50 bg-[#faf8f5] flex flex-col items-center justify-between overflow-hidden select-none animate-fadeIn">
+          {/* Top Printing Status Header */}
+          <div className="w-full pt-5 pb-3 px-6 bg-white border-b border-zinc-200 shadow-xs flex flex-col items-center text-center z-20 shrink-0">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-zinc-900 text-white text-xs font-mono font-bold uppercase tracking-wider mb-1.5">
+              <Printer className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              <span>Printing Receipt ({activeCopiesCount} {activeCopiesCount === 1 ? 'Copy' : 'Copies'})</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black text-zinc-950 tracking-tight">
+              Printing Your Photo Receipt...
+            </h2>
+            <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
+              {printStatusText || 'Sliding down to the thermal printer below the tablet'}
+            </p>
+          </div>
+
+          {/* Center-to-Bottom Giant Thermal Receipt Chute Sliding Downward */}
+          <div className="relative flex-1 w-full flex flex-col items-center justify-start overflow-hidden pt-3">
+            {/* Top Thermal Printhead Slot Bar */}
+            <div className="w-76 sm:w-96 md:w-[420px] bg-zinc-800 border-2 border-zinc-700 rounded-2xl pt-2.5 pb-2 px-4 shadow-xl z-20 flex flex-col items-center shrink-0">
+              <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-400 uppercase tracking-widest mb-1.5 px-1">
+                <span>VOZY G80 • 80MM THERMAL HEAD</span>
+                <span className="flex items-center gap-1 text-emerald-400 font-bold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  FEEDING DOWN
+                </span>
+              </div>
+              <div className="w-full h-2.5 bg-black rounded-full shadow-inner border border-zinc-600" />
+            </div>
+
+            {/* Paper Chute Window where the Giant Receipt Slides Down Out the Bottom of the Screen */}
+            <div className="relative flex-1 w-full flex justify-center overflow-hidden">
+              <div
+                key={`big-feed-${feedAnimationKey}`}
+                className="w-70 sm:w-88 md:w-96 flex flex-col items-center animate-big-receipt-slide-below"
+              >
+                {/* Big Thermal Receipt Paper */}
+                <div className="w-full bg-white border-x-2 border-t border-zinc-300 shadow-2xl px-4 pt-4 pb-3 flex flex-col items-center relative">
+                  <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-400 border-b border-dashed border-zinc-300 pb-1.5 mb-2.5">
+                    <span>{config.eventTitle || 'JCVCREATIVES'}</span>
+                    <span>80MM RECEIPT</span>
+                  </div>
+
+                  <img
+                    src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
+                    alt="Printing Giant Thermal Receipt"
+                    className="max-h-[54vh] sm:max-h-[58vh] w-auto object-contain select-none pointer-events-none filter contrast-125"
+                  />
+
+                  <div className="w-full mt-3 pt-2 border-t border-dashed border-zinc-300 text-center text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                    ▼ SLIDING TO PRINTER BELOW ▼
+                  </div>
+                </div>
+
+                {/* Serrated Bottom Receipt Edge */}
+                <svg
+                  className="w-full h-3 text-white drop-shadow-md -mt-0.5"
+                  viewBox="0 0 120 8"
+                  preserveAspectRatio="none"
+                >
+                  <polygon
+                    fill="currentColor"
+                    points="0,0 4,8 8,0 12,8 16,0 20,8 24,0 28,8 32,0 36,8 40,0 44,8 48,0 52,8 56,0 60,8 64,0 68,8 72,0 76,8 80,0 84,8 88,0 92,8 96,0 100,8 104,0 108,8 112,0 116,8 120,0"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Edge Exit Slot Pointing Directly to the Physical Printer Below the Tablet */}
+          <div className="w-full bg-zinc-950 text-white py-3.5 px-6 border-t-4 border-cyan-400 shadow-2xl z-30 flex flex-col items-center justify-center shrink-0">
+            <div className="flex items-center gap-3 text-sm sm:text-base font-black uppercase tracking-wider text-cyan-300">
+              <ChevronDown className="w-6 h-6 text-cyan-400 animate-arrow-down-below" />
+              <span>Collect Your Printout Below the Tablet</span>
+              <ChevronDown className="w-6 h-6 text-cyan-400 animate-arrow-down-below" />
+            </div>
+            <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
+              Your photo receipt is dispensing from the printer directly underneath this screen
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex flex-col items-center text-center shrink-0">
         <button

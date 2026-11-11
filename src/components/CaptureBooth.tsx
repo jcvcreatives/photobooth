@@ -29,10 +29,10 @@ interface CaptureBoothProps {
 }
 
 const POSE_PROMPTS = [
-  { emoji: '✌️😄', label: 'Ready Pose!' },
-  { emoji: '🫶✨', label: 'Ready Pose!' },
-  { emoji: '🫰😎', label: 'Ready Pose!' },
-  { emoji: '🤩💖', label: 'Ready Pose!' },
+  { emoji: '✌️', subEmoji: '😄', label: 'Ready Pose!' },
+  { emoji: '🫶', subEmoji: '✨', label: 'Ready Pose!' },
+  { emoji: '🫰', subEmoji: '😎', label: 'Ready Pose!' },
+  { emoji: '🤩', subEmoji: '💖', label: 'Ready Pose!' },
 ];
 
 export const CaptureBooth: React.FC<CaptureBoothProps> = ({
@@ -250,17 +250,15 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   };
 
   return (
-    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between px-2.5 py-2 sm:px-5 sm:py-3 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-3xl lg:max-w-4xl mx-auto w-full">
+    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between gap-2 px-3 py-2.5 sm:px-5 sm:py-3 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-3xl lg:max-w-4xl mx-auto w-full">
       {/* Flash effect overlay */}
       {isFlashing && (
         <div className="fixed inset-0 bg-white z-50 pointer-events-none transition-opacity duration-200" />
       )}
 
-      {/* Top Header (Left X button removed; center brand badge + shot counter; right camera flip) */}
-      <div className="w-full flex items-center justify-between pb-0.5 shrink-0">
-        <div className="w-9" />
-
-        <div className="flex flex-col items-center text-center">
+      {/* Top Header Row + Non-Overlapping Ready Pose Banner */}
+      <div className="w-full flex flex-col items-center gap-2 shrink-0 z-10">
+        <div className="w-full flex items-center justify-between">
           <button
             type="button"
             onClick={() => {
@@ -273,58 +271,73 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
               }
               setLogoTapCount(next);
             }}
-            className="w-6 h-6 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-0.5 cursor-pointer"
+            className="flex items-center gap-2 cursor-pointer"
           >
-            J
+            <span className="w-7 h-7 rounded-lg bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs">
+              J
+            </span>
+            <div className="text-left">
+              <h1 className="text-sm sm:text-base font-bold text-zinc-950 leading-none">
+                Photo {Math.min(currentShotIndex + 1, targetShotCount)} of {targetShotCount}
+              </h1>
+              <p className="text-[11px] text-zinc-500 leading-tight mt-0.5">
+                {countdown !== null
+                  ? `Capturing in ${countdown}...`
+                  : isPreparingPose
+                  ? 'Get ready for next shot...'
+                  : 'Tap shutter when ready'}
+              </p>
+            </div>
           </button>
-          <h1 className="text-base sm:text-lg font-bold text-zinc-950 leading-tight">
-            Photo {Math.min(currentShotIndex + 1, targetShotCount)} of {targetShotCount}
-          </h1>
-          <p className="text-xs text-zinc-500">
-            {countdown !== null
-              ? `Capturing in ${countdown}...`
-              : "Tap the shutter when you're ready"}
-          </p>
-        </div>
 
-        <button
-          type="button"
-          onClick={toggleCameraMirror}
-          title={isMirrored ? 'Mirror On (Tap to Un-Mirror)' : 'Mirror Off (Tap to Mirror)'}
-          className={`p-2 rounded-full transition cursor-pointer flex items-center gap-1 ${
-            isMirrored
-              ? 'bg-zinc-900 text-white shadow-2xs'
-              : 'bg-zinc-200/80 hover:bg-zinc-300/80 text-zinc-700'
-          }`}
-        >
-          <FlipHorizontal className="w-5 h-5" />
-        </button>
-      </div>
-
-      {/* Big Ready Pose & Emoji Animation Banner ABOVE the Camera Frame */}
-      <div className="w-full flex items-center justify-center py-1 shrink-0">
-        <div
-          className={`px-6 py-2 sm:px-8 sm:py-2.5 rounded-2xl border-2 shadow-md flex items-center gap-3.5 transition-all duration-200 ${
-            countdown !== null || isPreparingPose
-              ? 'bg-zinc-900 text-white border-amber-400 scale-105 shadow-xl'
-              : 'bg-white text-zinc-900 border-zinc-300'
-          }`}
-        >
-          <span
-            className={`text-3xl sm:text-4xl md:text-5xl leading-none inline-block animate-bounce ${
-              countdown !== null || isPreparingPose ? 'scale-110' : ''
+          {/* Contained, Non-Overlapping Ready Pose Card */}
+          <div
+            className={`px-4 py-1.5 sm:px-6 sm:py-2 rounded-2xl border-2 shadow-sm flex items-center gap-2.5 sm:gap-3 transition-colors duration-200 overflow-hidden ${
+              countdown !== null || isPreparingPose
+                ? 'bg-zinc-900 text-white border-amber-400 shadow-md'
+                : 'bg-white text-zinc-900 border-zinc-300'
             }`}
           >
-            {currentPose.emoji}
-          </span>
-          <span className="text-base sm:text-xl md:text-2xl font-black tracking-wide uppercase leading-tight">
-            {currentPose.label}
-          </span>
+            <div
+              className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                countdown !== null || isPreparingPose ? 'bg-white/10' : 'bg-zinc-100'
+              }`}
+            >
+              <span className="text-2xl sm:text-3xl leading-none inline-block animate-pose-emoji select-none">
+                {currentPose.emoji}
+              </span>
+            </div>
+            <div className="flex flex-col text-left pr-1">
+              <span
+                className={`text-[10px] font-mono uppercase tracking-wider leading-none ${
+                  countdown !== null || isPreparingPose ? 'text-amber-300' : 'text-zinc-500'
+                }`}
+              >
+                Shot #{Math.min(currentShotIndex + 1, targetShotCount)} {currentPose.subEmoji}
+              </span>
+              <span className="text-sm sm:text-lg md:text-xl font-black tracking-wide uppercase leading-tight whitespace-nowrap mt-0.5">
+                {currentPose.label}
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleCameraMirror}
+            title={isMirrored ? 'Mirror On (Tap to Un-Mirror)' : 'Mirror Off (Tap to Mirror)'}
+            className={`p-2.5 rounded-full transition cursor-pointer flex items-center justify-center shrink-0 ${
+              isMirrored
+                ? 'bg-zinc-900 text-white shadow-2xs'
+                : 'bg-zinc-200/80 hover:bg-zinc-300/80 text-zinc-700'
+            }`}
+          >
+            <FlipHorizontal className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
-      {/* Expanded Full-Size Camera Viewfinder */}
-      <div className="relative flex-1 w-full min-h-[52vh] max-h-[66vh] sm:max-h-[68vh] rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-lg flex items-center justify-center my-1">
+      {/* Expanded Full-Size Camera Viewfinder (flex-1 min-h-0 prevents vertical overlap on any tablet screen) */}
+      <div className="relative flex-1 w-full min-h-0 rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-lg flex items-center justify-center">
         <video
           ref={videoRef}
           autoPlay
