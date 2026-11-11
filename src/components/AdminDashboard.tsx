@@ -1185,7 +1185,148 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* Tab Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 text-white">
+        <div className="flex-1 overflow-y-auto p-6 text-white space-y-6">
+          {/* PINNED TOP COST & PRICING SETTINGS CARD (Always at the top of Admin Dashboard) */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-emerald-950/35 to-slate-900 border-2 border-emerald-500/60 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <DollarSign className="w-5 h-5 text-emerald-400" />
+                  <h2 className="text-sm sm:text-base font-black text-white">
+                    Cost &amp; Layout Pricing Settings
+                  </h2>
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full ${
+                      localConfig.freePlayMode
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    }`}
+                  >
+                    {localConfig.freePlayMode ? 'FREE PLAY ACTIVE (₱0)' : 'PAID / VOUCHER MODE'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Set the cost for each photo layout (<strong className="text-white">1-Shot, 2-Shot, 3-Shot, 4-Shot</strong>) or toggle <strong className="text-emerald-300">Free Play Mode</strong>. Changes save automatically.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    soundEffects.playTap();
+                    const nextFreePlay = !localConfig.freePlayMode;
+                    const updated: RemoteKioskConfig = {
+                      ...localConfig,
+                      freePlayMode: nextFreePlay,
+                    };
+                    setLocalConfig(updated);
+                    await remoteConfigService.updateConfig(updated);
+                    onUpdateConfig(updated);
+                  }}
+                  className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer ${
+                    localConfig.freePlayMode
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                      : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-600'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>
+                    {localConfig.freePlayMode ? 'Free Play: ON (Tap for Paid)' : 'Free Play: OFF (Tap for Free)'}
+                  </span>
+                </button>
+
+                {activeTab !== 'vouchers' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEffects.playTap();
+                      setActiveTab('vouchers');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-400/40 text-indigo-200 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Ticket className="w-3.5 h-3.5" />
+                    <span>Cashier Vouchers</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 4 Layout Cost Inputs + Currency Symbol */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {(
+                [
+                  { id: 'single_polaroid' as FrameLayoutType, label: '1. Polaroid (1 Shot)', fallback: 20 },
+                  { id: 'grid_4' as FrameLayoutType, label: '2. Grid (2 Shots)', fallback: 25 },
+                  { id: 'strip_3' as FrameLayoutType, label: '3. Grid (3 Shots)', fallback: 30 },
+                  { id: 'strip_4' as FrameLayoutType, label: '4. 4-Cut (4 Shots by 2s)', fallback: 40 },
+                ]
+              ).map((item) => {
+                const priceVal = localConfig.layoutPrices?.[item.id] ?? item.fallback;
+                return (
+                  <div
+                    key={item.id}
+                    className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-1"
+                  >
+                    <label className="text-[11px] font-bold text-slate-300 truncate">
+                      {item.label}
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono text-emerald-400 font-bold">
+                        {localConfig.currencySymbol || '₱'}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={5}
+                        value={priceVal}
+                        onChange={(e) =>
+                          handleUpdateLayoutPrice(item.id, Number(e.target.value))
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono font-bold text-xs focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Currency Symbol Selector */}
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-1 col-span-2 sm:col-span-1">
+                <label className="text-[11px] font-bold text-slate-300 truncate">
+                  Currency Symbol
+                </label>
+                <div className="flex items-center gap-1">
+                  {['₱', '$', '€', '¥'].map((sym) => {
+                    const activeSym = (localConfig.currencySymbol || '₱') === sym;
+                    return (
+                      <button
+                        key={sym}
+                        type="button"
+                        onClick={async () => {
+                          soundEffects.playTap();
+                          const updated: RemoteKioskConfig = {
+                            ...localConfig,
+                            currencySymbol: sym,
+                          };
+                          setLocalConfig(updated);
+                          await remoteConfigService.updateConfig(updated);
+                          onUpdateConfig(updated);
+                        }}
+                        className={`flex-1 py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${
+                          activeSym
+                            ? 'bg-emerald-600 border-emerald-400 text-white'
+                            : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {sym}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* TAB 1: Live Telemetry */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
@@ -2328,7 +2469,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 dotsPerLine: is80 ? 576 : 384,
                                 feedLines: modelItem.id === 'vozy_g80' ? 5 : modelItem.id === 'xprinter_58iib' ? 6 : 4,
                                 autoCut: is80 || modelItem.id === 'xprinter_58iib',
-                                buzzerReminder: modelItem.id === 'vozy_g80' ? true : localConfig.thermalPrinter.buzzerReminder,
+                                buzzerReminder: false,
                               },
                             };
                             setLocalConfig(updated);
@@ -2422,14 +2563,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           escPosCommandMode: 'gs_v_0',
                           feedLines: 5,
                           autoCut: true,
-                          buzzerReminder: true,
+                          buzzerReminder: false,
                         },
                       };
                       setLocalConfig(updated);
                       await remoteConfigService.updateConfig(updated);
                       onUpdateConfig(updated);
                       setTestPrintFeedback(
-                        '✓ VOZY G80 (80mm) optimal settings applied (80mm / 576 dots per line, Automatic Cut enabled, Visual & Auditory Reminder active, Bluetooth & USB Wired ready).'
+                        '✓ VOZY G80 (80mm) continuous non-stop print settings applied (80mm / 576 dots per line, Continuous Single-Stream GS v 0, Automatic Cut enabled).'
                       );
                     }}
                     className="px-4 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer shrink-0 flex items-center gap-2"
@@ -2444,8 +2585,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {[
                     { label: 'Model', val: 'VOZY G80' },
                     { label: 'Print Width', val: '80mm (576 dots)' },
+                    { label: 'Print Mode', val: 'Continuous Non-Stop' },
                     { label: 'Auto-Cutter', val: 'Automatic Cut (GS V)' },
-                    { label: 'Reminder', val: 'Visual & Auditory Beep' },
                     { label: 'Interface', val: 'Bluetooth + USB Wired' },
                     { label: 'Device Support', val: 'Cellphone / Tablet / PC' },
                   ].map((spec) => (
@@ -2474,7 +2615,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           dotsPerLine: 576,
                           feedLines: 5,
                           autoCut: true,
-                          buzzerReminder: localConfig.thermalPrinter.buzzerReminder ?? true,
+                          buzzerReminder: Boolean(localConfig.thermalPrinter.buzzerReminder),
                           escPosCommandMode: 'gs_v_0',
                         },
                       };
@@ -2513,7 +2654,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           dotsPerLine: 576,
                           feedLines: 5,
                           autoCut: true,
-                          buzzerReminder: localConfig.thermalPrinter.buzzerReminder ?? true,
+                          buzzerReminder: Boolean(localConfig.thermalPrinter.buzzerReminder),
                           escPosCommandMode: 'gs_v_0',
                         },
                       };
@@ -2550,7 +2691,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {isTestPrinting ? 'Printing VOZY G80 Test...' : '3. Test Print on VOZY G80 (80mm)'}
                       </div>
                       <div className="text-[11px] text-amber-200/90 mt-0.5">
-                        Verify 80mm width, auto-cut &amp; reminder beep
+                        Verify 80mm continuous non-stop print &amp; auto-cut
                       </div>
                     </div>
                     <Printer className="w-4 h-4 text-amber-300 shrink-0" />
@@ -2588,7 +2729,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       type="button"
                       onClick={async () => {
                         soundEffects.playTap();
-                        const nextVal = !(localConfig.thermalPrinter.buzzerReminder ?? true);
+                        const nextVal = !Boolean(localConfig.thermalPrinter.buzzerReminder);
                         const updated: RemoteKioskConfig = {
                           ...localConfig,
                           thermalPrinter: {
@@ -2601,12 +2742,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onUpdateConfig(updated);
                       }}
                       className={`px-3 py-1.5 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
-                        (localConfig.thermalPrinter.buzzerReminder ?? true)
+                        Boolean(localConfig.thermalPrinter.buzzerReminder)
                           ? 'bg-cyan-600 border-cyan-400 text-white'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      🔔 Visual &amp; Auditory Reminder: {(localConfig.thermalPrinter.buzzerReminder ?? true) ? 'ON' : 'OFF'}
+                      🔔 Buzzer Reminder Beep: {Boolean(localConfig.thermalPrinter.buzzerReminder) ? 'ON' : 'OFF'}
                     </button>
                   </div>
 
