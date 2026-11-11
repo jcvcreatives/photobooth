@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FrameLayoutType, FrameTheme, PhotoFilterType, StickerItem, DrawingPath } from '../types';
+import { FrameLayoutType, FrameTheme, PhotoFilterType, StickerItem, DrawingPath, ThermalPrinterConfig } from '../types';
+import { remoteConfigService } from './remoteConfig';
 
 export interface ThemeGroup {
   id: string;
@@ -1288,6 +1289,7 @@ export async function renderPhotostripCanvas(options: {
   qrShareUrl?: string;
   isThermalMode?: boolean;
   thermalBrightness?: number;
+  skipCustomHeader?: boolean;
 }): Promise<HTMLCanvasElement> {
   const {
     photos,
@@ -1299,6 +1301,7 @@ export async function renderPhotostripCanvas(options: {
     dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
     isThermalMode = false,
     thermalBrightness = 45,
+    skipCustomHeader = false,
   } = options;
 
   // Dimensions are exact 2x / 3x integer multiples of 384px (58mm thermal printhead width) and 48px height
@@ -1614,7 +1617,240 @@ export async function renderPhotostripCanvas(options: {
     });
   }
 
+  // 6. Automatically prepend custom receipt header image / text at the top of every printed thermal receipt
+  if (isThermalMode && !skipCustomHeader) {
+    return await prependCustomHeaderToCanvas(canvas);
+  }
+
   return canvas;
+}
+
+/**
+ * Automatically prepends the Admin-configured custom header image and/or custom header text
+ * to the very top of any printed receipt canvas.
+ * Ensures idempotency via `__hasCustomReceiptHeader` so a canvas is never given a duplicate header.
+ */
+export async function prependCustomHeaderToCanvas(
+  sourceCanvas: HTMLCanvasElement,
+  configOverride?: Partial<ThermalPrinterConfig>
+): Promise<HTMLCanvasElement> {
+  if ((sourceCanvas as any).__hasCustomReceiptHeader) {
+    return sourceCanvas;
+  }
+
+  const savedCfg = remoteConfigService.getConfig()?.thermalPrinter;
+  const cfg: Partial<ThermalPrinterConfig> = {
+    ...savedCfg,
+    ...configOverride,
+  };
+
+  if (cfg.customHeaderEnabled === false) {
+    return sourceCanvas;
+  }
+
+  const imgUrl = (cfg.customHeaderImageUrl || '').trim();
+  const mainText = (cfg.customHeaderText || '').trim();
+  const subText = (cfg.customHeaderSubtext || '').trim();
+
+  if (!imgUrl && !mainText && !subText) {
+    return sourceCanvas;
+  }
+
+  const w = sourceCanvas.width || 576;
+  const scale = w / 576;
+  const padTop = Math.round(24 * scale);
+  const padBottom = Math.round(18 * scale);
+  const marginX = Math.round(32 * scale);
+  const maxContentW = Math.max(120, w - marginX * 2);
+
+  // Load custom header image if provided
+  let headerImg: HTMLImageElement | null = null;
+  let drawImgW = 0;
+  let drawImgH = 0;
+
+  if (imgUrl) {
+    headerImg = await new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = imgUrl;
+    });
+
+    if (headerImg) {
+      const nw = headerImg.naturalWidth || headerImg.width || 200;
+      const nh = headerImg.naturalHeight || headerImg.height || 100;
+      const maxImgW = Math.round(maxContentW * 0.9);
+      const maxImgH = Math.round(210 * scale);
+      const ratio = Math.min(maxImgW / nw, maxImgH / nh, 2.5);
+      drawImgW = Math.max(24, Math.round(nw * ratio));
+      drawImgH = Math.max(24, Math.round(nh * ratio));
+    }
+  }
+
+  const fontSizeMode = cfg.customHeaderFontSize || 'medium';
+  const mainFontPx = Math.max(
+    14,
+    Math.round((fontSizeMode === 'large' ? 34 : fontSizeMode === 'small' ? 22 : 28) * scale)
+  );
+  const subFontPx = Math.max(
+    11,
+    Math.round((fontSizeMode === 'large' ? 21 : fontSizeMode === 'small' ? 14 : 17) * scale)
+  );
+
+  // Measure & word-wrap lines using an offscreen context
+  const measureCanvas = document.createElement('canvas');
+  const mCtx = measureCanvas.getContext('2d')!;
+
+  const wrapTextLines = (raw: string, fontSpec: string, maxW: number): string[] => {
+    if (!raw) return [];
+    mCtx.font = fontSpec;
+    const paragraphs = raw.split(/\r?\n/);
+    const lines: string[] = [];
+    for (const para of paragraphs) {
+      const trimmed = para.trim();
+      if (!trimmed) continue;
+      const words = trimmed.split(/\s+/);
+      let currentLine = words[0] || '';
+      for (let i = 1; i < words.length; i++) {
+        const candidate = `${currentLine} ${words[i]}`;
+        if (mCtx.measureText(candidate).width <= maxW) {
+          currentLine = candidate;
+        } else {
+          lines.push(currentLine);
+          currentLine = words[i];
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+    }
+    return lines;
+  };
+
+  const mainFontSpec = `900 ${mainFontPx}px 'Inter', system-ui, -apple-system, sans-serif`;
+  const subFontSpec = `700 ${subFontPx}px 'JetBrains Mono', monospace`;
+
+  const mainLines = wrapTextLines(mainText, mainFontSpec, maxContentW);
+  const subLines = wrapTextLines(subText, subFontSpec, maxContentW);
+
+  const mainLineHeight = Math.round(mainFontPx * 1.25);
+  const subLineHeight = Math.round(subFontPx * 1.32);
+
+  let headerHeight = padTop;
+  if (drawImgH > 0) {
+    headerHeight += drawImgH;
+    if (mainLines.length > 0 || subLines.length > 0) {
+      headerHeight += Math.round(14 * scale);
+    }
+  }
+  if (mainLines.length > 0) {
+    headerHeight += mainLines.length * mainLineHeight;
+    if (subLines.length > 0) {
+      headerHeight += Math.round(6 * scale);
+    }
+  }
+  if (subLines.length > 0) {
+    headerHeight += subLines.length * subLineHeight;
+  }
+  headerHeight += padBottom + Math.round(12 * scale);
+
+  // Keep height a multiple of 8px for clean thermal raster rows
+  headerHeight = Math.ceil(headerHeight / 8) * 8;
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = w;
+  outCanvas.height = headerHeight + sourceCanvas.height;
+  const outCtx = outCanvas.getContext('2d')!;
+
+  // Fill pure white receipt paper background
+  outCtx.fillStyle = '#ffffff';
+  outCtx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+
+  const align = cfg.customHeaderTextAlign || 'center';
+  let cursorY = padTop;
+
+  // 1. Draw custom header image in high-contrast monochrome on white background
+  if (headerImg && drawImgW > 0 && drawImgH > 0) {
+    const imgX =
+      align === 'left'
+        ? marginX
+        : align === 'right'
+        ? w - marginX - drawImgW
+        : Math.round((w - drawImgW) / 2);
+
+    outCtx.save();
+    outCtx.fillStyle = '#ffffff';
+    outCtx.fillRect(imgX, cursorY, drawImgW, drawImgH);
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = 'high';
+    outCtx.drawImage(headerImg, imgX, cursorY, drawImgW, drawImgH);
+
+    // Convert image region to crisp thermal monochrome (compositing transparent pixels on white)
+    const imgData = outCtx.getImageData(imgX, cursorY, drawImgW, drawImgH);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const alpha = d[i + 3] / 255;
+      const r = d[i] * alpha + 255 * (1 - alpha);
+      const g = d[i + 1] * alpha + 255 * (1 - alpha);
+      const b = d[i + 2] * alpha + 255 * (1 - alpha);
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      // Clean contrast S-curve for logos & header graphics
+      const contrasted = Math.max(0, Math.min(255, Math.round((lum - 128) * 1.25 + 128)));
+      d[i] = contrasted;
+      d[i + 1] = contrasted;
+      d[i + 2] = contrasted;
+      d[i + 3] = 255;
+    }
+    outCtx.putImageData(imgData, imgX, cursorY);
+    outCtx.restore();
+
+    cursorY += drawImgH + (mainLines.length > 0 || subLines.length > 0 ? Math.round(14 * scale) : 0);
+  }
+
+  const textX =
+    align === 'left' ? marginX : align === 'right' ? w - marginX : Math.round(w / 2);
+
+  outCtx.fillStyle = '#000000';
+  outCtx.textAlign = align;
+  outCtx.textBaseline = 'top';
+
+  // 2. Draw custom main header text lines
+  if (mainLines.length > 0) {
+    outCtx.font = mainFontSpec;
+    for (const line of mainLines) {
+      outCtx.fillText(line, textX, cursorY);
+      cursorY += mainLineHeight;
+    }
+    if (subLines.length > 0) {
+      cursorY += Math.round(6 * scale);
+    }
+  }
+
+  // 3. Draw custom header subtext lines
+  if (subLines.length > 0) {
+    outCtx.font = subFontSpec;
+    for (const line of subLines) {
+      outCtx.fillText(line, textX, cursorY);
+      cursorY += subLineHeight;
+    }
+  }
+
+  // 4. Draw clean receipt header dashed separator line
+  const dividerY = headerHeight - Math.round(8 * scale);
+  outCtx.save();
+  outCtx.strokeStyle = '#000000';
+  outCtx.lineWidth = Math.max(1.5, Math.round(2 * scale));
+  outCtx.setLineDash([Math.round(8 * scale), Math.round(6 * scale)]);
+  outCtx.beginPath();
+  outCtx.moveTo(marginX, dividerY);
+  outCtx.lineTo(w - marginX, dividerY);
+  outCtx.stroke();
+  outCtx.restore();
+
+  // 5. Draw original receipt / photostrip canvas directly below the custom header
+  outCtx.drawImage(sourceCanvas, 0, headerHeight);
+
+  (outCanvas as any).__hasCustomReceiptHeader = true;
+  return outCanvas;
 }
 
 /**

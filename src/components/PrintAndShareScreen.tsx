@@ -36,6 +36,7 @@ import {
   shareOfflineViaQuickShare,
   startTabletHdPeerHost,
 } from '../services/offlineQrTransfer';
+import { launchFun60FpsConfetti } from '../services/funConfetti';
 import { ThermalPrintPreviewModal } from './ThermalPrintPreviewModal';
 
 interface PrintAndShareScreenProps {
@@ -98,14 +99,26 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   );
   const hasAutoPrintedRef = React.useRef<boolean>(false);
 
+  const confettiCleanupRef = React.useRef<(() => void) | null>(null);
+
+  const triggerFunConfetti = () => {
+    try {
+      confettiCleanupRef.current?.();
+      confettiCleanupRef.current = launchFun60FpsConfetti();
+    } catch {
+      // ignore
+    }
+  };
+
   const triggerFeedAnimation = (playSound: boolean = true) => {
     setFeedAnimationKey((prev) => prev + 1);
     setIsFeeding(true);
     if (playSound) soundEffects.playPrintingMotor();
+    triggerFunConfetti();
     const timer = setTimeout(() => {
       setIsFeeding(false);
       if (playSound) soundEffects.playPaperCut();
-    }, 3200);
+    }, 3100);
     return timer;
   };
 
@@ -137,21 +150,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             }
             setSilentBridgeReady(thermalPrinterService.isSilentBridgeActive());
           }
-          try {
-            const isBatteryPowerSaver =
-              config.tabletEndurance?.powerSaverOnBattery !== false &&
-              enduranceManager.getStatus().isCharging === false;
-            if (!isBatteryPowerSaver) {
-              confetti({
-                particleCount: 60,
-                spread: 75,
-                origin: { x: 0.5, y: 0.4 },
-                colors: ['#0f172a', '#71717a', '#a1a1aa', '#cbd5e1'],
-              });
-            }
-          } catch {
-            // ignore
-          }
         })
         .catch(() => {
           setIsPrinting(false);
@@ -161,30 +159,35 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     return () => {
       unsub();
       clearTimeout(timer);
+      confettiCleanupRef.current?.();
       try {
         confetti.reset();
       } catch {}
     };
   }, []);
 
-  // Generate Self-Contained Offline QR Code (embeds compressed camera portrait + vector frame metadata)
+  // Generate Self-Contained Offline QR Code (deferred so 60fps receipt slide & confetti never drop a frame)
   useEffect(() => {
     let cancelled = false;
-    buildOfflineQrPacket(
-      activeCanvas,
-      result,
-      getSavedOfflineQrMode(),
-      getSavedHotspotOrigin()
-    )
-      .then((packet) => {
-        if (!cancelled && packet?.qrDataUrl) {
-          setOfflineQrPacket(packet);
-          setQrShareDataUrl(packet.qrDataUrl);
-        }
-      })
-      .catch(() => {});
+    const delayMs = showQrModal ? 0 : 1200;
+    const qrTimer = setTimeout(() => {
+      buildOfflineQrPacket(
+        activeCanvas,
+        result,
+        getSavedOfflineQrMode(),
+        getSavedHotspotOrigin()
+      )
+        .then((packet) => {
+          if (!cancelled && packet?.qrDataUrl) {
+            setOfflineQrPacket(packet);
+            setQrShareDataUrl(packet.qrDataUrl);
+          }
+        })
+        .catch(() => {});
+    }, delayMs);
     return () => {
       cancelled = true;
+      clearTimeout(qrTimer);
     };
   }, [activeCanvas, result, showQrModal]);
 
@@ -345,37 +348,38 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             </p>
           </div>
 
-          {/* Center-to-Bottom Giant Thermal Receipt Chute Sliding Downward */}
+          {/* Center-to-Bottom Giant Thermal Receipt Chute Sliding Downward at 60fps */}
           <div className="relative flex-1 w-full flex flex-col items-center justify-start overflow-hidden pt-3">
             {/* Top Thermal Printhead Slot Bar */}
-            <div className="w-76 sm:w-96 md:w-[420px] bg-zinc-800 border-2 border-zinc-700 rounded-2xl pt-2.5 pb-2 px-4 shadow-xl z-20 flex flex-col items-center shrink-0">
-              <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-400 uppercase tracking-widest mb-1.5 px-1">
+            <div className="w-76 sm:w-96 md:w-[420px] bg-zinc-800 border-2 border-zinc-700 rounded-2xl pt-2.5 pb-2 px-4 shadow-lg z-30 flex flex-col items-center shrink-0">
+              <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-300 uppercase tracking-widest mb-1.5 px-1">
                 <span>VOZY G80 • 80MM THERMAL HEAD</span>
-                <span className="flex items-center gap-1 text-emerald-400 font-bold">
+                <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                   FEEDING DOWN
                 </span>
               </div>
-              <div className="w-full h-2.5 bg-black rounded-full shadow-inner border border-zinc-600" />
+              <div className="w-full h-2.5 bg-black rounded-full border border-zinc-600" />
             </div>
 
-            {/* Paper Chute Window where the Giant Receipt Slides Down Out the Bottom of the Screen */}
-            <div className="relative flex-1 w-full flex justify-center overflow-hidden">
+            {/* Clipped Paper Chute Directly Below the Slot (Prevents Paper Showing Above the Thermal Head) */}
+            <div className="relative flex-1 w-full flex justify-center overflow-hidden -mt-2 z-10">
               <div
                 key={`big-feed-${feedAnimationKey}`}
                 className="w-70 sm:w-88 md:w-96 flex flex-col items-center animate-big-receipt-slide-below"
               >
-                {/* Big Thermal Receipt Paper */}
-                <div className="w-full bg-white border-x-2 border-t border-zinc-300 shadow-2xl px-4 pt-4 pb-3 flex flex-col items-center relative">
+                {/* Big High-Resolution Crisp Thermal Receipt Paper */}
+                <div className="w-full bg-white border-x border-t border-zinc-300 shadow-lg px-4 pt-4 pb-3 flex flex-col items-center relative">
                   <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-400 border-b border-dashed border-zinc-300 pb-1.5 mb-2.5">
                     <span>{config.eventTitle || 'JCVCREATIVES'}</span>
                     <span>80MM RECEIPT</span>
                   </div>
 
                   <img
-                    src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
+                    src={result.thermalRasterDataUrl || thermalPreviewUrl || result.compositeDataUrl}
                     alt="Printing Giant Thermal Receipt"
-                    className="max-h-[54vh] sm:max-h-[58vh] w-auto object-contain select-none pointer-events-none filter contrast-125"
+                    decoding="sync"
+                    className="max-h-[54vh] sm:max-h-[58vh] w-auto object-contain select-none pointer-events-none"
                   />
 
                   <div className="w-full mt-3 pt-2 border-t border-dashed border-zinc-300 text-center text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
@@ -385,7 +389,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
 
                 {/* Serrated Bottom Receipt Edge */}
                 <svg
-                  className="w-full h-3 text-white drop-shadow-md -mt-0.5"
+                  className="w-full h-3 text-white -mt-0.5"
                   viewBox="0 0 120 8"
                   preserveAspectRatio="none"
                 >

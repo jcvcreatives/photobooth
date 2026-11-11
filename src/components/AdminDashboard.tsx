@@ -202,6 +202,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [printerBaudRate, setPrinterBaudRate] = useState<number>(
     () => thermalPrinterService.getNetworkSettings().baudRate
   );
+  const [customHeaderStatusMsg, setCustomHeaderStatusMsg] = useState<string | null>(null);
+  const customHeaderFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Home Screen 3-Strips Custom Photos State (Operator / Admin Control Only)
   const [homeStripPhotos, setHomeStripPhotos] = useState<string[]>(() => {
@@ -448,6 +450,98 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     onUpdateConfig(updated);
     setSaveSuccessMsg('Configuration saved successfully!');
     setTimeout(() => setSaveSuccessMsg(''), 2500);
+  };
+
+  const updateCustomHeaderConfig = async (
+    patch: Partial<ThermalPrinterConfig>,
+    feedbackMsg?: string
+  ) => {
+    const updated: RemoteKioskConfig = {
+      ...localConfig,
+      thermalPrinter: {
+        ...localConfig.thermalPrinter,
+        ...patch,
+      },
+    };
+    setLocalConfig(updated);
+    await remoteConfigService.updateConfig(updated);
+    onUpdateConfig(updated);
+    if (feedbackMsg) {
+      setCustomHeaderStatusMsg(feedbackMsg);
+      setTimeout(() => setCustomHeaderStatusMsg(null), 3500);
+    }
+  };
+
+  const handleCustomHeaderImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    soundEffects.playTap();
+
+    try {
+      const processedDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const nw = img.naturalWidth || img.width || 300;
+            const nh = img.naturalHeight || img.height || 120;
+            const maxW = 540;
+            const maxH = 220;
+            const ratio = Math.min(maxW / nw, maxH / nh, 2);
+            const targetW = Math.max(32, Math.round(nw * ratio));
+            const targetH = Math.max(32, Math.round(nh * ratio));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(reader.result as string);
+              return;
+            }
+
+            // Fill pure white receipt background so transparent PNG logos never turn black
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, targetW, targetH);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+
+            // Convert to high-contrast thermal monochrome for crisp receipt printing
+            const imgData = ctx.getImageData(0, 0, targetW, targetH);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              const contrasted = Math.max(0, Math.min(255, Math.round((lum - 128) * 1.2 + 128)));
+              d[i] = contrasted;
+              d[i + 1] = contrasted;
+              d[i + 2] = contrasted;
+              d[i + 3] = 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
+          };
+          img.onerror = () => reject(new Error('Invalid image'));
+          img.src = reader.result as string;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      await updateCustomHeaderConfig(
+        {
+          customHeaderEnabled: true,
+          customHeaderImageUrl: processedDataUrl,
+        },
+        '✓ Custom header image uploaded & added to the top of every printed receipt!'
+      );
+      soundEffects.playSuccessChime();
+    } catch {
+      setCustomHeaderStatusMsg('Could not process image. Please upload a PNG or JPG image.');
+      setTimeout(() => setCustomHeaderStatusMsg(null), 3500);
+    }
+
+    e.target.value = '';
   };
 
   const updateFrontMedia = (patch: Partial<FrontScreenMediaConfig>) => {
@@ -2369,6 +2463,340 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                       );
                     })}
+                  </div>
+                </div>
+              </div>
+
+              {/* #2 CUSTOM RECEIPT HEADER (IMAGE / LOGO & TEXT) — AUTOMATICALLY ADDED TO TOP OF EVERY RECEIPT */}
+              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-mono font-bold uppercase">
+                        Receipt Branding
+                      </span>
+                      <h3 className="text-sm sm:text-base font-bold text-white">
+                        Custom Receipt Header (Image &amp; Text)
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Upload a custom logo/banner image or enter header text to automatically print at the very top of every printed receipt.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        const nextEnabled = localConfig.thermalPrinter.customHeaderEnabled === false;
+                        updateCustomHeaderConfig(
+                          { customHeaderEnabled: nextEnabled },
+                          nextEnabled
+                            ? '✓ Custom receipt header enabled'
+                            : 'Custom receipt header paused'
+                        );
+                      }}
+                      className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                        localConfig.thermalPrinter.customHeaderEnabled !== false
+                          ? 'bg-emerald-600 border-emerald-400 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {localConfig.thermalPrinter.customHeaderEnabled !== false
+                        ? '✓ Header Active: ON'
+                        : 'Header: OFF'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                  {/* Left Controls: Image Upload + Header Text Inputs + Alignment & Size */}
+                  <div className="lg:col-span-7 space-y-3.5">
+                    {/* 1. Custom Header Image Upload */}
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div>
+                          <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>1. Custom Header Image / Logo</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            PNG, JPG, or WEBP — auto-formatted to high-contrast thermal monochrome
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={customHeaderFileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleCustomHeaderImageUpload}
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEffects.playTap();
+                              customHeaderFileInputRef.current?.click();
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>
+                              {localConfig.thermalPrinter.customHeaderImageUrl
+                                ? 'Change Image'
+                                : 'Upload Image'}
+                            </span>
+                          </button>
+
+                          {localConfig.thermalPrinter.customHeaderImageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                soundEffects.playTap();
+                                updateCustomHeaderConfig(
+                                  { customHeaderImageUrl: '' },
+                                  'Removed custom header image'
+                                );
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500/50 text-rose-300 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Remove</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2. Custom Header Text & Subtitle */}
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-white">
+                          2. Custom Header Text (Main Title at Top of Receipt)
+                        </label>
+                        <input
+                          type="text"
+                          value={localConfig.thermalPrinter.customHeaderText || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setLocalConfig((prev) => ({
+                              ...prev,
+                              thermalPrinter: {
+                                ...prev.thermalPrinter,
+                                customHeaderEnabled: true,
+                                customHeaderText: val,
+                              },
+                            }));
+                          }}
+                          onBlur={() =>
+                            updateCustomHeaderConfig(
+                              {
+                                customHeaderEnabled: true,
+                                customHeaderText: localConfig.thermalPrinter.customHeaderText || '',
+                              },
+                              '✓ Saved custom receipt header text'
+                            )
+                          }
+                          placeholder="e.g. GOBBLE HAUS • OFFICIAL PHOTO RECEIPT"
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm focus:outline-none focus:border-cyan-400"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-slate-300">
+                          3. Header Subtext / Line 2 (Optional Address, Date, or Tagline)
+                        </label>
+                        <input
+                          type="text"
+                          value={localConfig.thermalPrinter.customHeaderSubtext || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setLocalConfig((prev) => ({
+                              ...prev,
+                              thermalPrinter: {
+                                ...prev.thermalPrinter,
+                                customHeaderEnabled: true,
+                                customHeaderSubtext: val,
+                              },
+                            }));
+                          }}
+                          onBlur={() =>
+                            updateCustomHeaderConfig(
+                              {
+                                customHeaderEnabled: true,
+                                customHeaderSubtext:
+                                  localConfig.thermalPrinter.customHeaderSubtext || '',
+                              },
+                              '✓ Saved custom receipt header subtext'
+                            )
+                          }
+                          placeholder="e.g. Thank you for celebrating with us! • #GobbleHaus"
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none focus:border-cyan-400"
+                        />
+                      </div>
+
+                      {/* Alignment & Font Size Controls */}
+                      <div className="pt-1 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-mono text-slate-400">Align:</span>
+                          {(['left', 'center', 'right'] as const).map((alignOpt) => {
+                            const activeAlign =
+                              (localConfig.thermalPrinter.customHeaderTextAlign || 'center') ===
+                              alignOpt;
+                            return (
+                              <button
+                                key={alignOpt}
+                                type="button"
+                                onClick={() => {
+                                  soundEffects.playTap();
+                                  updateCustomHeaderConfig({ customHeaderTextAlign: alignOpt });
+                                }}
+                                className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-bold uppercase transition cursor-pointer ${
+                                  activeAlign
+                                    ? 'bg-white border-white text-slate-950'
+                                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                {alignOpt}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-mono text-slate-400">Size:</span>
+                          {(['small', 'medium', 'large'] as const).map((sizeOpt) => {
+                            const activeSize =
+                              (localConfig.thermalPrinter.customHeaderFontSize || 'medium') ===
+                              sizeOpt;
+                            return (
+                              <button
+                                key={sizeOpt}
+                                type="button"
+                                onClick={() => {
+                                  soundEffects.playTap();
+                                  updateCustomHeaderConfig({ customHeaderFontSize: sizeOpt });
+                                }}
+                                className={`px-2.5 py-1 rounded-lg border font-mono text-[11px] font-bold uppercase transition cursor-pointer ${
+                                  activeSize
+                                    ? 'bg-white border-white text-slate-950'
+                                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                {sizeOpt}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {customHeaderStatusMsg && (
+                      <div className="text-xs font-semibold text-emerald-400">
+                        {customHeaderStatusMsg}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Live Top-of-Receipt Preview + Test Print Button */}
+                  <div className="lg:col-span-5 flex flex-col items-center">
+                    <div className="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col items-center space-y-3">
+                      <div className="w-full flex items-center justify-between text-[11px] font-mono text-slate-400">
+                        <span>LIVE TOP-OF-RECEIPT PREVIEW</span>
+                        <span>{localConfig.thermalPrinter.paperWidthMm || 80}mm Roll</span>
+                      </div>
+
+                      {/* Simulated White Thermal Receipt Paper Top */}
+                      <div
+                        className={`w-full max-w-[280px] bg-white text-black rounded-t-md shadow-md px-4 pt-4 pb-3 border border-slate-300 flex flex-col ${
+                          (localConfig.thermalPrinter.customHeaderTextAlign || 'center') === 'left'
+                            ? 'items-start text-left'
+                            : (localConfig.thermalPrinter.customHeaderTextAlign || 'center') ===
+                              'right'
+                            ? 'items-end text-right'
+                            : 'items-center text-center'
+                        }`}
+                      >
+                        {localConfig.thermalPrinter.customHeaderEnabled !== false &&
+                        (localConfig.thermalPrinter.customHeaderImageUrl ||
+                          localConfig.thermalPrinter.customHeaderText?.trim() ||
+                          localConfig.thermalPrinter.customHeaderSubtext?.trim()) ? (
+                          <>
+                            {localConfig.thermalPrinter.customHeaderImageUrl && (
+                              <img
+                                src={localConfig.thermalPrinter.customHeaderImageUrl}
+                                alt="Custom Receipt Header"
+                                className="max-h-20 w-auto object-contain mb-2"
+                              />
+                            )}
+                            {localConfig.thermalPrinter.customHeaderText?.trim() && (
+                              <div
+                                className={`font-black tracking-tight text-black leading-tight break-words w-full ${
+                                  localConfig.thermalPrinter.customHeaderFontSize === 'large'
+                                    ? 'text-base'
+                                    : localConfig.thermalPrinter.customHeaderFontSize === 'small'
+                                    ? 'text-xs'
+                                    : 'text-sm'
+                                }`}
+                              >
+                                {localConfig.thermalPrinter.customHeaderText}
+                              </div>
+                            )}
+                            {localConfig.thermalPrinter.customHeaderSubtext?.trim() && (
+                              <div
+                                className={`font-mono font-bold text-zinc-800 mt-0.5 leading-snug break-words w-full ${
+                                  localConfig.thermalPrinter.customHeaderFontSize === 'large'
+                                    ? 'text-xs'
+                                    : 'text-[10px]'
+                                }`}
+                              >
+                                {localConfig.thermalPrinter.customHeaderSubtext}
+                              </div>
+                            )}
+                            <div className="w-full border-b-2 border-dashed border-black mt-2.5 mb-1.5" />
+                          </>
+                        ) : (
+                          <div className="py-3 text-[11px] font-mono text-zinc-400 text-center w-full">
+                            Upload an image or type header text on the left to add a custom header to every receipt.
+                          </div>
+                        )}
+
+                        {/* Simulated Photostrip Placeholder Below Header */}
+                        <div className="w-full py-2.5 bg-zinc-100 border border-zinc-300 rounded flex flex-col items-center justify-center text-[10px] font-mono text-zinc-500">
+                          <span>[ PHOTOSTRIP / RECEIPT BODY ]</span>
+                        </div>
+                      </div>
+
+                      <div className="w-full flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateCustomHeaderConfig(
+                              {
+                                customHeaderEnabled: true,
+                                customHeaderText: localConfig.thermalPrinter.customHeaderText || '',
+                                customHeaderSubtext:
+                                  localConfig.thermalPrinter.customHeaderSubtext || '',
+                              },
+                              '✓ Custom receipt header saved!'
+                            )
+                          }
+                          className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer"
+                        >
+                          Save Header
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isTestPrinting}
+                          onClick={handleTestPrint}
+                          className="flex-1 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                        >
+                          {isTestPrinting ? 'Printing...' : 'Test Print Header'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

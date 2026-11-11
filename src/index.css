@@ -382,41 +382,13 @@
   will-change: transform;
 }
 
-/* Thermal Printer Physical Output Slide-out Animation */
+/* Thermal Printer Physical Output Slide-out Animation (60fps GPU-composited) */
 @keyframes thermalFeedOut {
   0% {
-    transform: translateY(-102%);
-    opacity: 0.85;
-    filter: brightness(0.95);
-  }
-  14% {
-    transform: translateY(-80%);
-  }
-  26% {
-    transform: translateY(-72%);
-  }
-  38% {
-    transform: translateY(-54%);
-  }
-  50% {
-    transform: translateY(-44%);
-  }
-  64% {
-    transform: translateY(-26%);
-  }
-  78% {
-    transform: translateY(-12%);
-  }
-  90% {
-    transform: translateY(3px);
-  }
-  96% {
-    transform: translateY(-1px);
+    transform: translate3d(0, -100%, 0);
   }
   100% {
-    transform: translateY(0);
-    opacity: 1;
-    filter: brightness(1);
+    transform: translate3d(0, 0%, 0);
   }
 }
 
@@ -431,55 +403,47 @@
 
 .animate-thermalFeed {
   animation: thermalFeedOut 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .animate-slotPulse {
   animation: thermalSlotPulse 1.8s infinite ease-in-out;
 }
 
-/* Full-Screen Big Receipt Printout Sliding Downward Toward Physical Printer Below Tablet */
+/* Full-Screen Big Receipt Printout Sliding Downward Toward Physical Printer Below Tablet (Pure 60fps GPU Glide) */
 @keyframes bigReceiptSlideDownBelow {
   0% {
-    transform: translate3d(0, -82%, 0);
-    opacity: 0.92;
-  }
-  18% {
-    transform: translate3d(0, -52%, 0);
-    opacity: 1;
-  }
-  42% {
-    transform: translate3d(0, -18%, 0);
-  }
-  68% {
-    transform: translate3d(0, 8%, 0);
-  }
-  88% {
-    transform: translate3d(0, 32%, 0);
+    transform: translate3d(0, -96%, 0);
   }
   100% {
-    transform: translate3d(0, 46%, 0);
-    opacity: 1;
+    transform: translate3d(0, 26%, 0);
   }
 }
 
 @keyframes arrowSlideDownBelow {
   0%, 100% {
-    transform: translateY(0px);
+    transform: translate3d(0, 0px, 0);
     opacity: 0.75;
   }
   50% {
-    transform: translateY(8px);
+    transform: translate3d(0, 8px, 0);
     opacity: 1;
   }
 }
 
 .animate-big-receipt-slide-below {
-  animation: bigReceiptSlideDownBelow 3.1s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation: bigReceiptSlideDownBelow 3.0s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   will-change: transform;
+  backface-visibility: hidden;
+  perspective: 1000px;
+  transform: translateZ(0);
 }
 
 .animate-arrow-down-below {
-  animation: arrowSlideDownBelow 1s infinite ease-in-out;
+  animation: arrowSlideDownBelow 0.9s infinite ease-in-out;
+  will-change: transform;
 }
 
 /* Looping Careful Receipt Tearing Animation */

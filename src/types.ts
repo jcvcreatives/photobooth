@@ -169,6 +169,12 @@ export interface ThermalPrinterConfig {
   serialBaudRate?: number;
   systemPrintColor?: boolean;
   escPosCommandMode?: 'gs_v_0' | 'gs_v_0_banded' | 'esc_star_33';
+  customHeaderEnabled?: boolean;
+  customHeaderText?: string;
+  customHeaderSubtext?: string;
+  customHeaderImageUrl?: string;
+  customHeaderTextAlign?: 'left' | 'center' | 'right';
+  customHeaderFontSize?: 'small' | 'medium' | 'large';
 }
 
 export interface EmailQueueItem {

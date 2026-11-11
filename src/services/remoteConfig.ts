@@ -41,6 +41,12 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
     feedLines: 5,
     density: 'normal',
     escPosCommandMode: 'gs_v_0',
+    customHeaderEnabled: true,
+    customHeaderText: '',
+    customHeaderSubtext: '',
+    customHeaderImageUrl: '',
+    customHeaderTextAlign: 'center',
+    customHeaderFontSize: 'medium',
   },
   tabletEndurance: {
     enabled: true,

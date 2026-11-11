@@ -6,6 +6,7 @@
 import { ThermalPrinterConfig, PrinterConnectionType } from '../types';
 import { soundEffects } from './soundEffects';
 import { safeStorageGet, safeStorageSet } from './storage';
+import { prependCustomHeaderToCanvas } from './frameTemplates';
 
 export interface PrinterDeviceStatus {
   isConnected: boolean;
@@ -2033,16 +2034,26 @@ class ThermalPrinterService {
     const targetWidth = is80mmModel ? 576 : is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
 
     onProgress?.(15, 'Calibrating print head gamma & energy curve...');
+    // Yield to browser animation frames so the 60fps downward receipt slide & 60fps confetti start with zero main-thread lag
+    await new Promise((r) => setTimeout(r, 70));
+
+    // Automatically add custom header image and/or text to the top of every printed receipt if not already applied
+    const receiptCanvas = await prependCustomHeaderToCanvas(canvas, config);
+
+    const calibratedCanvas = this.applyDarknessToCanvas(receiptCanvas, config);
+    const hdPreviewUrl = calibratedCanvas.toDataURL('image/jpeg', 0.96);
+
+    await new Promise((r) => setTimeout(r, 16));
     const dithered = this.generateDitheredRaster(
-      canvas,
+      receiptCanvas,
       targetWidth,
       1.0,
       0,
       config
     );
-    const calibratedCanvas = this.applyDarknessToCanvas(canvas, config);
 
     onProgress?.(35, 'Compiling continuous ESC/POS raster stream...');
+    await new Promise((r) => setTimeout(r, 16));
     const commandBands = this.buildEscPosCommandBands(
       dithered.bitmap,
       dithered.width,
@@ -2068,7 +2079,7 @@ class ThermalPrinterService {
       soundEffects.playPaperCut();
       return {
         success: sysRes.success,
-        previewDataUrl: dithered.previewDataUrl,
+        previewDataUrl: hdPreviewUrl,
         error: sysRes.error,
       };
     }
@@ -2094,12 +2105,12 @@ class ThermalPrinterService {
             }
           }
           onProgress?.(100, 'USB Print complete!');
-          return { success: true, previewDataUrl: dithered.previewDataUrl };
+          return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           return {
             success: false,
-            previewDataUrl: dithered.previewDataUrl,
+            previewDataUrl: hdPreviewUrl,
             error: `USB OTG print failed: ${msg}`,
           };
         }
@@ -2137,12 +2148,12 @@ class ThermalPrinterService {
             }
           }
           onProgress?.(100, 'Print complete!');
-          return { success: true, previewDataUrl: dithered.previewDataUrl };
+          return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           return {
             success: false,
-            previewDataUrl: dithered.previewDataUrl,
+            previewDataUrl: hdPreviewUrl,
             error: `USB print failed: ${msg}`,
           };
         }
@@ -2170,12 +2181,12 @@ class ThermalPrinterService {
           }
           writer.releaseLock();
           onProgress?.(100, 'Print complete!');
-          return { success: true, previewDataUrl: dithered.previewDataUrl };
+          return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           return {
             success: false,
-            previewDataUrl: dithered.previewDataUrl,
+            previewDataUrl: hdPreviewUrl,
             error: `USB-Serial print failed: ${msg}`,
           };
         }
@@ -2208,12 +2219,12 @@ class ThermalPrinterService {
               }
             }
             onProgress?.(100, 'Bluetooth Print complete!');
-            return { success: true, previewDataUrl: dithered.previewDataUrl };
+            return { success: true, previewDataUrl: hdPreviewUrl };
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             return {
               success: false,
-              previewDataUrl: dithered.previewDataUrl,
+              previewDataUrl: hdPreviewUrl,
               error: `Bluetooth print failed: ${msg}`,
             };
           }
@@ -2248,12 +2259,12 @@ class ThermalPrinterService {
               }
             }
             onProgress?.(100, 'Print complete!');
-            return { success: true, previewDataUrl: dithered.previewDataUrl };
+            return { success: true, previewDataUrl: hdPreviewUrl };
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             return {
               success: false,
-              previewDataUrl: dithered.previewDataUrl,
+              previewDataUrl: hdPreviewUrl,
               error: `Bluetooth print failed: ${msg}`,
             };
           }
@@ -2289,12 +2300,12 @@ class ThermalPrinterService {
             }
           }
           onProgress?.(100, 'Wireless Network Print complete!');
-          return { success: true, previewDataUrl: dithered.previewDataUrl };
+          return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           return {
             success: false,
-            previewDataUrl: dithered.previewDataUrl,
+            previewDataUrl: hdPreviewUrl,
             error: `Network print (${ip}:${port}) failed: ${msg}`,
           };
         }
@@ -2324,12 +2335,12 @@ class ThermalPrinterService {
           }
         }
         onProgress?.(100, 'Wireless Print sent!');
-        return { success: true, previewDataUrl: dithered.previewDataUrl };
+        return { success: true, previewDataUrl: hdPreviewUrl };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
           success: false,
-          previewDataUrl: dithered.previewDataUrl,
+          previewDataUrl: hdPreviewUrl,
           error: `Could not reach wireless printer at ${ip}:${port} (${msg}). Ensure printer is on the same Wi-Fi network.`,
         };
       }
@@ -2345,7 +2356,7 @@ class ThermalPrinterService {
 
     return {
       success: true,
-      previewDataUrl: dithered.previewDataUrl,
+      previewDataUrl: hdPreviewUrl,
     };
   }
 }

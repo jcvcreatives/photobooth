@@ -221,6 +221,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           drawings: [],
           isThermalMode: isThermal,
           thermalBrightness: printBrightness,
+          skipCustomHeader: true,
         });
 
         if (active) {
@@ -441,8 +442,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         thermalBrightness: printBrightness,
       });
 
-      const targetWidth = thermalTheme.borderStyle === 'wide' ? 576 : 384;
-      const dithered = thermalPrinterService.generateDitheredRaster(thermalCanvas, targetWidth, 1.0, 0);
+      const hdThermalDataUrl = thermalCanvas.toDataURL('image/jpeg', 0.96);
 
       // 2. Full color digital canvas (for phone QR and email download)
       const colorCanvas = await renderPhotostripCanvas({
@@ -457,7 +457,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         isThermalMode: false,
       });
 
-      const fullDataUrl = colorCanvas.toDataURL('image/jpeg', 0.95);
+      const fullDataUrl = colorCanvas.toDataURL('image/jpeg', 0.96);
       const shareId = `snap_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const shareUrl = `${getCurrentAppBaseUrl()}?share=${shareId}`;
 
@@ -466,7 +466,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         createdAt: Date.now(),
         photos: editablePhotos,
         compositeDataUrl: fullDataUrl, // Full color strip for phone QR & email
-        thermalRasterDataUrl: dithered.previewDataUrl, // Crisp monochrome for thermal dispenser
+        thermalRasterDataUrl: hdThermalDataUrl, // High-resolution smooth monochrome receipt for crisp non-pixelated display
         layout: currentLayout,
         themeId: thermalTheme.id,
         filter,
