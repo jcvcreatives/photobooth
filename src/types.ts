@@ -151,7 +151,7 @@ export type PrinterConnectionType =
 
 export interface ThermalPrinterConfig {
   connectionType: PrinterConnectionType;
-  printerModel?: 'xprinter_58iib' | 'kprinter_461a' | 'epson_80mm' | 'generic_58mm';
+  printerModel?: 'xprinter_58iib' | 'vozy_g80' | 'kprinter_461a' | 'epson_80mm' | 'generic_58mm';
   deviceName?: string;
   paperWidthMm: 58 | 80;
   dotsPerLine: 384 | 576;
@@ -160,6 +160,7 @@ export interface ThermalPrinterConfig {
   printDarkness?: number; // 5 to 100 (35 default — controls overall printer printout darkness)
   gamma?: number; // 0.40 to 1.60 (0.68 default — maps input brightness to physical print head energy levels)
   autoCut: boolean;
+  buzzerReminder?: boolean; // Auditory & visual reminder beep on VOZY G80 / 80mm POS printers
   printCopies: number;
   feedLines: number;
   density: 'light' | 'normal' | 'dark';

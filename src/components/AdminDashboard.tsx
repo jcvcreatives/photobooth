@@ -2304,7 +2304,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <span className="text-slate-400 font-mono">Hardware Profile:</span>
                     {(
                       [
-                        { id: 'xprinter_58iib', label: 'Xprinter 58iiB (USB + BT) ★' },
+                        { id: 'xprinter_58iib', label: 'Xprinter 58iiB (58mm • USB + BT) ★' },
+                        { id: 'vozy_g80', label: 'VOZY G80 (80mm • BT + USB + Auto-Cut) ★' },
                         { id: 'kprinter_461a', label: 'KPrinter_461a / MP58-09' },
                         { id: 'epson_80mm', label: '80mm Desktop POS' },
                       ] as const
@@ -2317,7 +2318,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           type="button"
                           onClick={async () => {
                             soundEffects.playTap();
-                            const is80 = modelItem.id === 'epson_80mm';
+                            const is80 = modelItem.id === 'vozy_g80' || modelItem.id === 'epson_80mm';
                             const updated: RemoteKioskConfig = {
                               ...localConfig,
                               thermalPrinter: {
@@ -2325,8 +2326,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 printerModel: modelItem.id,
                                 paperWidthMm: is80 ? 80 : 58,
                                 dotsPerLine: is80 ? 576 : 384,
-                                feedLines: modelItem.id === 'xprinter_58iib' ? 6 : 4,
+                                feedLines: modelItem.id === 'vozy_g80' ? 5 : modelItem.id === 'xprinter_58iib' ? 6 : 4,
                                 autoCut: is80 || modelItem.id === 'xprinter_58iib',
+                                buzzerReminder: modelItem.id === 'vozy_g80' ? true : localConfig.thermalPrinter.buzzerReminder,
                               },
                             };
                             setLocalConfig(updated);
@@ -2347,7 +2349,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   {/* Tear-Bar Paper Advance Lines */}
                   <div className="flex items-center gap-1.5">
-                    <span className="text-slate-400 font-mono">Tear-Bar Advance:</span>
+                    <span className="text-slate-400 font-mono">Tear-Bar / Cutter Advance:</span>
                     {[3, 4, 5, 6, 7].map((lines) => (
                       <button
                         key={lines}
@@ -2375,6 +2377,242 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </button>
                     ))}
                   </div>
+                </div>
+              </div>
+
+              {/* DEDICATED VOZY G80 RECEIPT PRINTER (80mm • BLUETOOTH + USB WIRED • AUTO-CUT) PROFILE CARD */}
+              <div className="p-5 bg-gradient-to-br from-slate-900 via-cyan-950/45 to-slate-900 border-2 border-cyan-500/70 rounded-2xl space-y-4 shadow-xl">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-md bg-cyan-500 text-slate-950 text-[10px] font-black uppercase tracking-wider">
+                        80mm Auto-Cut Booth Printer
+                      </span>
+                      <h3 className="text-base sm:text-lg font-black text-white">
+                        VOZY G80 Receipt Printer — 80mm (Bluetooth &amp; USB Wired)
+                      </h3>
+                      {localConfig.thermalPrinter.printerModel === 'vozy_g80' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-mono font-bold">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>VOZY G80 Profile Active (80mm)</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Full compatibility for your <strong>VOZY G80 Receipt Printer</strong>: <strong>80mm Print Width (576 dots/line)</strong> • <strong>Automatic Paper Cutter (GS V)</strong> • <strong>Visual &amp; Auditory Reminder Beep</strong> • <strong>Cellphone / Tablet / PC Connection (Wireless Bluetooth &amp; USB Wired)</strong>.
+                    </p>
+                  </div>
+
+                  {/* 1-Tap Apply VOZY G80 Optimal Settings Button */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      soundEffects.playTap();
+                      const updated: RemoteKioskConfig = {
+                        ...localConfig,
+                        thermalPrinter: {
+                          ...localConfig.thermalPrinter,
+                          printerModel: 'vozy_g80',
+                          paperWidthMm: 80,
+                          dotsPerLine: 576,
+                          contrast: 40,
+                          brightness: 45,
+                          printDarkness: 38,
+                          density: 'normal',
+                          escPosCommandMode: 'gs_v_0',
+                          feedLines: 5,
+                          autoCut: true,
+                          buzzerReminder: true,
+                        },
+                      };
+                      setLocalConfig(updated);
+                      await remoteConfigService.updateConfig(updated);
+                      onUpdateConfig(updated);
+                      setTestPrintFeedback(
+                        '✓ VOZY G80 (80mm) optimal settings applied (80mm / 576 dots per line, Automatic Cut enabled, Visual & Auditory Reminder active, Bluetooth & USB Wired ready).'
+                      );
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer shrink-0 flex items-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Apply VOZY G80 (80mm) Settings</span>
+                  </button>
+                </div>
+
+                {/* VOZY G80 Hardware Spec Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-1">
+                  {[
+                    { label: 'Model', val: 'VOZY G80' },
+                    { label: 'Print Width', val: '80mm (576 dots)' },
+                    { label: 'Auto-Cutter', val: 'Automatic Cut (GS V)' },
+                    { label: 'Reminder', val: 'Visual & Auditory Beep' },
+                    { label: 'Interface', val: 'Bluetooth + USB Wired' },
+                    { label: 'Device Support', val: 'Cellphone / Tablet / PC' },
+                  ].map((spec) => (
+                    <div
+                      key={spec.label}
+                      className="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800/90 flex flex-col justify-between"
+                    >
+                      <span className="text-[9px] uppercase font-mono text-slate-400">{spec.label}</span>
+                      <span className="text-xs font-bold text-cyan-200 mt-0.5">{spec.val}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Quick Connect Buttons for VOZY G80 (Bluetooth + USB Wired + Test Print) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      soundEffects.playTap();
+                      const updated: RemoteKioskConfig = {
+                        ...localConfig,
+                        thermalPrinter: {
+                          ...localConfig.thermalPrinter,
+                          printerModel: 'vozy_g80',
+                          paperWidthMm: 80,
+                          dotsPerLine: 576,
+                          feedLines: 5,
+                          autoCut: true,
+                          buzzerReminder: localConfig.thermalPrinter.buzzerReminder ?? true,
+                          escPosCommandMode: 'gs_v_0',
+                        },
+                      };
+                      setLocalConfig(updated);
+                      await remoteConfigService.updateConfig(updated);
+                      onUpdateConfig(updated);
+                      await thermalPrinterService.connectBluetooth();
+                    }}
+                    className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
+                      localConfig.thermalPrinter.printerModel === 'vozy_g80' &&
+                      printerStatus.connectionType === 'bluetooth' &&
+                      printerStatus.isConnected
+                        ? 'bg-emerald-950/60 border-emerald-400 text-emerald-200'
+                        : 'bg-cyan-600/20 border-cyan-500/50 hover:bg-cyan-600/30 text-white'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm">1. Pair VOZY G80 Bluetooth</div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        Wireless Cellphone / Tablet / PC Bluetooth (BLE &amp; SPP)
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-cyan-300 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      soundEffects.playTap();
+                      const updated: RemoteKioskConfig = {
+                        ...localConfig,
+                        thermalPrinter: {
+                          ...localConfig.thermalPrinter,
+                          printerModel: 'vozy_g80',
+                          paperWidthMm: 80,
+                          dotsPerLine: 576,
+                          feedLines: 5,
+                          autoCut: true,
+                          buzzerReminder: localConfig.thermalPrinter.buzzerReminder ?? true,
+                          escPosCommandMode: 'gs_v_0',
+                        },
+                      };
+                      setLocalConfig(updated);
+                      await remoteConfigService.updateConfig(updated);
+                      onUpdateConfig(updated);
+                      await thermalPrinterService.connectUSB();
+                    }}
+                    className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
+                      localConfig.thermalPrinter.printerModel === 'vozy_g80' &&
+                      printerStatus.connectionType === 'usb' &&
+                      printerStatus.isConnected
+                        ? 'bg-emerald-950/60 border-emerald-400 text-emerald-200'
+                        : 'bg-emerald-600/20 border-emerald-500/50 hover:bg-emerald-600/30 text-white'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm">2. Connect VOZY G80 USB Wired</div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        Direct USB Cable (Tablet USB OTG / PC USB Port)
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-emerald-300 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isTestPrinting}
+                    onClick={handleTestPrint}
+                    className="p-3.5 rounded-xl border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500/25 text-left transition cursor-pointer flex items-center justify-between text-white disabled:opacity-50"
+                  >
+                    <div>
+                      <div className="font-bold text-xs sm:text-sm">
+                        {isTestPrinting ? 'Printing VOZY G80 Test...' : '3. Test Print on VOZY G80 (80mm)'}
+                      </div>
+                      <div className="text-[11px] text-amber-200/90 mt-0.5">
+                        Verify 80mm width, auto-cut &amp; reminder beep
+                      </div>
+                    </div>
+                    <Printer className="w-4 h-4 text-amber-300 shrink-0" />
+                  </button>
+                </div>
+
+                {/* VOZY G80 Hardware Feature Toggles: Automatic Cut & Visual/Auditory Reminder */}
+                <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          thermalPrinter: {
+                            ...localConfig.thermalPrinter,
+                            autoCut: !localConfig.thermalPrinter.autoCut,
+                          },
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
+                        localConfig.thermalPrinter.autoCut
+                          ? 'bg-emerald-600 border-emerald-400 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      ✂️ Automatic Cut: {localConfig.thermalPrinter.autoCut ? 'ON' : 'OFF'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const nextVal = !(localConfig.thermalPrinter.buzzerReminder ?? true);
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          thermalPrinter: {
+                            ...localConfig.thermalPrinter,
+                            buzzerReminder: nextVal,
+                          },
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
+                        (localConfig.thermalPrinter.buzzerReminder ?? true)
+                          ? 'bg-cyan-600 border-cyan-400 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🔔 Visual &amp; Auditory Reminder: {(localConfig.thermalPrinter.buzzerReminder ?? true) ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    80mm Roll (576 dots/line • 72 bytes/row • Auto-Cutter Ready)
+                  </span>
                 </div>
               </div>
 

@@ -53,17 +53,18 @@ declare global {
   }
 }
 
-// Comprehensive BLE service UUIDs used by wireless ESC/POS thermal printers across vendors
+// Comprehensive BLE service UUIDs used by wireless ESC/POS thermal printers across vendors (VOZY G80, Xprinter 58iiB, Star, Goojprt, etc.)
 const BLE_PRINTER_SERVICES = [
-  '000018f0-0000-1000-8000-00805f9b34fb', // Standard Generic BLE Printer
-  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Star / Xprinter / Goojprt BLE
-  '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / JDY / SPP-over-BLE
-  '0000ff00-0000-1000-8000-00805f9b34fb', // Zhuhai / Pos-58 BLE
-  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Microchip ISSC Transparent UART
-  '0000fee7-0000-1000-8000-00805f9b34fb', // Tencent / WeChat hardware printer
-  '0000ae30-0000-1000-8000-00805f9b34fb', // Deli / Paperang / PeriPage BLE
+  '000018f0-0000-1000-8000-00805f9b34fb', // Standard Generic BLE Printer (VOZY G80 / Xprinter)
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Star / Xprinter / VOZY / Goojprt BLE
+  '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / JDY / SPP-over-BLE (VOZY G80 / 80mm POS)
+  '0000ff00-0000-1000-8000-00805f9b34fb', // Zhuhai / VOZY G80 / Pos-80 / Pos-58 BLE
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Microchip ISSC Transparent UART (VOZY G80 / Xprinter)
+  '0000fee7-0000-1000-8000-00805f9b34fb', // WeChat / POS hardware printer
+  '0000ae30-0000-1000-8000-00805f9b34fb', // VOZY / Deli / Paperang BLE Service
+  '0000ae00-0000-1000-8000-00805f9b34fb', // 80mm BLE Receipt Printer Service
   '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART Service (NUS)
-  '00001101-0000-1000-8000-00805f9b34fb', // SPP UUID
+  '00001101-0000-1000-8000-00805f9b34fb', // Classic SPP UUID
 ];
 
 function uint8ToBase64(bytes: Uint8Array): string {
@@ -338,13 +339,15 @@ class ThermalPrinterService {
     if (!device.gatt) return null;
     const server = await device.gatt.connect();
 
-    // Priority-ordered Xprinter XP-58IIB & 58mm ESC/POS writable GATT characteristic prefixes
+    // Priority-ordered VOZY G80 (80mm), Xprinter XP-58IIB & ESC/POS writable GATT characteristic prefixes
     const preferredCharPrefixes = [
-      '00002af1',      // Standard 0x18F0 Thermal Printer Write characteristic
-      '49535343-8841', // Microchip/ISSC Transparent UART RX Write characteristic (Xprinter 58iiB)
-      '0000ff02',      // Xprinter / Zhuhai 0xFF00 Service Write characteristic
-      '0000ffe1',      // HM-10 / JDY / Xprinter BLE Serial Write characteristic
+      '00002af1',      // Standard 0x18F0 Thermal Printer Write characteristic (VOZY G80 / Xprinter)
+      '49535343-8841', // Microchip/ISSC Transparent UART RX Write characteristic (VOZY G80 / Xprinter 58iiB)
+      '0000ff02',      // VOZY G80 / Xprinter / Zhuhai 0xFF00 Service Write characteristic
+      '0000ffe1',      // HM-10 / JDY / VOZY G80 BLE Serial Write characteristic
       'bef8d6c9',      // ESC/POS BLE Printer Write characteristic
+      '0000ae01',      // VOZY / 80mm BLE Printer Write characteristic
+      '0000ae31',      // VOZY / Deli BLE Write characteristic
       '6e400002',      // Nordic UART RX Write characteristic
       '49535343-1e4d', // Secondary ISSC characteristic
     ];
@@ -939,8 +942,9 @@ class ThermalPrinterService {
         await writeRaw(chunk);
         return;
       } catch {
-        // Step down MTU ceiling gracefully (96B = 2 rows, 48B = 1 row, 20B = BLE 4.0 min)
-        this.bleMaxChunkBytes = chunk.length > 96 ? 96 : chunk.length > 48 ? 48 : 20;
+        // Step down MTU ceiling gracefully (96B = 2x48B rows, 72B = 1x72B 80mm row, 48B = 1x48B 58mm row, 20B = BLE 4.0 min)
+        this.bleMaxChunkBytes =
+          chunk.length > 96 ? 96 : chunk.length > 72 ? 72 : chunk.length > 48 ? 48 : 20;
       }
     }
 
@@ -1552,7 +1556,13 @@ class ThermalPrinterService {
   ): Uint8Array[] {
     const commandMode = config.escPosCommandMode || 'gs_v_0';
     const isXprinter58iiB = (config.printerModel || 'xprinter_58iib') === 'xprinter_58iib';
-    const feedLinesCount = Math.max(1, Math.min(12, config.feedLines ?? (isXprinter58iiB ? 5 : 4)));
+    const isVozyG80 =
+      config.printerModel === 'vozy_g80' ||
+      /vozy|g80/i.test(this.currentStatus.deviceName || '');
+    const feedLinesCount = Math.max(
+      1,
+      Math.min(12, config.feedLines ?? (isVozyG80 ? 5 : isXprinter58iiB ? 5 : 4))
+    );
     const bands: Uint8Array[] = [];
 
     if (commandMode === 'esc_star_33') {
@@ -1594,18 +1604,22 @@ class ThermalPrinterService {
         bands.push(band);
       }
 
-      // Restore default line spacing (ESC 2), advance 7 lines past cutter/tear bar, and execute automatic cut (ESC i + GS V 66 0)
-      const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, Math.max(7, feedLinesCount)];
-      if (config.autoCut !== false || isXprinter58iiB) {
+      // Restore default line spacing (ESC 2), advance past cutter/tear bar, optional VOZY G80 auditory reminder, and automatic cut
+      const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, Math.max(5, feedLinesCount)];
+      if (config.buzzerReminder || (isVozyG80 && config.buzzerReminder !== false)) {
+        // ESC B 2 1: Visual and auditory reminder beep supported by VOZY G80
+        footer.push(0x1b, 0x42, 0x02, 0x01);
+      }
+      if (config.autoCut !== false || isVozyG80 || isXprinter58iiB) {
         footer.push(0x1b, 0x69, 0x1d, 0x56, 0x42, 0x00);
       }
       bands.push(new Uint8Array(footer));
       return bands;
     }
 
-    // Pure standard Xprinter XP-58IIB ESC/POS initialization:
+    // Standard ESC/POS initialization for VOZY G80 (80mm) & Xprinter XP-58IIB (58mm):
     // - ESC @ (0x1B, 0x40): Reset printer & clear any stale bytes in SRAM
-    // - ESC a 0 (0x1B, 0x61, 0x00): Left alignment so full 384-dot (48-byte) raster rows never wrap
+    // - ESC a 0 (0x1B, 0x61, 0x00): Left alignment so full 384-dot (48B) or 576-dot (72B) raster rows never wrap
     // - ESC 3 0 (0x1B, 0x33, 0x00): Zero line-spacing so consecutive GS v 0 bands stitch seamlessly
     bands.push(
       new Uint8Array([
@@ -1615,14 +1629,15 @@ class ThermalPrinterService {
       ])
     );
 
-    const bytesWidth = width / 8; // 48 bytes for 384px (58mm)
+    const bytesWidth = width / 8; // 48 bytes for 384px (58mm), 72 bytes for 576px (80mm VOZY G80)
     const xL = bytesWidth & 0xff;
     const xH = (bytesWidth >> 8) & 0xff;
 
-    // Emit 64-row (8mm) GS v 0 bands in default 'gs_v_0' mode (yL = 64, yH = 0, 3,080 bytes < 4KB SRAM buffer).
-    // - Keeps yH = 0 so the Xprinter XP-58IIB 8-bit row counter never overflows into ASCII garbage text.
-    // - Avoids tiny 8-row micro-bands so the thermal printhead and stepper motor sweep smoothly across photos with zero horizontal lines.
-    const bandHeight = commandMode === 'gs_v_0_banded' ? 24 : 64;
+    // Emit 32-row bands for 80mm (576px = 72B/row -> 2,312B < 4KB SRAM buffer) or 64-row bands for 58mm (384px = 48B/row -> 3,080B < 4KB SRAM buffer).
+    // - Keeps yH = 0 so 8-bit row counters never overflow into ASCII garbage text.
+    // - Ensures the thermal printhead and stepper motor sweep smoothly across photos with zero horizontal lines.
+    const bandHeight =
+      commandMode === 'gs_v_0_banded' ? 24 : width >= 576 ? 32 : 64;
 
     for (let startY = 0; startY < height; startY += bandHeight) {
       const currentBandHeight = Math.min(bandHeight, height - startY);
@@ -1657,10 +1672,15 @@ class ThermalPrinterService {
       bands.push(band);
     }
 
-    // Restore default line spacing (ESC 2) and advance 7 lines past the printer slot so guests can easily cut with scissors
-    const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, Math.max(7, feedLinesCount)];
-    if (config.autoCut && !isXprinter58iiB) {
-      footer.push(0x1b, 0x69, 0x1d, 0x56, 0x42, 0x00);
+    // Restore default line spacing (ESC 2) and advance past the cutter blade / tear bar
+    const footer: number[] = [0x1b, 0x32, 0x1b, 0x64, Math.max(5, feedLinesCount)];
+    if (config.buzzerReminder || (isVozyG80 && config.buzzerReminder !== false)) {
+      // ESC B 2 1 (0x1B 0x42 0x02 0x01): VOZY G80 Visual and Auditory Reminder chime
+      footer.push(0x1b, 0x42, 0x02, 0x01);
+    }
+    if ((config.autoCut || isVozyG80) && !isXprinter58iiB) {
+      // GS V 66 0 (0x1D 0x56 0x42 0x00): Feed to cutter position and execute automatic paper cut on VOZY G80 / 80mm POS
+      footer.push(0x1d, 0x56, 0x42, 0x00);
     }
     bands.push(new Uint8Array(footer));
     return bands;
@@ -1774,15 +1794,22 @@ class ThermalPrinterService {
     soundEffects.playPrintingMotor();
 
     const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
-    // Xprinter 58iiB, KPrinter_461a / MP58-09, and 58mm printers strictly require 384px (48 bytes) width
-    const is58mmHardware =
-      config.printerModel === 'xprinter_58iib' ||
-      config.printerModel === 'kprinter_461a' ||
-      config.printerModel === 'generic_58mm' ||
-      /xprinter|xp-?58|58iib|58iih|kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210|mobile\s*printer/i.test(
+    // VOZY G80 and 80mm POS printers use 576 dots/line (72 bytes/row); Xprinter 58iiB / KPrinter_461a / 58mm printers use 384 dots/line (48 bytes/row)
+    const is80mmModel =
+      config.printerModel === 'vozy_g80' ||
+      config.printerModel === 'epson_80mm' ||
+      /vozy|g80|pos-?80|xp-?80|80mm|tm-?t88|tm-?t20/i.test(
         this.currentStatus.deviceName || ''
       );
-    const targetWidth = is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
+    const is58mmHardware =
+      !is80mmModel &&
+      (config.printerModel === 'xprinter_58iib' ||
+        config.printerModel === 'kprinter_461a' ||
+        config.printerModel === 'generic_58mm' ||
+        /xprinter|xp-?58|58iib|58iih|kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210/i.test(
+          this.currentStatus.deviceName || ''
+        ));
+    const targetWidth = is80mmModel ? 576 : is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
 
     onProgress?.(15, 'Calibrating print head gamma & energy curve...');
     // Pass raw canvas + config to generateDitheredRaster so gamma & energy LUT is applied once cleanly before dithering
