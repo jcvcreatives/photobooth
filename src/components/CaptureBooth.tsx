@@ -11,6 +11,8 @@ import {
   ZapOff,
   Sun,
   Timer,
+  Sparkles,
+  RotateCcw,
   Minus,
   Plus,
 } from 'lucide-react';
@@ -19,6 +21,11 @@ import { soundEffects } from '../services/soundEffects';
 import { cameraStreamService } from '../services/cameraStreamService';
 import { safeStorageGet } from '../services/storage';
 import { enterBrowserFullscreenApi } from './KioskNavBar';
+import {
+  FUN_CAMERA_FILTERS,
+  FunCameraFilterId,
+  applyFunCameraFilterToCanvas,
+} from '../services/funCameraFilters';
 
 interface CaptureBoothProps {
   layout: FrameLayoutType;
@@ -37,7 +44,6 @@ const POSE_PROMPTS = [
 
 export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   layout,
-  filter,
   onCapturesComplete,
   onSecretAdminTap,
 }) => {
@@ -61,9 +67,23 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
   const [logoTapCount, setLogoTapCount] = useState(0);
 
+  // Live Fun Character & Warp Filter state (Baby Body, Alien Head, Muscle Body, etc.)
+  const [activeFunFilter, setActiveFunFilter] = useState<FunCameraFilterId>('none');
+  const [filterOffset, setFilterOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [filterScale, setFilterScale] = useState<number>(1.0);
+
   const currentPose = POSE_PROMPTS[currentShotIndex % POSE_PROMPTS.length];
+  const activeFilterMeta =
+    FUN_CAMERA_FILTERS.find((f) => f.id === activeFunFilter) || FUN_CAMERA_FILTERS[0];
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const dragStateRef = useRef<{
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  } | null>(null);
 
   useEffect(() => {
     if (logoTapCount === 0) return;
@@ -77,7 +97,6 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
 
     async function attachPersistentCamera() {
       try {
-        // 1. Check if stream is already live in memory for instant 0ms attachment
         const cached = cameraStreamService.getCachedStream(facingMode);
         if (cached && videoRef.current) {
           videoRef.current.srcObject = cached;
@@ -87,11 +106,9 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           return;
         }
 
-        // 2. Otherwise acquire/reuse from cameraStreamService
         const stream = await cameraStreamService.getOrStartStream(facingMode);
         if (!isMounted) return;
 
-        // Re-assert fullscreen lock immediately after camera permission resolves
         if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
           enterBrowserFullscreenApi();
         }
@@ -118,9 +135,128 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
 
     return () => {
       isMounted = false;
-      // Intentionally DO NOT stop camera tracks on unmount so permission & stream stay active
     };
   }, [facingMode]);
+
+  // 60fps Live Viewfinder Canvas Renderer when a Fun Camera Filter (Baby Body, Alien Head, etc.) is active
+  useEffect(() => {
+    if (activeFunFilter === 'none') return;
+
+    let rafId = 0;
+    let running = true;
+
+    const renderLoop = () => {
+      if (!running) return;
+      const canvas = liveCanvasRef.current;
+      const video = videoRef.current;
+
+      if (canvas) {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          const targetW = 640;
+          const targetH = 480;
+          if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
+          }
+
+          ctx.save();
+          ctx.clearRect(0, 0, targetW, targetH);
+
+          if (isCameraActive && video && video.readyState >= 2 && video.videoWidth > 0) {
+            ctx.filter = `brightness(${brightness}%)`;
+            ctx.translate(targetW / 2, targetH / 2);
+            ctx.scale(isMirrored ? -zoomLevel : zoomLevel, zoomLevel);
+
+            // Cover-fit video into targetW x targetH
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            const scaleCover = Math.max(targetW / vw, targetH / vh);
+            const drawW = vw * scaleCover;
+            const drawH = vh * scaleCover;
+            ctx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
+          } else {
+            // Studio simulation background when camera is unavailable
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(0, 0, targetW, targetH);
+            ctx.fillStyle = '#cbd5e1';
+            ctx.beginPath();
+            ctx.arc(targetW * 0.5, targetH * 0.38, 92, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.arc(targetW * 0.5 - 32, targetH * 0.36, 9, 0, Math.PI * 2);
+            ctx.arc(targetW * 0.5 + 32, targetH * 0.36, 9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.arc(targetW * 0.5, targetH * 0.4, 38, 0.1 * Math.PI, 0.9 * Math.PI);
+            ctx.stroke();
+          }
+          ctx.restore();
+
+          // Apply 60fps warp + Baby Body / Alien Head / Character artwork
+          applyFunCameraFilterToCanvas(ctx, targetW, targetH, activeFunFilter, {
+            offsetX: filterOffset.x,
+            offsetY: filterOffset.y,
+            scale: filterScale,
+            showGuide: countdown === null,
+          });
+        }
+      }
+
+      rafId = requestAnimationFrame(renderLoop);
+    };
+
+    rafId = requestAnimationFrame(renderLoop);
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafId);
+    };
+  }, [
+    activeFunFilter,
+    isCameraActive,
+    isMirrored,
+    zoomLevel,
+    brightness,
+    filterOffset,
+    filterScale,
+    countdown,
+  ]);
+
+  // Drag on viewfinder to position the Baby Body / Alien Head / Character filter
+  const handleViewfinderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeFunFilter === 'none') return;
+    dragStateRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: filterOffset.x,
+      origY: filterOffset.y,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const handleViewfinderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current || activeFunFilter === 'none') return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dx = (e.clientX - dragStateRef.current.startX) / Math.max(200, rect.width);
+    const dy = (e.clientY - dragStateRef.current.startY) / Math.max(200, rect.height);
+    setFilterOffset({
+      x: Math.max(-0.32, Math.min(0.32, dragStateRef.current.origX + dx)),
+      y: Math.max(-0.32, Math.min(0.32, dragStateRef.current.origY + dy)),
+    });
+  };
+
+  const handleViewfinderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current) return;
+    dragStateRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+  };
 
   // Toggle horizontal camera mirror
   const toggleCameraMirror = () => {
@@ -160,7 +296,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     }
   }, [countdown]);
 
-  // Capture Snapshot
+  // Capture Snapshot (including Baby Body / Alien Head / Fun Filter warp & overlay)
   const takeSnapshot = () => {
     soundEffects.playShutter();
     if (flashEnabled) {
@@ -173,21 +309,36 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     if (isCameraActive && videoRef.current && videoRef.current.videoWidth) {
       const video = videoRef.current;
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
+      const targetW = 800;
+      const targetH = 600;
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
       if (ctx) {
         ctx.save();
-        // Brightness adjustments
         ctx.filter = `brightness(${brightness}%)`;
+        ctx.translate(targetW / 2, targetH / 2);
+        ctx.scale(isMirrored ? -zoomLevel : zoomLevel, zoomLevel);
 
-        if (isMirrored) {
-          ctx.translate(canvas.width, 0);
-          ctx.scale(-1, 1);
-        }
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        const scaleCover = Math.max(targetW / vw, targetH / vh);
+        const drawW = vw * scaleCover;
+        const drawH = vh * scaleCover;
+        ctx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
         ctx.restore();
+
+        // Bake active Fun Camera Filter (Baby Body, Alien Head, etc.) into the captured photo
+        if (activeFunFilter !== 'none') {
+          applyFunCameraFilterToCanvas(ctx, targetW, targetH, activeFunFilter, {
+            offsetX: filterOffset.x,
+            offsetY: filterOffset.y,
+            scale: filterScale,
+            showGuide: false,
+          });
+        }
+
         dataUrl = canvas.toDataURL('image/jpeg', 0.94);
       }
     } else {
@@ -195,7 +346,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       const canvas = document.createElement('canvas');
       canvas.width = 800;
       canvas.height = 600;
-      const ctx = canvas.getContext('2d')!;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
 
       const hue = (currentShotIndex * 50 + 20) % 360;
       ctx.fillStyle = `hsl(${hue}, 20%, 93%)`;
@@ -204,27 +355,36 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       // Face silhouette
       ctx.fillStyle = '#e2e8f0';
       ctx.beginPath();
-      ctx.arc(400, 260, 110, 0, Math.PI * 2);
+      ctx.arc(400, 235, 110, 0, Math.PI * 2);
       ctx.fill();
 
       // Eyes
       ctx.fillStyle = '#0f172a';
       ctx.beginPath();
-      ctx.arc(360, 240, 10, 0, Math.PI * 2);
-      ctx.arc(440, 240, 10, 0, Math.PI * 2);
+      ctx.arc(360, 215, 10, 0, Math.PI * 2);
+      ctx.arc(440, 215, 10, 0, Math.PI * 2);
       ctx.fill();
 
       // Smile
       ctx.strokeStyle = '#0f172a';
       ctx.lineWidth = 8;
       ctx.beginPath();
-      ctx.arc(400, 275, 50, 0.1 * Math.PI, 0.9 * Math.PI);
+      ctx.arc(400, 250, 50, 0.1 * Math.PI, 0.9 * Math.PI);
       ctx.stroke();
 
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 22px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(`PHOTO ${currentShotIndex + 1}`, 400, 480);
+      if (activeFunFilter !== 'none') {
+        applyFunCameraFilterToCanvas(ctx, 800, 600, activeFunFilter, {
+          offsetX: filterOffset.x,
+          offsetY: filterOffset.y,
+          scale: filterScale,
+          showGuide: false,
+        });
+      } else {
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`PHOTO ${currentShotIndex + 1}`, 400, 480);
+      }
 
       dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     }
@@ -250,14 +410,14 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   };
 
   return (
-    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between gap-2 px-3 py-2.5 sm:px-5 sm:py-3 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-3xl lg:max-w-4xl mx-auto w-full">
+    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between gap-1.5 px-3 py-2 sm:px-5 sm:py-2.5 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-3xl lg:max-w-4xl mx-auto w-full">
       {/* Flash effect overlay */}
       {isFlashing && (
         <div className="fixed inset-0 bg-white z-50 pointer-events-none transition-opacity duration-200" />
       )}
 
       {/* Top Header Row + Non-Overlapping Ready Pose Banner */}
-      <div className="w-full flex flex-col items-center gap-2 shrink-0 z-10">
+      <div className="w-full flex flex-col items-center gap-1.5 shrink-0 z-10">
         <div className="w-full flex items-center justify-between">
           <button
             type="button"
@@ -285,6 +445,8 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
                   ? `Capturing in ${countdown}...`
                   : isPreparingPose
                   ? 'Get ready for next shot...'
+                  : activeFunFilter !== 'none'
+                  ? `${activeFilterMeta.emoji} ${activeFilterMeta.name} Active`
                   : 'Tap shutter when ready'}
               </p>
             </div>
@@ -292,19 +454,19 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
 
           {/* Contained, Non-Overlapping Ready Pose Card */}
           <div
-            className={`px-4 py-1.5 sm:px-6 sm:py-2 rounded-2xl border-2 shadow-sm flex items-center gap-2.5 sm:gap-3 transition-colors duration-200 overflow-hidden ${
+            className={`px-3.5 py-1 sm:px-5 sm:py-1.5 rounded-2xl border-2 shadow-sm flex items-center gap-2.5 transition-colors duration-200 overflow-hidden ${
               countdown !== null || isPreparingPose
                 ? 'bg-zinc-900 text-white border-amber-400 shadow-md'
                 : 'bg-white text-zinc-900 border-zinc-300'
             }`}
           >
             <div
-              className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center shrink-0 ${
+              className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${
                 countdown !== null || isPreparingPose ? 'bg-white/10' : 'bg-zinc-100'
               }`}
             >
-              <span className="text-2xl sm:text-3xl leading-none inline-block animate-pose-emoji select-none">
-                {currentPose.emoji}
+              <span className="text-xl sm:text-2xl leading-none inline-block animate-pose-emoji select-none">
+                {activeFunFilter !== 'none' ? activeFilterMeta.emoji : currentPose.emoji}
               </span>
             </div>
             <div className="flex flex-col text-left pr-1">
@@ -315,8 +477,8 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
               >
                 Shot #{Math.min(currentShotIndex + 1, targetShotCount)} {currentPose.subEmoji}
               </span>
-              <span className="text-sm sm:text-lg md:text-xl font-black tracking-wide uppercase leading-tight whitespace-nowrap mt-0.5">
-                {currentPose.label}
+              <span className="text-xs sm:text-base font-black tracking-wide uppercase leading-tight whitespace-nowrap mt-0.5">
+                {activeFunFilter !== 'none' ? activeFilterMeta.shortLabel : currentPose.label}
               </span>
             </div>
           </div>
@@ -336,8 +498,16 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         </div>
       </div>
 
-      {/* Expanded Full-Size Camera Viewfinder (flex-1 min-h-0 prevents vertical overlap on any tablet screen) */}
-      <div className="relative flex-1 w-full min-h-0 rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-lg flex items-center justify-center">
+      {/* Expanded Full-Size Camera Viewfinder */}
+      <div
+        onPointerDown={handleViewfinderPointerDown}
+        onPointerMove={handleViewfinderPointerMove}
+        onPointerUp={handleViewfinderPointerUp}
+        style={{ touchAction: activeFunFilter !== 'none' ? 'none' : 'auto' }}
+        className={`relative flex-1 w-full min-h-0 rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-lg flex items-center justify-center ${
+          activeFunFilter !== 'none' ? 'cursor-grab active:cursor-grabbing' : ''
+        }`}
+      >
         <video
           ref={videoRef}
           autoPlay
@@ -347,8 +517,73 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
             transform: `${isMirrored ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoomLevel})`,
             filter: `brightness(${brightness}%)`,
           }}
-          className="w-full h-full object-cover transition-all duration-200"
+          className={`w-full h-full object-cover transition-all duration-200 ${
+            activeFunFilter !== 'none' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          }`}
         />
+
+        {/* 60fps Live Fun Character & Warp Filter Canvas */}
+        {activeFunFilter !== 'none' && (
+          <canvas
+            ref={liveCanvasRef}
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          />
+        )}
+
+        {/* Top Floating Filter Guide & Size/Reset Controls when a Fun Filter is Active */}
+        {activeFunFilter !== 'none' && countdown === null && (
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            className="absolute top-3 inset-x-3 z-20 flex items-center justify-between gap-2 pointer-events-auto"
+          >
+            <div className="px-3 py-1 rounded-full bg-black/65 backdrop-blur-md text-white text-[11px] font-medium border border-white/20 flex items-center gap-1.5 shadow-sm">
+              <span>{activeFilterMeta.emoji}</span>
+              <span className="truncate max-w-[200px] sm:max-w-xs">
+                {activeFilterMeta.guideText || 'Drag on screen to move filter'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 bg-black/65 backdrop-blur-md rounded-full p-1 border border-white/20 text-white">
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  setFilterScale((s) => Math.max(0.65, Number((s - 0.1).toFixed(2))));
+                }}
+                title="Smaller Filter"
+                className="w-6 h-6 rounded-full hover:bg-white/20 flex items-center justify-center cursor-pointer"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[10px] font-mono px-1">
+                {Math.round(filterScale * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  setFilterScale((s) => Math.min(1.45, Number((s + 0.1).toFixed(2))));
+                }}
+                title="Larger Filter"
+                className="w-6 h-6 rounded-full hover:bg-white/20 flex items-center justify-center cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  setFilterOffset({ x: 0, y: 0 });
+                  setFilterScale(1.0);
+                }}
+                title="Reset Filter Position"
+                className="w-6 h-6 rounded-full hover:bg-white/20 flex items-center justify-center cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Countdown Number Only inside Camera Screen */}
         {countdown !== null && (
@@ -360,8 +595,11 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         )}
 
         {/* Brightness / Exposure Slider */}
-        <div className="absolute bottom-3 inset-x-6 z-20 flex items-center justify-center">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/20 shadow-xs max-w-xs w-full">
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute bottom-2.5 inset-x-6 z-20 flex items-center justify-center"
+        >
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/20 shadow-xs max-w-xs w-full">
             <Sun className="w-3.5 h-3.5 text-white/80 shrink-0" />
             <input
               type="range"
@@ -374,14 +612,16 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           </div>
         </div>
 
-        {/* Camera fallback message */}
-        {cameraError && !isCameraActive && (
+        {/* Camera fallback message (when no Fun Filter is active) */}
+        {cameraError && !isCameraActive && activeFunFilter === 'none' && (
           <div className="absolute inset-0 bg-zinc-100 flex flex-col items-center justify-center p-4 text-center z-10 text-zinc-800">
             <Camera className="w-8 h-8 text-zinc-400 mb-2" />
-            <p className="text-xs text-zinc-500 mb-3">Camera simulated for this kiosk session</p>
+            <p className="text-xs text-zinc-500 mb-3">
+              Select a Fun Filter below (Baby Body, Alien Head, etc.) or tap Shutter to test!
+            </p>
             <button
               onClick={startCountdown}
-              className="px-4 py-2 rounded-full bg-black text-white text-xs font-medium"
+              className="px-4 py-2 rounded-full bg-black text-white text-xs font-medium cursor-pointer"
             >
               Snap Simulated Photo #{currentShotIndex + 1}
             </button>
@@ -389,91 +629,122 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         )}
       </div>
 
-      {/* Shot Progress Numbers: 1 2 3 4 */}
-      <div className="flex items-center justify-center gap-6 my-1 text-xs font-medium text-zinc-400 shrink-0">
-        {Array.from({ length: targetShotCount }).map((_, idx) => {
-          const isDone = idx < capturedPhotos.length;
-          const isCurrent = idx === currentShotIndex;
+      {/* Fun Character & Face Warp Filter Bar (Baby Body, Alien Head, Muscle Body, Astronaut, etc.) */}
+      <div className="w-full shrink-0 flex items-center gap-1.5 overflow-x-auto py-1 px-1 no-scrollbar">
+        <div className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 pr-1 shrink-0">
+          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+          <span>Filters:</span>
+        </div>
+        {FUN_CAMERA_FILTERS.map((fItem) => {
+          const isSelected = activeFunFilter === fItem.id;
           return (
-            <span
-              key={idx}
-              className={`transition-colors font-mono ${
-                isCurrent
-                  ? 'text-zinc-950 font-bold scale-110'
-                  : isDone
-                  ? 'text-zinc-950 font-semibold'
-                  : 'text-zinc-400'
+            <button
+              key={fItem.id}
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                setActiveFunFilter(fItem.id);
+              }}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shrink-0 transition cursor-pointer border ${
+                isSelected
+                  ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm scale-102'
+                  : 'bg-white hover:bg-zinc-100 text-zinc-700 border-zinc-300'
               }`}
             >
-              {idx + 1}
-            </span>
+              <span className="text-sm leading-none">{fItem.emoji}</span>
+              <span>{fItem.shortLabel}</span>
+            </button>
           );
         })}
       </div>
 
-      {/* Shutter Row Controls */}
-      <div className="w-full max-w-xl flex items-center justify-between px-6 pt-0.5 shrink-0">
-        {/* Flash Toggle */}
-        <button
-          onClick={() => {
-            soundEffects.playTap();
-            setFlashEnabled((f) => !f);
-          }}
-          className={`w-11 h-11 rounded-full flex items-center justify-center transition cursor-pointer ${
-            flashEnabled
-              ? 'bg-zinc-200 text-zinc-900'
-              : 'bg-zinc-100 text-zinc-400'
-          }`}
-          title="Toggle Screen Flash"
-        >
-          {flashEnabled ? <Zap className="w-5 h-5 fill-current" /> : <ZapOff className="w-5 h-5" />}
-        </button>
+      {/* Bottom Shutter & Timer Bar */}
+      <div className="w-full max-w-xl flex items-center justify-between px-3 pt-0.5 shrink-0">
+        {/* Left: Flash + Timer Selector Pills */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              soundEffects.playTap();
+              setFlashEnabled((f) => !f);
+            }}
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition cursor-pointer ${
+              flashEnabled
+                ? 'bg-zinc-200 text-zinc-900'
+                : 'bg-zinc-100 text-zinc-400'
+            }`}
+            title="Toggle Screen Flash"
+          >
+            {flashEnabled ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
+          </button>
 
-        {/* Big Circular iOS Shutter Button */}
+          <div className="flex items-center gap-1 text-xs">
+            <Timer className="w-3.5 h-3.5 text-zinc-400 hidden sm:inline" />
+            {([3, 5, 10] as const).map((sec) => (
+              <button
+                key={sec}
+                onClick={() => {
+                  soundEffects.playTap();
+                  setTimerDuration(sec);
+                }}
+                className={`px-2.5 py-1 rounded-full font-medium text-[11px] transition cursor-pointer ${
+                  timerDuration === sec
+                    ? 'bg-black text-white shadow-xs'
+                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                }`}
+              >
+                {sec}s
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Center: Big Circular Shutter Button */}
         <button
           onClick={() => {
             soundEffects.playTap();
             startCountdown();
           }}
           disabled={countdown !== null || capturedPhotos.length >= targetShotCount}
-          className="w-18 h-18 rounded-full border-4 border-zinc-300 p-1 flex items-center justify-center transition active:scale-90 cursor-pointer disabled:opacity-40"
+          className="w-16 h-16 sm:w-18 sm:h-18 rounded-full border-4 border-zinc-300 p-1 flex items-center justify-center transition active:scale-90 cursor-pointer disabled:opacity-40"
           title="Take Photo"
         >
           <div className="w-full h-full rounded-full bg-black hover:bg-zinc-800 transition" />
         </button>
 
-        {/* Zoom Indicator / Toggle */}
-        <button
-          onClick={() => {
-            soundEffects.playTap();
-            setZoomLevel((z) => (z === 1.0 ? 1.25 : z === 1.25 ? 1.5 : 1.0));
-          }}
-          className="flex items-center gap-0.5 px-2.5 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-mono font-medium transition cursor-pointer"
-          title="Zoom Level"
-        >
-          <span>{zoomLevel.toFixed(1)}x</span>
-        </button>
-      </div>
+        {/* Right: Shot Progress + Zoom Toggle */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
+            {Array.from({ length: targetShotCount }).map((_, idx) => {
+              const isDone = idx < capturedPhotos.length;
+              const isCurrent = idx === currentShotIndex;
+              return (
+                <span
+                  key={idx}
+                  className={
+                    isCurrent
+                      ? 'text-zinc-950 font-black scale-110'
+                      : isDone
+                      ? 'text-zinc-950 font-semibold'
+                      : 'text-zinc-400'
+                  }
+                >
+                  {idx + 1}
+                </span>
+              );
+            })}
+          </div>
 
-      {/* Timer Selector Pills: 3s 5s 10s */}
-      <div className="flex items-center gap-2 mt-1.5 text-xs shrink-0">
-        <Timer className="w-3.5 h-3.5 text-zinc-400" />
-        {([3, 5, 10] as const).map((sec) => (
           <button
-            key={sec}
             onClick={() => {
               soundEffects.playTap();
-              setTimerDuration(sec);
+              setZoomLevel((z) => (z === 1.0 ? 1.25 : z === 1.25 ? 1.5 : 1.0));
             }}
-            className={`px-3 py-1 rounded-full font-medium transition cursor-pointer ${
-              timerDuration === sec
-                ? 'bg-black text-white shadow-xs'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
+            className="flex items-center gap-0.5 px-2.5 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-mono font-medium transition cursor-pointer"
+            title="Zoom Level"
           >
-            {sec}s
+            <span>{zoomLevel.toFixed(1)}x</span>
           </button>
-        ))}
+        </div>
       </div>
     </div>
   );

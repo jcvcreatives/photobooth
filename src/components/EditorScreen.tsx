@@ -46,6 +46,11 @@ import {
 } from '../services/frameTemplates';
 import { thermalPrinterService } from '../services/thermalPrinter';
 import { soundEffects } from '../services/soundEffects';
+import {
+  FUN_CAMERA_FILTERS,
+  FunCameraFilterId,
+  applyFunCameraFilterToCanvas,
+} from '../services/funCameraFilters';
 
 const QUICK_TEXT_PRESETS = [
   'GOBBLE HAUS',
@@ -116,13 +121,87 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const [previewView, setPreviewView] = useState<'thermal' | 'digital'>('thermal');
 
   const [editablePhotos, setEditablePhotos] = useState<string[]>(photos);
+  const [originalPhotos, setOriginalPhotos] = useState<string[]>(photos);
+  const [photoFunFilters, setPhotoFunFilters] = useState<FunCameraFilterId[]>(() =>
+    photos.map(() => 'none')
+  );
   const [mirroredFlags, setMirroredFlags] = useState<boolean[]>(() => photos.map(() => false));
   const [isMirroring, setIsMirroring] = useState(false);
 
   useEffect(() => {
     setEditablePhotos(photos);
+    setOriginalPhotos(photos);
+    setPhotoFunFilters(photos.map(() => 'none'));
     setMirroredFlags(photos.map(() => false));
   }, [photos]);
+
+  const handleApplyFunFilterToSelectedPhoto = async (
+    filterId: FunCameraFilterId,
+    applyToAll = false
+  ) => {
+    if (isMirroring) return;
+    soundEffects.playTap();
+    setIsMirroring(true);
+
+    try {
+      const indicesToUpdate = applyToAll
+        ? originalPhotos.map((_, i) => i)
+        : [selectedPhotoIndex];
+
+      const updatedList = [...editablePhotos];
+      const updatedFilters = [...photoFunFilters];
+
+      for (const idx of indicesToUpdate) {
+        const baseSrc = originalPhotos[idx] || editablePhotos[idx];
+        if (!baseSrc) continue;
+        const isMir = mirroredFlags[idx];
+
+        const processedUrl = await new Promise<string>((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const w = img.naturalWidth || img.width || 800;
+            const h = img.naturalHeight || img.height || 600;
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) {
+              resolve(baseSrc);
+              return;
+            }
+            ctx.save();
+            if (isMir) {
+              ctx.translate(w, 0);
+              ctx.scale(-1, 1);
+            }
+            ctx.drawImage(img, 0, 0, w, h);
+            ctx.restore();
+
+            if (filterId !== 'none') {
+              applyFunCameraFilterToCanvas(ctx, w, h, filterId, {
+                offsetX: 0,
+                offsetY: 0,
+                scale: 1.0,
+                showGuide: false,
+              });
+            }
+            resolve(canvas.toDataURL('image/jpeg', 0.94));
+          };
+          img.onerror = () => resolve(baseSrc);
+          img.src = baseSrc;
+        });
+
+        updatedList[idx] = processedUrl;
+        updatedFilters[idx] = filterId;
+      }
+
+      setEditablePhotos(updatedList);
+      setPhotoFunFilters(updatedFilters);
+    } finally {
+      setIsMirroring(false);
+    }
+  };
 
   const handleMirrorSelectedPhoto = async () => {
     if (isMirroring) return;
@@ -838,11 +917,14 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               </button>
 
               <button
-                onClick={() => setShowReviewModal(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-medium transition cursor-pointer shadow-2xs"
+                onClick={() => {
+                  soundEffects.playTap();
+                  setShowReviewModal(true);
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 text-[11px] font-bold transition cursor-pointer shadow-2xs"
               >
-                <FlipHorizontal className="w-3 h-3" />
-                <span>Mirror & Retake ({retakesLeft})</span>
+                <span>👶👽</span>
+                <span>Fun Filters &amp; Retake</span>
               </button>
             </div>
           </div>
@@ -1346,8 +1428,52 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               ))}
             </div>
 
-            {/* Actions: Working Mirror & Retake this one (Filters removed) */}
-            <div className="flex items-center justify-center gap-3 text-xs mb-5 w-full">
+            {/* Fun Character & Warp Filter Picker (Baby Body, Alien Head, etc.) */}
+            <div className="w-full mb-3.5 text-left">
+              <div className="flex items-center justify-between text-[11px] font-bold text-zinc-700 mb-1.5 px-1">
+                <span>Fun Character &amp; Face Filters:</span>
+                {photoFunFilters[selectedPhotoIndex] &&
+                  photoFunFilters[selectedPhotoIndex] !== 'none' && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleApplyFunFilterToSelectedPhoto(
+                          photoFunFilters[selectedPhotoIndex],
+                          true
+                        )
+                      }
+                      className="text-[10px] font-bold text-sky-600 hover:underline cursor-pointer"
+                    >
+                      Apply to all shots
+                    </button>
+                  )}
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                {FUN_CAMERA_FILTERS.map((fItem) => {
+                  const isCurr =
+                    (photoFunFilters[selectedPhotoIndex] || 'none') === fItem.id;
+                  return (
+                    <button
+                      key={fItem.id}
+                      type="button"
+                      disabled={isMirroring}
+                      onClick={() => handleApplyFunFilterToSelectedPhoto(fItem.id, false)}
+                      className={`px-2.5 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                        isCurr
+                          ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs'
+                          : 'bg-white hover:bg-zinc-100 text-zinc-700 border-zinc-300'
+                      }`}
+                    >
+                      <span>{fItem.emoji}</span>
+                      <span>{fItem.shortLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Actions: Working Mirror & Retake this one */}
+            <div className="flex items-center justify-center gap-3 text-xs mb-4 w-full">
               <button
                 type="button"
                 disabled={isMirroring}
