@@ -15,6 +15,8 @@ import {
   RotateCcw,
   Minus,
   Plus,
+  ScanFace,
+  ZoomIn,
 } from 'lucide-react';
 import { FrameLayoutType, PhotoFilterType } from '../types';
 import { soundEffects } from '../services/soundEffects';
@@ -26,6 +28,7 @@ import {
   FunCameraFilterId,
   applyFunCameraFilterToCanvas,
 } from '../services/funCameraFilters';
+import { faceTrackerService } from '../services/faceTrackerService';
 
 interface CaptureBoothProps {
   layout: FrameLayoutType;
@@ -33,6 +36,21 @@ interface CaptureBoothProps {
   onCapturesComplete: (photos: string[]) => void;
   onCancel: () => void;
   onSecretAdminTap?: () => void;
+}
+
+const MIN_CAMERA_ZOOM = 1.0;
+const MAX_CAMERA_ZOOM = 3.0;
+
+function clampZoom(z: number): number {
+  return Math.max(MIN_CAMERA_ZOOM, Math.min(MAX_CAMERA_ZOOM, Number(z.toFixed(2))));
+}
+
+function clampPanForZoom(pan: { x: number; y: number }, zoom: number): { x: number; y: number } {
+  const maxPan = Math.max(0, (zoom - 1) / 2);
+  return {
+    x: Math.max(-maxPan, Math.min(maxPan, pan.x)),
+    y: Math.max(-maxPan, Math.min(maxPan, pan.y)),
+  };
 }
 
 const POSE_PROMPTS = [
@@ -65,10 +83,15 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   const [flashEnabled, setFlashEnabled] = useState(true);
   const [timerDuration, setTimerDuration] = useState<3 | 5 | 10>(3);
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isGestureActive, setIsGestureActive] = useState<boolean>(false);
+  const [showZoomHud, setShowZoomHud] = useState<boolean>(false);
   const [logoTapCount, setLogoTapCount] = useState(0);
 
   // Live Fun Character & Warp Filter state (Baby Body, Alien Head, Muscle Body, etc.)
   const [activeFunFilter, setActiveFunFilter] = useState<FunCameraFilterId>('none');
+  const [autoTrackFace, setAutoTrackFace] = useState<boolean>(true);
+  const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false);
   const [filterOffset, setFilterOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [filterScale, setFilterScale] = useState<number>(1.0);
 
@@ -78,12 +101,52 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewfinderRef = useRef<HTMLDivElement | null>(null);
+  const zoomHudTimeoutRef = useRef<number | null>(null);
+
+  // Multi-pointer tracking for pinch-to-zoom & framing pan
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStateRef = useRef<{
+    initialDistance: number;
+    initialZoom: number;
+    initialMidX: number;
+    initialMidY: number;
+    initialPanX: number;
+    initialPanY: number;
+  } | null>(null);
+
   const dragStateRef = useRef<{
+    mode: 'filter' | 'framePan';
     startX: number;
     startY: number;
     origX: number;
     origY: number;
   } | null>(null);
+
+  const triggerZoomHud = () => {
+    setShowZoomHud(true);
+    if (zoomHudTimeoutRef.current !== null) {
+      window.clearTimeout(zoomHudTimeoutRef.current);
+    }
+    zoomHudTimeoutRef.current = window.setTimeout(() => {
+      setShowZoomHud(false);
+    }, 1800);
+  };
+
+  const applyZoomAndClampPan = (nextZoomRaw: number, customPan?: { x: number; y: number }) => {
+    const nextZoom = clampZoom(nextZoomRaw);
+    setZoomLevel(nextZoom);
+    setPanOffset((prevPan) => clampPanForZoom(customPan ?? prevPan, nextZoom));
+    triggerZoomHud();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (zoomHudTimeoutRef.current !== null) {
+        window.clearTimeout(zoomHudTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (logoTapCount === 0) return;
@@ -138,12 +201,37 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     };
   }, [facingMode]);
 
-  // 60fps Live Viewfinder Canvas Renderer when a Fun Camera Filter (Baby Body, Alien Head, etc.) is active
+  // Attach native non-passive wheel listener to viewfinder for smooth trackpad pinch / wheel zoom
+  useEffect(() => {
+    const el = viewfinderRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = -e.deltaY * (e.ctrlKey ? 0.01 : 0.0025);
+      if (Math.abs(delta) < 0.001) return;
+
+      setZoomLevel((prevZoom) => {
+        const nextZoom = clampZoom(prevZoom + delta);
+        setPanOffset((prevPan) => clampPanForZoom(prevPan, nextZoom));
+        return nextZoom;
+      });
+      triggerZoomHud();
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
+
+  // 60fps Automated Face-Detection & Live Filter Viewfinder Loop
   useEffect(() => {
     if (activeFunFilter === 'none') return;
 
     let rafId = 0;
     let running = true;
+    let lastStateSync = 0;
 
     const renderLoop = () => {
       if (!running) return;
@@ -165,7 +253,10 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
 
           if (isCameraActive && video && video.readyState >= 2 && video.videoWidth > 0) {
             ctx.filter = `brightness(${brightness}%)`;
-            ctx.translate(targetW / 2, targetH / 2);
+            ctx.translate(
+              targetW / 2 + panOffset.x * targetW,
+              targetH / 2 + panOffset.y * targetH
+            );
             ctx.scale(isMirrored ? -zoomLevel : zoomLevel, zoomLevel);
 
             // Cover-fit video into targetW x targetH
@@ -176,31 +267,57 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
             const drawH = vh * scaleCover;
             ctx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
           } else {
-            // Studio simulation background when camera is unavailable
+            // Studio simulation background when camera is unavailable (respects zoom & pan)
             ctx.fillStyle = '#e2e8f0';
             ctx.fillRect(0, 0, targetW, targetH);
-            ctx.fillStyle = '#cbd5e1';
+            ctx.translate(
+              targetW / 2 + panOffset.x * targetW,
+              targetH / 2 + panOffset.y * targetH
+            );
+            ctx.scale(isMirrored ? -zoomLevel : zoomLevel, zoomLevel);
+            ctx.translate(-targetW / 2, -targetH / 2);
+
+            ctx.fillStyle = '#f1c27d';
             ctx.beginPath();
-            ctx.arc(targetW * 0.5, targetH * 0.38, 92, 0, Math.PI * 2);
+            ctx.arc(targetW * 0.5, targetH * 0.38, 86, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = '#0f172a';
             ctx.beginPath();
-            ctx.arc(targetW * 0.5 - 32, targetH * 0.36, 9, 0, Math.PI * 2);
-            ctx.arc(targetW * 0.5 + 32, targetH * 0.36, 9, 0, Math.PI * 2);
+            ctx.arc(targetW * 0.5 - 30, targetH * 0.36, 9, 0, Math.PI * 2);
+            ctx.arc(targetW * 0.5 + 30, targetH * 0.36, 9, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = '#0f172a';
             ctx.lineWidth = 6;
             ctx.beginPath();
-            ctx.arc(targetW * 0.5, targetH * 0.4, 38, 0.1 * Math.PI, 0.9 * Math.PI);
+            ctx.arc(targetW * 0.5, targetH * 0.4, 36, 0.1 * Math.PI, 0.9 * Math.PI);
             ctx.stroke();
           }
           ctx.restore();
 
-          // Apply 60fps warp + Baby Body / Alien Head / Character artwork
+          // 1. Run automated real-time face detection on the clean camera frame
+          const trackedFace = faceTrackerService.updateFromFrame(canvas, isCameraActive);
+          const now = performance.now();
+          if (now - lastStateSync > 180) {
+            lastStateSync = now;
+            setIsFaceDetected(trackedFace.detected);
+          }
+
+          // 2. Dynamically place the selected filter (Baby Body, Alien Head, etc.) over the user's detected face
+          const effectiveScale =
+            (autoTrackFace && trackedFace.detected ? trackedFace.recommendedScale : 1.0) *
+            filterScale;
+
           applyFunCameraFilterToCanvas(ctx, targetW, targetH, activeFunFilter, {
+            faceCenterX:
+              autoTrackFace && trackedFace.detected ? trackedFace.centerX : undefined,
+            faceCenterY:
+              autoTrackFace && trackedFace.detected ? trackedFace.centerY : undefined,
+            faceDetected: autoTrackFace && trackedFace.detected,
+            rollAngleDeg:
+              autoTrackFace && trackedFace.detected ? trackedFace.rollAngleDeg : 0,
             offsetX: filterOffset.x,
             offsetY: filterOffset.y,
-            scale: filterScale,
+            scale: effectiveScale,
             showGuide: countdown === null,
           });
         }
@@ -216,46 +333,153 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     };
   }, [
     activeFunFilter,
+    autoTrackFace,
     isCameraActive,
     isMirrored,
     zoomLevel,
+    panOffset,
     brightness,
     filterOffset,
     filterScale,
     countdown,
   ]);
 
-  // Drag on viewfinder to position the Baby Body / Alien Head / Character filter
+  // Multi-touch Pinch-to-Zoom + Framing Pan + Filter Offset Drag on Viewfinder
   const handleViewfinderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activeFunFilter === 'none') return;
-    dragStateRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      origX: filterOffset.x,
-      origY: filterOffset.y,
-    };
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {}
+
+    const pointers = Array.from(activePointersRef.current.values());
+
+    if (pointers.length >= 2) {
+      // Two-finger Pinch-to-Zoom + Two-Finger Pan
+      const [p1, p2] = pointers;
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+
+      pinchStateRef.current = {
+        initialDistance: Math.max(24, dist),
+        initialZoom: zoomLevel,
+        initialMidX: midX,
+        initialMidY: midY,
+        initialPanX: panOffset.x,
+        initialPanY: panOffset.y,
+      };
+      dragStateRef.current = null;
+      setIsGestureActive(true);
+      triggerZoomHud();
+      return;
+    }
+
+    if (pointers.length === 1) {
+      if (activeFunFilter !== 'none') {
+        dragStateRef.current = {
+          mode: 'filter',
+          startX: e.clientX,
+          startY: e.clientY,
+          origX: filterOffset.x,
+          origY: filterOffset.y,
+        };
+        setIsGestureActive(true);
+      } else if (zoomLevel > 1.01) {
+        dragStateRef.current = {
+          mode: 'framePan',
+          startX: e.clientX,
+          startY: e.clientY,
+          origX: panOffset.x,
+          origY: panOffset.y,
+        };
+        setIsGestureActive(true);
+        triggerZoomHud();
+      }
+    }
   };
 
   const handleViewfinderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStateRef.current || activeFunFilter === 'none') return;
+    if (!activePointersRef.current.has(e.pointerId)) return;
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    const pointers = Array.from(activePointersRef.current.values());
     const rect = e.currentTarget.getBoundingClientRect();
-    const dx = (e.clientX - dragStateRef.current.startX) / Math.max(200, rect.width);
-    const dy = (e.clientY - dragStateRef.current.startY) / Math.max(200, rect.height);
-    setFilterOffset({
-      x: Math.max(-0.32, Math.min(0.32, dragStateRef.current.origX + dx)),
-      y: Math.max(-0.32, Math.min(0.32, dragStateRef.current.origY + dy)),
-    });
+    const viewW = Math.max(200, rect.width);
+    const viewH = Math.max(200, rect.height);
+
+    // Handle 2-finger pinch-to-zoom & midpoint pan
+    if (pointers.length >= 2 && pinchStateRef.current) {
+      const [p1, p2] = pointers;
+      const currentDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const currentMidX = (p1.x + p2.x) / 2;
+      const currentMidY = (p1.y + p2.y) / 2;
+
+      const scaleRatio = currentDist / pinchStateRef.current.initialDistance;
+      const nextZoom = clampZoom(pinchStateRef.current.initialZoom * scaleRatio);
+
+      const deltaMidX = (currentMidX - pinchStateRef.current.initialMidX) / viewW;
+      const deltaMidY = (currentMidY - pinchStateRef.current.initialMidY) / viewH;
+
+      const rawPan = {
+        x: pinchStateRef.current.initialPanX + deltaMidX,
+        y: pinchStateRef.current.initialPanY + deltaMidY,
+      };
+
+      setZoomLevel(nextZoom);
+      setPanOffset(clampPanForZoom(rawPan, nextZoom));
+      triggerZoomHud();
+      return;
+    }
+
+    // Handle 1-finger drag (either filter offset or zoomed camera framing pan)
+    if (pointers.length === 1 && dragStateRef.current) {
+      const dx = (e.clientX - dragStateRef.current.startX) / viewW;
+      const dy = (e.clientY - dragStateRef.current.startY) / viewH;
+
+      if (dragStateRef.current.mode === 'filter' && activeFunFilter !== 'none') {
+        setFilterOffset({
+          x: Math.max(-0.32, Math.min(0.32, dragStateRef.current.origX + dx)),
+          y: Math.max(-0.32, Math.min(0.32, dragStateRef.current.origY + dy)),
+        });
+      } else if (dragStateRef.current.mode === 'framePan') {
+        setPanOffset(
+          clampPanForZoom(
+            {
+              x: dragStateRef.current.origX + dx,
+              y: dragStateRef.current.origY + dy,
+            },
+            zoomLevel
+          )
+        );
+        triggerZoomHud();
+      }
+    }
   };
 
-  const handleViewfinderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStateRef.current) return;
-    dragStateRef.current = null;
+  const handleViewfinderPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.delete(e.pointerId);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
+
+    const remaining = Array.from(activePointersRef.current.values());
+    if (remaining.length < 2) {
+      pinchStateRef.current = null;
+    }
+    if (remaining.length === 1 && zoomLevel > 1.01 && activeFunFilter === 'none') {
+      // Smoothly transition from 2-finger pinch to 1-finger pan if one finger remains down
+      const [p1] = remaining;
+      dragStateRef.current = {
+        mode: 'framePan',
+        startX: p1.x,
+        startY: p1.y,
+        origX: panOffset.x,
+        origY: panOffset.y,
+      };
+    } else if (remaining.length === 0) {
+      dragStateRef.current = null;
+      setIsGestureActive(false);
+    }
   };
 
   // Toggle horizontal camera mirror
@@ -296,7 +520,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     }
   }, [countdown]);
 
-  // Capture Snapshot (including Baby Body / Alien Head / Fun Filter warp & overlay)
+  // Capture Snapshot (dynamically locked onto the user's real-time detected face + pinch-zoom framing)
   const takeSnapshot = () => {
     soundEffects.playShutter();
     if (flashEnabled) {
@@ -305,6 +529,10 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     }
 
     let dataUrl = '';
+    const trackedFace = faceTrackerService.getCurrentState();
+    const effectiveScale =
+      (autoTrackFace && trackedFace.detected ? trackedFace.recommendedScale : 1.0) *
+      filterScale;
 
     if (isCameraActive && videoRef.current && videoRef.current.videoWidth) {
       const video = videoRef.current;
@@ -318,7 +546,10 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       if (ctx) {
         ctx.save();
         ctx.filter = `brightness(${brightness}%)`;
-        ctx.translate(targetW / 2, targetH / 2);
+        ctx.translate(
+          targetW / 2 + panOffset.x * targetW,
+          targetH / 2 + panOffset.y * targetH
+        );
         ctx.scale(isMirrored ? -zoomLevel : zoomLevel, zoomLevel);
 
         const vw = video.videoWidth;
@@ -329,12 +560,19 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         ctx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
         ctx.restore();
 
-        // Bake active Fun Camera Filter (Baby Body, Alien Head, etc.) into the captured photo
+        // Bake active Fun Camera Filter at the exact real-time tracked face coordinates
         if (activeFunFilter !== 'none') {
           applyFunCameraFilterToCanvas(ctx, targetW, targetH, activeFunFilter, {
+            faceCenterX:
+              autoTrackFace && trackedFace.detected ? trackedFace.centerX : undefined,
+            faceCenterY:
+              autoTrackFace && trackedFace.detected ? trackedFace.centerY : undefined,
+            faceDetected: false,
+            rollAngleDeg:
+              autoTrackFace && trackedFace.detected ? trackedFace.rollAngleDeg : 0,
             offsetX: filterOffset.x,
             offsetY: filterOffset.y,
-            scale: filterScale,
+            scale: effectiveScale,
             showGuide: false,
           });
         }
@@ -342,7 +580,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         dataUrl = canvas.toDataURL('image/jpeg', 0.94);
       }
     } else {
-      // High-quality artistic fallback canvas
+      // High-quality artistic fallback canvas (also respects pinch-to-zoom & pan framing)
       const canvas = document.createElement('canvas');
       canvas.width = 800;
       canvas.height = 600;
@@ -352,31 +590,44 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       ctx.fillStyle = `hsl(${hue}, 20%, 93%)`;
       ctx.fillRect(0, 0, 800, 600);
 
+      ctx.save();
+      ctx.translate(400 + panOffset.x * 800, 300 + panOffset.y * 600);
+      ctx.scale(isMirrored ? -zoomLevel : zoomLevel, zoomLevel);
+      ctx.translate(-400, -300);
+
       // Face silhouette
-      ctx.fillStyle = '#e2e8f0';
+      ctx.fillStyle = '#f1c27d';
       ctx.beginPath();
-      ctx.arc(400, 235, 110, 0, Math.PI * 2);
+      ctx.arc(400, 230, 105, 0, Math.PI * 2);
       ctx.fill();
 
       // Eyes
       ctx.fillStyle = '#0f172a';
       ctx.beginPath();
-      ctx.arc(360, 215, 10, 0, Math.PI * 2);
-      ctx.arc(440, 215, 10, 0, Math.PI * 2);
+      ctx.arc(360, 210, 10, 0, Math.PI * 2);
+      ctx.arc(440, 210, 10, 0, Math.PI * 2);
       ctx.fill();
 
       // Smile
       ctx.strokeStyle = '#0f172a';
       ctx.lineWidth = 8;
       ctx.beginPath();
-      ctx.arc(400, 250, 50, 0.1 * Math.PI, 0.9 * Math.PI);
+      ctx.arc(400, 245, 48, 0.1 * Math.PI, 0.9 * Math.PI);
       ctx.stroke();
+      ctx.restore();
 
       if (activeFunFilter !== 'none') {
         applyFunCameraFilterToCanvas(ctx, 800, 600, activeFunFilter, {
+          faceCenterX:
+            autoTrackFace && trackedFace.detected ? trackedFace.centerX : undefined,
+          faceCenterY:
+            autoTrackFace && trackedFace.detected ? trackedFace.centerY : undefined,
+          faceDetected: false,
+          rollAngleDeg:
+            autoTrackFace && trackedFace.detected ? trackedFace.rollAngleDeg : 0,
           offsetX: filterOffset.x,
           offsetY: filterOffset.y,
-          scale: filterScale,
+          scale: effectiveScale,
           showGuide: false,
         });
       } else {
@@ -446,8 +697,10 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
                   : isPreparingPose
                   ? 'Get ready for next shot...'
                   : activeFunFilter !== 'none'
-                  ? `${activeFilterMeta.emoji} ${activeFilterMeta.name} Active`
-                  : 'Tap shutter when ready'}
+                  ? `${activeFilterMeta.emoji} ${activeFilterMeta.name} • Pinch to Zoom`
+                  : zoomLevel > 1.01
+                  ? `${zoomLevel.toFixed(1)}x Zoom • Drag to adjust frame`
+                  : 'Pinch to zoom • Tap shutter when ready'}
               </p>
             </div>
           </button>
@@ -498,14 +751,18 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         </div>
       </div>
 
-      {/* Expanded Full-Size Camera Viewfinder */}
+      {/* Expanded Full-Size Camera Viewfinder with Pinch-to-Zoom & Pan Framing */}
       <div
+        ref={viewfinderRef}
         onPointerDown={handleViewfinderPointerDown}
         onPointerMove={handleViewfinderPointerMove}
-        onPointerUp={handleViewfinderPointerUp}
-        style={{ touchAction: activeFunFilter !== 'none' ? 'none' : 'auto' }}
+        onPointerUp={handleViewfinderPointerEnd}
+        onPointerCancel={handleViewfinderPointerEnd}
+        style={{ touchAction: 'none' }}
         className={`relative flex-1 w-full min-h-0 rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-lg flex items-center justify-center ${
-          activeFunFilter !== 'none' ? 'cursor-grab active:cursor-grabbing' : ''
+          activeFunFilter !== 'none' || zoomLevel > 1.01
+            ? 'cursor-grab active:cursor-grabbing'
+            : ''
         }`}
       >
         <video
@@ -514,15 +771,17 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           playsInline
           muted
           style={{
-            transform: `${isMirrored ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoomLevel})`,
+            transform: `translate3d(${panOffset.x * 100}%, ${panOffset.y * 100}%, 0) scaleX(${
+              isMirrored ? -zoomLevel : zoomLevel
+            }) scaleY(${zoomLevel})`,
             filter: `brightness(${brightness}%)`,
           }}
-          className={`w-full h-full object-cover transition-all duration-200 ${
-            activeFunFilter !== 'none' ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
+          className={`w-full h-full object-cover ${
+            isGestureActive ? 'transition-none' : 'transition-transform duration-150 ease-out'
+          } ${activeFunFilter !== 'none' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
         />
 
-        {/* 60fps Live Fun Character & Warp Filter Canvas */}
+        {/* 60fps Automated Face-Detection & Live Filter Overlay Canvas */}
         {activeFunFilter !== 'none' && (
           <canvas
             ref={liveCanvasRef}
@@ -530,18 +789,36 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           />
         )}
 
-        {/* Top Floating Filter Guide & Size/Reset Controls when a Fun Filter is Active */}
+        {/* Top Floating Automated Face-Detection Status & Fine-Tune Controls */}
         {activeFunFilter !== 'none' && countdown === null && (
           <div
             onPointerDown={(e) => e.stopPropagation()}
             className="absolute top-3 inset-x-3 z-20 flex items-center justify-between gap-2 pointer-events-auto"
           >
-            <div className="px-3 py-1 rounded-full bg-black/65 backdrop-blur-md text-white text-[11px] font-medium border border-white/20 flex items-center gap-1.5 shadow-sm">
-              <span>{activeFilterMeta.emoji}</span>
-              <span className="truncate max-w-[200px] sm:max-w-xs">
-                {activeFilterMeta.guideText || 'Drag on screen to move filter'}
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                setAutoTrackFace((prev) => !prev);
+              }}
+              className={`px-3 py-1.5 rounded-full backdrop-blur-md text-[11px] font-bold border flex items-center gap-1.5 shadow-sm transition cursor-pointer ${
+                autoTrackFace && isFaceDetected
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-400/60'
+                  : autoTrackFace
+                  ? 'bg-black/65 text-amber-300 border-amber-400/40'
+                  : 'bg-black/65 text-white/80 border-white/20'
+              }`}
+              title="Toggle Automated Real-Time Face Tracking"
+            >
+              <ScanFace className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {autoTrackFace
+                  ? isFaceDetected
+                    ? 'Face Locked • Auto-Tracking'
+                    : 'Scanning Face...'
+                  : 'Manual Position Mode'}
               </span>
-            </div>
+            </button>
 
             <div className="flex items-center gap-1 bg-black/65 backdrop-blur-md rounded-full p-1 border border-white/20 text-white">
               <button
@@ -575,13 +852,41 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
                   soundEffects.playTap();
                   setFilterOffset({ x: 0, y: 0 });
                   setFilterScale(1.0);
+                  setAutoTrackFace(true);
                 }}
-                title="Reset Filter Position"
+                title="Reset Filter Position & Re-Enable Auto-Track"
                 className="w-6 h-6 rounded-full hover:bg-white/20 flex items-center justify-center cursor-pointer"
               >
                 <RotateCcw className="w-3 h-3" />
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Live Pinch-to-Zoom Indicator & Quick Reset HUD */}
+        {(showZoomHud || zoomLevel > 1.01) && countdown === null && (
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            className={`absolute ${
+              activeFunFilter !== 'none' ? 'top-14' : 'top-3'
+            } left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/65 backdrop-blur-md text-white border border-white/20 shadow-md text-xs font-mono transition-opacity duration-200`}
+          >
+            <ZoomIn className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+            <span className="font-bold">{zoomLevel.toFixed(2).replace(/\.00$/, '.0')}x</span>
+            {zoomLevel > 1.01 && (
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  setZoomLevel(1.0);
+                  setPanOffset({ x: 0, y: 0 });
+                }}
+                className="ml-1 px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/30 text-[10px] font-sans font-bold uppercase tracking-wider cursor-pointer transition"
+                title="Reset Zoom & Framing to 1.0x"
+              >
+                Reset
+              </button>
+            )}
           </div>
         )}
 
@@ -711,9 +1016,9 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           <div className="w-full h-full rounded-full bg-black hover:bg-zinc-800 transition" />
         </button>
 
-        {/* Right: Shot Progress + Zoom Toggle */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
+        {/* Right: Shot Progress + Interactive Zoom Control */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-400 mr-0.5">
             {Array.from({ length: targetShotCount }).map((_, idx) => {
               const isDone = idx < capturedPhotos.length;
               const isCurrent = idx === currentShotIndex;
@@ -734,18 +1039,54 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
             })}
           </div>
 
-          <button
-            onClick={() => {
-              soundEffects.playTap();
-              setZoomLevel((z) => (z === 1.0 ? 1.25 : z === 1.25 ? 1.5 : 1.0));
-            }}
-            className="flex items-center gap-0.5 px-2.5 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-mono font-medium transition cursor-pointer"
-            title="Zoom Level"
-          >
-            <span>{zoomLevel.toFixed(1)}x</span>
-          </button>
+          <div className="flex items-center bg-zinc-100 rounded-full p-0.5 border border-zinc-200/80">
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                applyZoomAndClampPan(zoomLevel - 0.25);
+              }}
+              disabled={zoomLevel <= MIN_CAMERA_ZOOM}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-zinc-700 hover:bg-zinc-200 disabled:opacity-35 cursor-pointer transition"
+              title="Zoom Out"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                const nextPreset =
+                  zoomLevel < 1.25
+                    ? 1.5
+                    : zoomLevel < 1.9
+                    ? 2.0
+                    : zoomLevel < 2.8
+                    ? 3.0
+                    : 1.0;
+                applyZoomAndClampPan(nextPreset, nextPreset === 1.0 ? { x: 0, y: 0 } : undefined);
+              }}
+              className="px-2 py-1 text-zinc-900 text-[11px] font-mono font-bold cursor-pointer"
+              title="Tap to cycle zoom presets or pinch camera feed"
+            >
+              {zoomLevel.toFixed(1)}x
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                applyZoomAndClampPan(zoomLevel + 0.25);
+              }}
+              disabled={zoomLevel >= MAX_CAMERA_ZOOM}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-zinc-700 hover:bg-zinc-200 disabled:opacity-35 cursor-pointer transition"
+              title="Zoom In"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 };
+

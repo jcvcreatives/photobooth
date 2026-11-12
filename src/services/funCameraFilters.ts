@@ -117,123 +117,164 @@ export const FUN_CAMERA_FILTERS: FunCameraFilterMeta[] = [
   },
 ];
 
+export function getFilterBaseAnchorY(filterId: FunCameraFilterId): number {
+  switch (filterId) {
+    case 'baby_body':
+      return 0.33;
+    case 'muscle_body':
+      return 0.31;
+    case 'astronaut':
+      return 0.38;
+    case 'royal_king':
+    case 'cyber_visor':
+      return 0.42;
+    case 'alien_head':
+      return 0.44;
+    default:
+      return 0.46;
+  }
+}
+
 export interface FunFilterTransformOptions {
-  /** Horizontal center offset in normalized range (-0.35 to +0.35, default 0) */
+  /** Normalized detected face horizontal center (0..1) from automated face tracker */
+  faceCenterX?: number;
+  /** Normalized detected face vertical center (0..1) from automated face tracker */
+  faceCenterY?: number;
+  /** Whether automated face detection is currently locked onto the user's face */
+  faceDetected?: boolean;
+  /** Head tilt roll angle in degrees (-25 to +25) */
+  rollAngleDeg?: number;
+  /** Manual horizontal fine-tune offset in normalized range (-0.35 to +0.35, default 0) */
   offsetX?: number;
-  /** Vertical center offset in normalized range (-0.35 to +0.35, default 0) */
+  /** Manual vertical fine-tune offset in normalized range (-0.35 to +0.35, default 0) */
   offsetY?: number;
   /** Prop / warp scale multiplier (0.65 to 1.45, default 1.0) */
   scale?: number;
-  /** Whether to draw the subtle face-positioning guide ring (true on live preview, false on final snapshot) */
+  /** Whether to draw the live face-tracking HUD brackets (true on live preview, false on final snapshot) */
   showGuide?: boolean;
 }
 
-// Cached LUTs for 60fps real-time pixel warping
-const lutCache = new Map<string, Int32Array>();
-
-function getOrCreateWarpLut(
+/**
+ * High-speed sub-pixel bounding-box face warp that tracks the user's detected face coordinates
+ * smoothly at 60fps without LUT quantization stepping.
+ */
+function applyRealtimeFaceWarp(
+  ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   filterId: FunCameraFilterId,
-  offsetX: number,
-  offsetY: number,
+  cx: number,
+  cy: number,
   scale: number
-): Int32Array {
-  const key = `${width}x${height}_${filterId}_${offsetX.toFixed(2)}_${offsetY.toFixed(2)}_${scale.toFixed(2)}`;
-  const existing = lutCache.get(key);
-  if (existing) return existing;
+): void {
+  const srcImgData = ctx.getImageData(0, 0, width, height);
+  const dstImgData = ctx.createImageData(width, height);
+  const src32 = new Uint32Array(srcImgData.data.buffer);
+  const dst32 = new Uint32Array(dstImgData.data.buffer);
 
-  // Keep cache bounded
-  if (lutCache.size > 24) {
-    const firstKey = lutCache.keys().next().value;
-    if (firstKey) lutCache.delete(firstKey);
-  }
+  // Copy full background untouched in single native typed-array copy
+  dst32.set(src32);
 
-  const lut = new Int32Array(width * height);
   const minDim = Math.min(width, height);
-
-  // Default face anchor center
-  const baseAnchorY =
-    filterId === 'baby_body' ? 0.34 : filterId === 'alien_head' ? 0.44 : 0.46;
-  const cx = width * (0.5 + offsetX);
-  const cy = height * (baseAnchorY + offsetY);
-
   const radius = minDim * 0.42 * scale;
+  const rx = filterId === 'alien_head' ? radius * 1.15 : radius;
+  const ry = filterId === 'alien_head' ? radius * 1.25 : radius;
   const radiusSq = radius * radius;
 
-  for (let y = 0; y < height; y++) {
+  const minX = Math.max(0, Math.floor(cx - rx));
+  const maxX = Math.min(width - 1, Math.ceil(cx + rx));
+  const minY = Math.max(0, Math.floor(cy - ry));
+  const maxY = Math.min(height - 1, Math.ceil(cy + ry));
+
+  for (let y = minY; y <= maxY; y++) {
     const dy = y - cy;
     const rowOffset = y * width;
 
-    for (let x = 0; x < width; x++) {
+    for (let x = minX; x <= maxX; x++) {
       const dx = x - cx;
       let srcX = x;
       let srcY = y;
+      let modified = false;
 
       if (filterId === 'big_head' || filterId === 'baby_body') {
         const distSq = dx * dx + dy * dy;
         if (distSq < radiusSq && distSq > 0) {
           const dist = Math.sqrt(distSq);
-          const norm = dist / radius; // 0..1
-          // Smooth spherical bulge: strength > 0 magnifies the center (big head)
+          const norm = dist / radius;
           const strength = filterId === 'baby_body' ? 0.36 : 0.54;
           const factor = 1 - strength * Math.pow(1 - norm * norm, 1.6);
           srcX = Math.round(cx + dx * factor);
           srcY = Math.round(cy + dy * factor);
+          modified = true;
         }
       } else if (filterId === 'tiny_pinch') {
         const distSq = dx * dx + dy * dy;
         if (distSq < radiusSq && distSq > 0) {
           const dist = Math.sqrt(distSq);
-          const norm = dist / radius; // 0..1
-          // Smooth inward pinch: samples further out to shrink the center features
+          const norm = dist / radius;
           const factor = 1 + 0.85 * Math.pow(1 - norm, 1.7);
           srcX = Math.round(cx + dx * factor);
           srcY = Math.round(cy + dy * factor);
+          modified = true;
         }
       } else if (filterId === 'alien_head') {
-        // Extraterrestrial pear-shaped cranium warp:
-        // Upper head (dy < 0) bulges wide & tall; lower jaw/chin (dy > 0) pinches narrow
-        const normX = dx / (radius * 1.15);
-        const normY = dy / (radius * 1.25);
+        const normX = dx / rx;
+        const normY = dy / ry;
         const ellipSq = normX * normX + normY * normY;
         if (ellipSq < 1.0) {
           const falloff = Math.pow(1 - ellipSq, 1.5);
           if (dy < 0) {
-            // Expand upper cranium & forehead
             const expandX = 1 - 0.42 * falloff * (-normY);
             const expandY = 1 - 0.32 * falloff;
             srcX = Math.round(cx + dx * expandX);
             srcY = Math.round(cy + dy * expandY);
           } else {
-            // Pinch lower jaw & chin into a pointed alien chin
             const pinchX = 1 + 0.68 * falloff * normY;
             const pinchY = 1 - 0.12 * falloff;
             srcX = Math.round(cx + dx * pinchX);
             srcY = Math.round(cy + dy * pinchY);
           }
+          modified = true;
         }
       }
 
-      if (srcX < 0) srcX = 0;
-      else if (srcX >= width) srcX = width - 1;
-      if (srcY < 0) srcY = 0;
-      else if (srcY >= height) srcY = height - 1;
-
-      lut[rowOffset + x] = srcY * width + srcX;
+      if (modified) {
+        if (srcX < 0) srcX = 0;
+        else if (srcX >= width) srcX = width - 1;
+        if (srcY < 0) srcY = 0;
+        else if (srcY >= height) srcY = height - 1;
+        dst32[rowOffset + x] = src32[srcY * width + srcX];
+      }
     }
   }
 
-  lutCache.set(key, lut);
-  return lut;
-}
+  // Subtle Martian tint inside the alien head zone
+  if (filterId === 'alien_head') {
+    const d = dstImgData.data;
+    const rSq = radius * radius;
+    for (let y = minY; y <= maxY; y++) {
+      const dy = y - cy;
+      const row = y * width;
+      for (let x = minX; x <= maxX; x++) {
+        const dx = x - cx;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < rSq) {
+          const idx = (row + x) * 4;
+          const blend = (1 - distSq / rSq) * 0.28;
+          d[idx] = Math.round(d[idx] * (1 - blend) + 90 * blend);
+          d[idx + 1] = Math.min(255, Math.round(d[idx + 1] * (1 + blend * 0.45)));
+          d[idx + 2] = Math.round(d[idx + 2] * (1 - blend * 0.2) + 140 * blend);
+        }
+      }
+    }
+  }
 
-// Reusable offscreen buffer for pixel warping so we never allocate per frame
-let offscreenWarpCanvas: HTMLCanvasElement | null = null;
+  ctx.putImageData(dstImgData, 0, 0);
+}
 
 /**
  * Applies the selected Fun Camera Filter (both real-time 2D pixel warp AND character body/head artwork)
- * onto the target 2D canvas context.
+ * dynamically over the user's detected face in real time.
  */
 export function applyFunCameraFilterToCanvas(
   ctx: CanvasRenderingContext2D,
@@ -244,74 +285,65 @@ export function applyFunCameraFilterToCanvas(
 ): void {
   if (filterId === 'none') return;
 
-  const offsetX = options.offsetX ?? 0;
-  const offsetY = options.offsetY ?? 0;
-  const scale = options.scale ?? 1.0;
-  const showGuide = options.showGuide ?? false;
-
   const meta = FUN_CAMERA_FILTERS.find((f) => f.id === filterId);
   if (!meta) return;
 
-  // 1. Apply 60fps LUT pixel warp if this filter has a geometric face/head distortion
+  const baseAnchorY = getFilterBaseAnchorY(filterId);
+  const manualOffsetX = options.offsetX ?? 0;
+  const manualOffsetY = options.offsetY ?? 0;
+
+  const effectiveOffsetX =
+    options.faceCenterX !== undefined
+      ? options.faceCenterX - 0.5 + manualOffsetX
+      : manualOffsetX;
+  const effectiveOffsetY =
+    options.faceCenterY !== undefined
+      ? options.faceCenterY - baseAnchorY + manualOffsetY
+      : manualOffsetY;
+
+  const scale = options.scale ?? 1.0;
+  const rollAngleDeg = options.rollAngleDeg ?? 0;
+  const faceDetected = options.faceDetected ?? false;
+  const showGuide = options.showGuide ?? false;
+
+  const cx = width * (0.5 + effectiveOffsetX);
+  const cy = height * (baseAnchorY + effectiveOffsetY);
+
+  // 1. Apply 60fps sub-pixel face warp centered on the detected face
   if (meta.hasWarp) {
     try {
-      const srcImgData = ctx.getImageData(0, 0, width, height);
-      if (!offscreenWarpCanvas) {
-        offscreenWarpCanvas = document.createElement('canvas');
-      }
-      if (offscreenWarpCanvas.width !== width || offscreenWarpCanvas.height !== height) {
-        offscreenWarpCanvas.width = width;
-        offscreenWarpCanvas.height = height;
-      }
-      const dstImgData = ctx.createImageData(width, height);
-      const src32 = new Uint32Array(srcImgData.data.buffer);
-      const dst32 = new Uint32Array(dstImgData.data.buffer);
-      const lut = getOrCreateWarpLut(width, height, filterId, offsetX, offsetY, scale);
-      const len = dst32.length;
-
-      for (let i = 0; i < len; i++) {
-        dst32[i] = src32[lut[i]];
-      }
-
-      // Subtle Martian tint inside the alien head zone
-      if (filterId === 'alien_head') {
-        const d = dstImgData.data;
-        const cx = width * (0.5 + offsetX);
-        const cy = height * (0.44 + offsetY);
-        const r = Math.min(width, height) * 0.42 * scale;
-        const rSq = r * r;
-
-        for (let y = 0; y < height; y += 1) {
-          const dy = y - cy;
-          const row = y * width;
-          for (let x = 0; x < width; x += 1) {
-            const dx = x - cx;
-            const distSq = dx * dx + dy * dy;
-            if (distSq < rSq) {
-              const idx = (row + x) * 4;
-              const blend = (1 - distSq / rSq) * 0.28;
-              d[idx] = Math.round(d[idx] * (1 - blend) + 90 * blend);
-              d[idx + 1] = Math.min(255, Math.round(d[idx + 1] * (1 + blend * 0.45)));
-              d[idx + 2] = Math.round(d[idx + 2] * (1 - blend * 0.2) + 140 * blend);
-            }
-          }
-        }
-      }
-
-      ctx.putImageData(dstImgData, 0, 0);
+      applyRealtimeFaceWarp(ctx, width, height, filterId, cx, cy, scale);
     } catch {
       // Ignore security/tainted canvas fallback
     }
   }
 
-  // 2. Draw Character Body / Head / Prop Artwork Overlay
+  // 2. Draw Character Body / Head / Prop Artwork Overlay dynamically locked onto the face
   if (meta.hasOverlay) {
-    drawCharacterFilterArtwork(ctx, width, height, filterId, offsetX, offsetY, scale);
+    drawCharacterFilterArtwork(
+      ctx,
+      width,
+      height,
+      filterId,
+      effectiveOffsetX,
+      effectiveOffsetY,
+      scale,
+      rollAngleDeg
+    );
   }
 
-  // 3. Optional subtle live viewfinder alignment ring so guests know where to place their face
+  // 3. Optional live viewfinder AR face-tracking reticle
   if (showGuide) {
-    drawFaceAlignmentGuide(ctx, width, height, filterId, offsetX, offsetY, scale);
+    drawFaceAlignmentGuide(
+      ctx,
+      width,
+      height,
+      filterId,
+      effectiveOffsetX,
+      effectiveOffsetY,
+      scale,
+      faceDetected
+    );
   }
 }
 
@@ -322,19 +354,11 @@ function drawFaceAlignmentGuide(
   filterId: FunCameraFilterId,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  faceDetected: boolean
 ) {
   const minDim = Math.min(width, height);
-  const anchorY =
-    filterId === 'baby_body'
-      ? 0.33
-      : filterId === 'muscle_body'
-      ? 0.31
-      : filterId === 'astronaut'
-      ? 0.38
-      : filterId === 'royal_king'
-      ? 0.42
-      : 0.44;
+  const anchorY = getFilterBaseAnchorY(filterId);
 
   const cx = width * (0.5 + offsetX);
   const cy = height * (anchorY + offsetY);
@@ -342,12 +366,44 @@ function drawFaceAlignmentGuide(
   const ry = minDim * 0.23 * scale;
 
   ctx.save();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-  ctx.lineWidth = Math.max(2, minDim * 0.004);
-  ctx.setLineDash([8, 8]);
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.stroke();
+  if (faceDetected) {
+    // Sleek AR Face-Detection Corner Brackets around the tracked face
+    const bx0 = cx - rx;
+    const by0 = cy - ry;
+    const bx1 = cx + rx;
+    const by1 = cy + ry;
+    const cornerLen = Math.max(14, minDim * 0.038 * scale);
+
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.85)';
+    ctx.lineWidth = Math.max(2.5, minDim * 0.005);
+    ctx.lineCap = 'round';
+
+    ctx.beginPath();
+    // Top-left bracket
+    ctx.moveTo(bx0, by0 + cornerLen);
+    ctx.lineTo(bx0, by0);
+    ctx.lineTo(bx0 + cornerLen, by0);
+    // Top-right bracket
+    ctx.moveTo(bx1 - cornerLen, by0);
+    ctx.lineTo(bx1, by0);
+    ctx.lineTo(bx1, by0 + cornerLen);
+    // Bottom-left bracket
+    ctx.moveTo(bx0, by1 - cornerLen);
+    ctx.lineTo(bx0, by1);
+    ctx.lineTo(bx0 + cornerLen, by1);
+    // Bottom-right bracket
+    ctx.moveTo(bx1 - cornerLen, by1);
+    ctx.lineTo(bx1, by1);
+    ctx.lineTo(bx1, by1 - cornerLen);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = Math.max(2, minDim * 0.004);
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -363,15 +419,24 @@ function drawCharacterFilterArtwork(
   filterId: FunCameraFilterId,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  rollAngleDeg: number = 0
 ) {
   const minDim = Math.min(width, height);
   const s = (minDim / 600) * scale;
   const cx = width * (0.5 + offsetX);
+  const anchorY = getFilterBaseAnchorY(filterId);
+  const anchorCy = height * (anchorY + offsetY);
 
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+
+  if (Math.abs(rollAngleDeg) > 0.3) {
+    ctx.translate(cx, anchorCy);
+    ctx.rotate((rollAngleDeg * Math.PI) / 180);
+    ctx.translate(-cx, -anchorCy);
+  }
 
   if (filterId === 'baby_body') {
     const headCy = height * (0.33 + offsetY);
