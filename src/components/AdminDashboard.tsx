@@ -204,6 +204,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   );
   const [customHeaderStatusMsg, setCustomHeaderStatusMsg] = useState<string | null>(null);
   const customHeaderFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [showResetStatsPrompt, setShowResetStatsPrompt] = useState(false);
+  const [resetStatsPassword, setResetStatsPassword] = useState('');
+  const [resetStatsError, setResetStatsError] = useState(false);
+  const [resetStatsSuccessMsg, setResetStatsSuccessMsg] = useState<string | null>(null);
 
   // Home Screen 3-Strips Custom Photos State (Operator / Admin Control Only)
   const [homeStripPhotos, setHomeStripPhotos] = useState<string[]>(() => {
@@ -438,10 +442,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleResetPaper = async () => {
+  const handleConfirmResetStats = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     soundEffects.playTap();
-    await analyticsService.resetPaperRoll();
-    setTelemetry({ ...analyticsService.getTelemetry() });
+    if (resetStatsPassword.trim() === 'j@n27') {
+      const fresh = await analyticsService.resetStats();
+      setTelemetry(fresh);
+      setResetStatsPassword('');
+      setResetStatsError(false);
+      setShowResetStatsPrompt(false);
+      setResetStatsSuccessMsg('✓ Stats reset to zero.');
+      soundEffects.playSuccessChime();
+      setTimeout(() => setResetStatsSuccessMsg(null), 3500);
+    } else {
+      setResetStatsError(true);
+      setResetStatsPassword('');
+    }
   };
 
   const handleSaveConfig = async () => {
@@ -1266,8 +1282,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB:Stats */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
-              {/* Top Key Metrics Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {/* Top Key Metrics Grid (Paper Roll Level removed + Reset Stats with Password Prompt) */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
                   <div className="text-xs text-slate-400 font-medium mb-1">Total Photo Sessions</div>
                   <div className="text-2xl sm:text-3xl font-black text-indigo-400">{telemetry.totalSessions}</div>
@@ -1283,32 +1299,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-                  <div className="text-xs text-slate-400 font-medium mb-1 flex items-center justify-between">
-                    <span>Paper Roll Level</span>
-                    <button
-                      onClick={handleResetPaper}
-                      className="text-[10px] text-emerald-400 hover:underline"
-                    >
-                      Refill 100%
-                    </button>
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-black text-amber-400">
-                    {telemetry.paperRemainingPercent}%
-                  </div>
-                  <div className="w-full h-1.5 bg-slate-800 rounded-full mt-2 overflow-hidden">
-                    <div
-                      className="h-full bg-amber-400 transition-all"
-                      style={{ width: `${telemetry.paperRemainingPercent}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
                   <div className="text-xs text-slate-400 font-medium mb-1">Total Revenue</div>
                   <div className="text-2xl sm:text-3xl font-black text-emerald-400">
                     {config.currencySymbol}{telemetry.totalRevenue.toFixed(2)}
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">QR Pay & Vouchers</div>
+                </div>
+
+                {/* Reset Stats Card with Password-Only Prompt */}
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="text-xs text-slate-400 font-medium mb-1">Reset All Stats</div>
+                    <div className="text-[11px] text-slate-500">
+                      Clear sessions, prints &amp; revenue counters
+                    </div>
+                  </div>
+
+                  {!showResetStatsPrompt ? (
+                    <div className="mt-3 space-y-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEffects.playTap();
+                          setShowResetStatsPrompt(true);
+                          setResetStatsError(false);
+                          setResetStatsPassword('');
+                        }}
+                        className="w-full py-2 px-3 rounded-xl bg-rose-600/20 hover:bg-rose-600 border border-rose-500/40 text-rose-200 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reset Stats</span>
+                      </button>
+                      {resetStatsSuccessMsg && (
+                        <div className="text-[11px] text-emerald-400 font-semibold text-center">
+                          {resetStatsSuccessMsg}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <form onSubmit={handleConfirmResetStats} className="mt-2 space-y-2">
+                      <input
+                        type="password"
+                        autoFocus
+                        value={resetStatsPassword}
+                        onChange={(e) => {
+                          setResetStatsPassword(e.target.value);
+                          if (resetStatsError) setResetStatsError(false);
+                        }}
+                        placeholder="Enter password"
+                        className={`w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border text-white text-xs font-mono focus:outline-none ${
+                          resetStatsError
+                            ? 'border-rose-500 focus:border-rose-400'
+                            : 'border-slate-700 focus:border-rose-400'
+                        }`}
+                      />
+                      {resetStatsError && (
+                        <div className="text-[10px] text-rose-400 font-semibold">
+                          Incorrect password
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="submit"
+                          className="flex-1 py-1.5 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] transition cursor-pointer"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEffects.playTap();
+                            setShowResetStatsPrompt(false);
+                            setResetStatsError(false);
+                            setResetStatsPassword('');
+                          }}
+                          className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </div>
 
@@ -1342,14 +1413,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800">
                   <h3 className="text-sm font-bold text-white mb-3">Popular Frame Themes</h3>
                   <div className="space-y-2 text-xs">
-                    {Object.entries(telemetry.popularFrames).map(([k, v]) => (
-                      <div key={k} className="flex items-center justify-between">
-                        <span className="text-slate-300 capitalize">{k.replace('_', ' ')}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-indigo-400">{v} sessions</span>
+                    {Object.entries(telemetry.popularFrames).length === 0 ? (
+                      <div className="text-slate-500 py-2">No sessions recorded yet.</div>
+                    ) : (
+                      Object.entries(telemetry.popularFrames).map(([k, v]) => (
+                        <div key={k} className="flex items-center justify-between">
+                          <span className="text-slate-300 capitalize">{k.replace('_', ' ')}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-indigo-400">{v} sessions</span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

@@ -116,6 +116,24 @@ class AnalyticsService {
     await this.persist();
   }
 
+  public async resetStats(): Promise<KioskTelemetry> {
+    await this.init();
+    this.currentTelemetry = {
+      ...this.currentTelemetry,
+      totalSessions: 0,
+      totalPrints: 0,
+      paperRemainingPercent: 100,
+      totalRevenue: 0,
+      activeSince: Date.now(),
+      lastPrintTimestamp: undefined,
+      popularFrames: {},
+      popularFilters: {},
+      averageSessionDurationSec: 0,
+    };
+    await this.persist();
+    return { ...this.currentTelemetry };
+  }
+
   private async persist(): Promise<void> {
     await storageService.saveTelemetry(this.currentTelemetry);
   }
