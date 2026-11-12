@@ -356,6 +356,21 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
     return () => clearTimeout(timer);
   }, [adminTapCount]);
 
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Synchronize custom photos, theme selection, and shuffles from Admin Screen
   useEffect(() => {
     storageService.getAttractPhotos().then((stored) => {
@@ -802,11 +817,15 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
           <Printer className={`w-4 h-4 shrink-0 ${theme.bottomIconClass}`} />
           <span>{theme.bottomFeatures[0]}</span>
         </div>
-        <span>•</span>
-        <div className="flex items-center gap-2">
-          <QrCode className={`w-4 h-4 shrink-0 ${theme.bottomIconClass}`} />
-          <span>{theme.bottomFeatures[1]}</span>
-        </div>
+        {isOnline && (
+          <>
+            <span>•</span>
+            <div className="flex items-center gap-2">
+              <QrCode className={`w-4 h-4 shrink-0 ${theme.bottomIconClass}`} />
+              <span>{theme.bottomFeatures[1]}</span>
+            </div>
+          </>
+        )}
         <span>•</span>
         <div className="flex items-center gap-2">
           <Sparkles className={`w-4 h-4 shrink-0 ${theme.bottomIconClass}`} />

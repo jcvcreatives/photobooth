@@ -382,13 +382,13 @@
   will-change: transform;
 }
 
-/* Thermal Printer Physical Output Slide-out Animation (60fps GPU-composited) */
-@keyframes thermalFeedOut {
+/* Thermal Printer Physical Output Slide-Down Toward Printer Below Tablet (60fps GPU-composited) */
+@keyframes thermalFeedDownToBottomSlot {
   0% {
-    transform: translate3d(0, -100%, 0);
+    transform: translate3d(0, -45%, 0);
   }
   100% {
-    transform: translate3d(0, 0%, 0);
+    transform: translate3d(0, 12%, 0);
   }
 }
 
@@ -402,7 +402,7 @@
 }
 
 .animate-thermalFeed {
-  animation: thermalFeedOut 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: thermalFeedDownToBottomSlot 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   will-change: transform;
   backface-visibility: hidden;
   transform: translateZ(0);
@@ -412,23 +412,23 @@
   animation: thermalSlotPulse 1.8s infinite ease-in-out;
 }
 
-/* Full-Screen Big Receipt Printout Sliding Downward Toward Physical Printer Below Tablet (Pure 60fps GPU Glide) */
+/* Full-Screen Big Receipt Printout Sliding Downward Into Bottom Printer Slot Below Tablet (Pure 60fps GPU Glide) */
 @keyframes bigReceiptSlideDownBelow {
   0% {
-    transform: translate3d(0, -96%, 0);
+    transform: translate3d(0, -28%, 0);
   }
   100% {
-    transform: translate3d(0, 26%, 0);
+    transform: translate3d(0, 56%, 0);
   }
 }
 
 @keyframes arrowSlideDownBelow {
   0%, 100% {
-    transform: translate3d(0, 0px, 0);
-    opacity: 0.75;
+    transform: translate3d(0, -2px, 0);
+    opacity: 0.65;
   }
   50% {
-    transform: translate3d(0, 8px, 0);
+    transform: translate3d(0, 6px, 0);
     opacity: 1;
   }
 }
@@ -446,7 +446,7 @@
   will-change: transform;
 }
 
-/* Looping Careful Receipt Tearing Animation */
+/* Looping Downward Receipt Feed & Careful Tear Toward Printer Below Tablet */
 @keyframes tearLineProgress {
   0%, 8% {
     width: 0%;
@@ -462,65 +462,65 @@
   }
 }
 
-@keyframes receiptTearCarefully {
-  0%, 15% {
-    transform: translate3d(0px, 0px, 0) rotate(0deg);
+@keyframes receiptSlideDownAndTearBelow {
+  0% {
+    transform: translate3d(0px, -10px, 0) rotate(0deg);
   }
   45% {
-    transform: translate3d(2px, 3px, 0) rotate(1.1deg);
+    transform: translate3d(0px, 8px, 0) rotate(0deg);
   }
   72% {
-    transform: translate3d(4px, 8px, 0) rotate(2.2deg);
+    transform: translate3d(2px, 16px, 0) rotate(1.4deg);
   }
-  86% {
-    transform: translate3d(4px, 9px, 0) rotate(2.2deg);
-    opacity: 0.94;
+  88% {
+    transform: translate3d(2px, 18px, 0) rotate(1.6deg);
+    opacity: 0.95;
   }
-  96%, 100% {
-    transform: translate3d(0px, 0px, 0) rotate(0deg);
+  100% {
+    transform: translate3d(0px, -10px, 0) rotate(0deg);
     opacity: 1;
   }
 }
 
 @keyframes tearHandGuide {
   0%, 8% {
-    left: 2%;
+    left: 6%;
     opacity: 0;
     transform: translateY(-2px) rotate(0deg) scale(0.92);
   }
-  16% {
-    left: 8%;
+  18% {
+    left: 12%;
     opacity: 1;
-    transform: translateY(1px) rotate(-6deg) scale(1);
+    transform: translateY(2px) rotate(-4deg) scale(1);
   }
   68% {
-    left: 86%;
+    left: 84%;
     opacity: 1;
-    transform: translateY(5px) rotate(8deg) scale(1);
+    transform: translateY(6px) rotate(6deg) scale(1);
   }
-  82%, 100% {
-    left: 92%;
+  84%, 100% {
+    left: 90%;
     opacity: 0;
-    transform: translateY(7px) rotate(10deg) scale(0.92);
+    transform: translateY(8px) rotate(8deg) scale(0.92);
   }
 }
 
 @keyframes miniReceiptTearOff {
-  0%, 18% {
-    transform: translateY(0px) rotate(0deg);
-    opacity: 1;
+  0% {
+    transform: translateY(-4px) rotate(0deg);
+    opacity: 0.9;
   }
-  62% {
-    transform: translateY(3px) rotate(4deg);
+  55% {
+    transform: translateY(5px) rotate(0deg);
     opacity: 1;
   }
   80% {
-    transform: translateY(6px) rotate(7deg);
+    transform: translateY(8px) rotate(3deg);
     opacity: 0.85;
   }
-  95%, 100% {
-    transform: translateY(0px) rotate(0deg);
-    opacity: 1;
+  100% {
+    transform: translateY(-4px) rotate(0deg);
+    opacity: 0.9;
   }
 }
 
@@ -529,8 +529,8 @@
 }
 
 .animate-receipt-tear {
-  transform-origin: top left;
-  animation: receiptTearCarefully 2.8s infinite ease-in-out;
+  transform-origin: bottom center;
+  animation: receiptSlideDownAndTearBelow 2.8s infinite ease-in-out;
   will-change: transform;
 }
 
@@ -540,7 +540,7 @@
 }
 
 .animate-mini-receipt-tear {
-  transform-origin: top left;
+  transform-origin: bottom center;
   animation: miniReceiptTearOff 2.4s infinite ease-in-out;
 }
 

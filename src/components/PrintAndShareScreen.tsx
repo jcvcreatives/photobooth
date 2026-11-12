@@ -8,14 +8,10 @@ import confetti from 'canvas-confetti';
 import {
   Printer,
   QrCode,
-  Mail,
   Download,
   RotateCcw,
   Sparkles,
-  Smartphone,
-  Check,
   X,
-  Send,
   Loader2,
   Ticket,
   Share2,
@@ -24,7 +20,6 @@ import {
 } from 'lucide-react';
 import { PhotostripResult, ThermalPrinterConfig, RemoteKioskConfig } from '../types';
 import { thermalPrinterService } from '../services/thermalPrinter';
-import { emailDeliveryService } from '../services/email';
 import { paymentService, LAYOUT_VOUCHER_META } from '../services/payment';
 import { soundEffects } from '../services/soundEffects';
 import { enduranceManager } from '../services/enduranceManager';
@@ -67,8 +62,24 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     const t = setTimeout(() => setLogoTapCount(0), 2500);
     return () => clearTimeout(t);
   }, [logoTapCount]);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
   const [showQrModal, setShowQrModal] = useState(false);
-  const [showEmailModal, setShowEmailModal] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowQrModal(false);
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   const [showPrintAnotherCopyModal, setShowPrintAnotherCopyModal] = useState(false);
   const [anotherCopyVoucherCode, setAnotherCopyVoucherCode] = useState('');
   const [anotherCopyError, setAnotherCopyError] = useState('');
@@ -84,11 +95,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   const [quickShareStatus, setQuickShareStatus] = useState<string | null>(null);
   const [thermalPreviewUrl, setThermalPreviewUrl] = useState<string>(result.thermalRasterDataUrl || '');
   const [countdownSeconds, setCountdownSeconds] = useState(60);
-
-  // Email form states
-  const [emailInput, setEmailInput] = useState('');
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
-  const [emailSentStatus, setEmailSentStatus] = useState<string | null>(null);
 
   // Dispenser animation
   const [feedAnimationKey, setFeedAnimationKey] = useState<number>(0);
@@ -166,8 +172,9 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     };
   }, []);
 
-  // Generate Self-Contained Offline QR Code (deferred so 60fps receipt slide & confetti never drop a frame)
+  // Generate QR Code only when online (deferred so 60fps receipt slide & confetti never drop a frame)
   useEffect(() => {
+    if (!isOnline) return;
     let cancelled = false;
     const delayMs = showQrModal ? 0 : 1200;
     const qrTimer = setTimeout(() => {
@@ -189,10 +196,11 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       cancelled = true;
       clearTimeout(qrTimer);
     };
-  }, [activeCanvas, result, showQrModal]);
+  }, [activeCanvas, result, showQrModal, isOnline]);
 
-  // Host 100% uncompressed Full-HD photostrip & raw photos via WebRTC P2P for instant iPhone/Android HD sync
+  // Host Full-HD photostrip & raw photos via WebRTC P2P when online
   useEffect(() => {
+    if (!isOnline) return;
     let stopPeerHost: (() => void) | null = null;
     const deferTimer = setTimeout(() => {
       stopPeerHost = startTabletHdPeerHost(result, () => {
@@ -203,7 +211,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       clearTimeout(deferTimer);
       stopPeerHost?.();
     };
-  }, [result]);
+  }, [result, isOnline]);
 
   const handleQuickShareOffline = async () => {
     soundEffects.playTap();
@@ -262,38 +270,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     }
   };
 
-  // Send photo email handler
-  const handleSendEmail = async (emailToSubmit: string) => {
-    const trimmed = emailToSubmit.trim();
-    if (!trimmed || !trimmed.includes('@')) return;
-
-    soundEffects.playTap();
-    setIsSendingEmail(true);
-    setEmailSentStatus(null);
-
-    try {
-      const response = await emailDeliveryService.sendPhotoEmail({
-        recipientEmail: trimmed,
-        photostripId: result.id,
-        photostripUrl: result.compositeDataUrl, // Sends the full-color keepsake photostrip
-        eventTitle: result.eventTitle || 'JCVcreatives Photobooth',
-      });
-
-      setEmailSentStatus(response.message);
-      soundEffects.playSuccessChime();
-    } catch {
-      setEmailSentStatus('Delivery queued offline! Your photos will send automatically when online.');
-    } finally {
-      setIsSendingEmail(false);
-    }
-  };
-
-  const appendDomain = (domain: string) => {
-    soundEffects.playTap();
-    const prefix = emailInput.split('@')[0] || '';
-    setEmailInput(`${prefix}${domain}`);
-  };
-
   // Redeem a new single-use voucher to print 1 additional copy
   const handleRedeemPrintAnotherCopy = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -331,45 +307,45 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
 
   return (
     <div className="flex-1 h-full min-h-0 flex flex-col items-center justify-between p-3 sm:p-4 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-md mx-auto w-full">
-      {/* FULL-SCREEN DEDICATED BIG RECEIPT PRINTING SCREEN (Slides Printout Downward Toward Physical Printer Below Tablet) */}
+      {/* FULL-SCREEN DEDICATED BIG RECEIPT PRINTING SCREEN (Slides Printout Downward Into Bottom Printer Below Tablet) */}
       {isFeeding && (
         <div className="fixed inset-0 z-50 bg-[#faf8f5] flex flex-col items-center justify-between overflow-hidden select-none animate-fadeIn">
           {/* Top Printing Status Header */}
           <div className="w-full pt-5 pb-3 px-6 bg-white border-b border-zinc-200 shadow-xs flex flex-col items-center text-center z-20 shrink-0">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-zinc-900 text-white text-xs font-mono font-bold uppercase tracking-wider mb-1.5">
-              <Printer className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              <Printer className="w-3.5 h-3.5 text-white animate-pulse" />
               <span>Printing Receipt ({activeCopiesCount} {activeCopiesCount === 1 ? 'Copy' : 'Copies'})</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-zinc-950 tracking-tight">
               Printing Your Photo Receipt...
             </h2>
             <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
-              {printStatusText || 'Sliding down to the thermal printer below the tablet'}
+              {printStatusText || 'Sliding down into the thermal printer below the tablet'}
             </p>
           </div>
 
-          {/* Center-to-Bottom Giant Thermal Receipt Chute Sliding Downward at 60fps */}
-          <div className="relative flex-1 w-full flex flex-col items-center justify-start overflow-hidden pt-3">
-            {/* Top Thermal Printhead Slot Bar */}
-            <div className="w-76 sm:w-96 md:w-[420px] bg-zinc-800 border-2 border-zinc-700 rounded-2xl pt-2.5 pb-2 px-4 shadow-lg z-30 flex flex-col items-center shrink-0">
-              <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-300 uppercase tracking-widest mb-1.5 px-1">
-                <span>VOZY G80 • 80MM THERMAL HEAD</span>
-                <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  FEEDING DOWN
-                </span>
-              </div>
-              <div className="w-full h-2.5 bg-black rounded-full border border-zinc-600" />
-            </div>
-
-            {/* Clipped Paper Chute Directly Below the Slot (Prevents Paper Showing Above the Thermal Head) */}
-            <div className="relative flex-1 w-full flex justify-center overflow-hidden -mt-2 z-10">
+          {/* Center-to-Bottom Giant Thermal Receipt Chute Sliding Downward Into Bottom Slot at 60fps */}
+          <div className="relative flex-1 w-full flex flex-col items-center justify-end overflow-hidden pb-0">
+            {/* Clipped Paper Chute Feeding Downward Into the Bottom Printer Slot */}
+            <div className="relative flex-1 w-full flex justify-center items-start overflow-hidden pt-2 z-10">
               <div
                 key={`big-feed-${feedAnimationKey}`}
                 className="w-70 sm:w-88 md:w-96 flex flex-col items-center animate-big-receipt-slide-below"
               >
+                {/* Serrated Top Receipt Edge */}
+                <svg
+                  className="w-full h-3 text-white -mb-0.5 rotate-180"
+                  viewBox="0 0 120 8"
+                  preserveAspectRatio="none"
+                >
+                  <polygon
+                    fill="currentColor"
+                    points="0,0 4,8 8,0 12,8 16,0 20,8 24,0 28,8 32,0 36,8 40,0 44,8 48,0 52,8 56,0 60,8 64,0 68,8 72,0 76,8 80,0 84,8 88,0 92,8 96,0 100,8 104,0 108,8 112,0 116,8 120,0"
+                  />
+                </svg>
+
                 {/* Big High-Resolution Crisp Thermal Receipt Paper */}
-                <div className="w-full bg-white border-x border-t border-zinc-300 shadow-lg px-4 pt-4 pb-3 flex flex-col items-center relative">
+                <div className="w-full bg-white border-x border-b border-zinc-300 shadow-lg px-4 pt-3 pb-4 flex flex-col items-center relative">
                   <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-400 border-b border-dashed border-zinc-300 pb-1.5 mb-2.5">
                     <span>{config.eventTitle || 'JCVCREATIVES'}</span>
                     <span>80MM RECEIPT</span>
@@ -382,32 +358,34 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                     className="max-h-[54vh] sm:max-h-[58vh] w-auto object-contain select-none pointer-events-none"
                   />
 
-                  <div className="w-full mt-3 pt-2 border-t border-dashed border-zinc-300 text-center text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-                    ▼ SLIDING TO PRINTER BELOW ▼
+                  <div className="w-full mt-3 pt-2 border-t border-dashed border-zinc-300 text-center text-[10px] font-mono text-zinc-600 font-bold uppercase tracking-widest flex items-center justify-center gap-1.5">
+                    <ChevronDown className="w-3.5 h-3.5 animate-arrow-down-below" />
+                    <span>FEEDING DOWN TO PRINTER BELOW</span>
+                    <ChevronDown className="w-3.5 h-3.5 animate-arrow-down-below" />
                   </div>
                 </div>
+              </div>
+            </div>
 
-                {/* Serrated Bottom Receipt Edge */}
-                <svg
-                  className="w-full h-3 text-white -mt-0.5"
-                  viewBox="0 0 120 8"
-                  preserveAspectRatio="none"
-                >
-                  <polygon
-                    fill="currentColor"
-                    points="0,0 4,8 8,0 12,8 16,0 20,8 24,0 28,8 32,0 36,8 40,0 44,8 48,0 52,8 56,0 60,8 64,0 68,8 72,0 76,8 80,0 84,8 88,0 92,8 96,0 100,8 104,0 108,8 112,0 116,8 120,0"
-                  />
-                </svg>
+            {/* Bottom Thermal Printhead Slot Bar (Positioned at the Bottom Because Printer is Below Tablet) */}
+            <div className="w-76 sm:w-96 md:w-[420px] bg-zinc-800 border-2 border-zinc-700 rounded-t-2xl pt-2 pb-2.5 px-4 shadow-lg z-30 flex flex-col items-center shrink-0 -mb-1">
+              <div className="w-full h-2.5 bg-black rounded-full border border-zinc-600 mb-1.5" />
+              <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-300 uppercase tracking-widest px-1">
+                <span>VOZY G80 • PRINTER BELOW TABLET</span>
+                <span className="flex items-center gap-1.5 text-white font-bold">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  DISPENSING BELOW ▼
+                </span>
               </div>
             </div>
           </div>
 
           {/* Bottom Edge Exit Slot Pointing Directly to the Physical Printer Below the Tablet */}
-          <div className="w-full bg-zinc-950 text-white py-3.5 px-6 border-t-4 border-cyan-400 shadow-2xl z-30 flex flex-col items-center justify-center shrink-0">
-            <div className="flex items-center gap-3 text-sm sm:text-base font-black uppercase tracking-wider text-cyan-300">
-              <ChevronDown className="w-6 h-6 text-cyan-400 animate-arrow-down-below" />
+          <div className="w-full bg-zinc-950 text-white py-3.5 px-6 border-t-2 border-zinc-700 shadow-2xl z-30 flex flex-col items-center justify-center shrink-0">
+            <div className="flex items-center gap-3 text-sm sm:text-base font-black uppercase tracking-wider text-white">
+              <ChevronDown className="w-6 h-6 text-white animate-arrow-down-below" />
               <span>Collect Your Printout Below the Tablet</span>
-              <ChevronDown className="w-6 h-6 text-cyan-400 animate-arrow-down-below" />
+              <ChevronDown className="w-6 h-6 text-white animate-arrow-down-below" />
             </div>
             <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
               Your photo receipt is dispensing from the printer directly underneath this screen
@@ -443,37 +421,38 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           {isPrinting && printStatusText
             ? printStatusText
             : isFeeding
-            ? `Printing ${activeCopiesCount} ${activeCopiesCount === 1 ? 'copy' : 'copies'}...`
-            : 'Please tear your thermal photo receipt carefully'}
+            ? `Printing ${activeCopiesCount} ${activeCopiesCount === 1 ? 'copy' : 'copies'} below...`
+            : 'Collect & tear your photo receipt from the printer below'}
         </p>
       </div>
 
-      {/* Simulated Thermal Output Dispenser Slot */}
+      {/* Thermal Output Dispenser Oriented Downward Toward Physical Printer Below Tablet */}
       <div className="my-auto w-full flex flex-col items-center py-1 shrink-0">
-        {/* Output Slot Bezel with Serrated Tear-Bar Edge */}
-        <div className="w-60 sm:w-68 bg-zinc-200 border border-zinc-300 rounded-t-xl pt-1.5 px-3 pb-1 shadow-xs flex flex-col items-center">
-          <div className="w-11/12 h-1.5 bg-black rounded-full" />
-        </div>
+        {/* Paper Chute at Top Feeding Downward Into Bottom Printer Slot */}
+        <div className="w-60 sm:w-68 bg-white/60 border-x border-t border-zinc-200 rounded-t-2xl p-2 pb-0 flex flex-col items-center overflow-hidden relative shadow-sm">
+          <div className="w-full flex items-center justify-center gap-1 text-[8px] font-mono font-bold text-zinc-400 uppercase tracking-widest pb-1">
+            <ChevronDown className="w-3 h-3 animate-arrow-down-below text-zinc-500" />
+            <span>SENDING DOWN TO PRINTER BELOW</span>
+            <ChevronDown className="w-3 h-3 animate-arrow-down-below text-zinc-500" />
+          </div>
 
-        {/* Paper Chute holding photostrip (pure monochrome thermal print) */}
-        <div className="w-60 sm:w-68 bg-white/40 border-x border-b border-zinc-200 rounded-b-xl p-1.5 pt-0 flex flex-col items-center overflow-hidden relative shadow-md">
-          <div className="w-full overflow-hidden flex justify-center py-1.5">
+          <div className="w-full overflow-hidden flex justify-center pt-0.5 pb-2">
             <div
               key={feedAnimationKey}
-              className={`relative max-h-[29vh] sm:max-h-[33vh] flex flex-col items-center transition-transform ${
+              className={`relative max-h-[28vh] sm:max-h-[32vh] flex flex-col items-center transition-transform ${
                 isFeeding ? 'animate-thermalFeed' : ''
               }`}
             >
-              {/* Thermal Receipt Body (tilts & tears gently along the serrated edge) */}
+              {/* Thermal Receipt Body (slides downward toward the bottom printer slot & tears gently) */}
               <div
-                className={`relative rounded shadow-lg bg-white border border-zinc-200 overflow-hidden ${
+                className={`relative rounded shadow-md bg-white border border-zinc-200 overflow-hidden ${
                   !isFeeding ? 'animate-receipt-tear' : ''
                 }`}
               >
                 <img
                   src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
                   alt="Printed Thermal Photostrip"
-                  className="max-h-[24vh] sm:max-h-[28vh] w-auto object-contain select-none pointer-events-none"
+                  className="max-h-[23vh] sm:max-h-[27vh] w-auto object-contain select-none pointer-events-none"
                 />
                 {activeCopiesCount > 1 && (
                   <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px] font-mono font-bold shadow">
@@ -482,11 +461,11 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 )}
               </div>
 
-              {/* Bottom Animated Serrated Receipt Tear Guide Line */}
-              <div className="w-full relative mt-1.5 pt-1.5 flex items-center justify-center gap-1.5 text-[8px] font-mono text-amber-800 font-bold uppercase tracking-widest overflow-visible">
+              {/* Bottom Animated Serrated Receipt Tear Line right above the Bottom Printer Slot */}
+              <div className="w-full relative mt-1.5 pt-1.5 flex items-center justify-center gap-1 text-[8px] font-mono text-zinc-800 font-bold uppercase tracking-widest overflow-visible">
                 {/* Serrated perforation teeth line */}
                 <svg
-                  className="absolute top-0 inset-x-0 w-full h-1.5 text-amber-500/80"
+                  className="absolute top-0 inset-x-0 w-full h-1.5 text-zinc-400"
                   viewBox="0 0 120 6"
                   preserveAspectRatio="none"
                 >
@@ -500,46 +479,55 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 </svg>
                 {!isFeeding && (
                   <>
-                    {/* Animated tear split line progressing across the receipt */}
-                    <div className="absolute left-0 top-0.5 h-0.5 bg-amber-600 rounded-full animate-tear-line" />
-                    {/* Gentle hand pulling & tearing receipt across */}
+                    {/* Animated tear split line progressing across the bottom slot */}
+                    <div className="absolute left-0 top-0.5 h-0.5 bg-zinc-900 rounded-full animate-tear-line" />
+                    {/* Gentle hand pulling & tearing receipt at the bottom slot */}
                     <div className="absolute -top-1.5 animate-tear-hand pointer-events-none z-20 flex items-center">
                       <span className="text-xs leading-none drop-shadow-xs">🤏</span>
                     </div>
                   </>
                 )}
-                <span>✨ TEAR RECEIPT CAREFULLY ✨</span>
+                <span>▼ TEAR RECEIPT BELOW ▼</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Post-Animation Careful Receipt Tear Instruction Banner */}
+        {/* Bottom Printer Output Slot Bezel (Placed at Bottom Because Physical Printer is Below the Tablet) */}
+        <div className="w-60 sm:w-68 bg-zinc-900 text-white border border-zinc-800 rounded-b-2xl pt-1.5 pb-2 px-3 shadow-md flex flex-col items-center z-10">
+          <div className="w-11/12 h-1.5 bg-black rounded-full border border-zinc-700 mb-1" />
+          <div className="flex items-center justify-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-widest text-zinc-200">
+            <ChevronDown className="w-3 h-3 animate-arrow-down-below text-white" />
+            <span>PRINTER IS BELOW TABLET</span>
+            <ChevronDown className="w-3 h-3 animate-arrow-down-below text-white" />
+          </div>
+        </div>
+
+        {/* Post-Animation Careful Receipt Tear Instruction Banner (Minimalist & Pointing Downward) */}
         {isFeeding ? (
           <div className="mt-1.5 text-[10px] text-zinc-600 text-center flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-zinc-200 shadow-2xs">
             <Loader2 className="w-3 h-3 animate-spin text-zinc-700" />
-            <span>Feeding thermal photo receipt — please wait until printing finishes...</span>
+            <span>Dispensing receipt to printer below — please wait...</span>
           </div>
         ) : (
-          <div className="mt-1.5 w-full max-w-xs bg-amber-50 border border-amber-300 rounded-2xl px-3 py-1.5 shadow-xs flex items-center gap-2.5 text-left animate-fadeIn">
-            {/* Mini Looping Tearing Receipt Badge */}
-            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex flex-col items-center justify-center shrink-0 shadow-2xs relative overflow-hidden p-1">
-              {/* Top printer slot & serrated tear bar */}
-              <div className="w-6 h-1 bg-amber-900 rounded-full shrink-0" />
-              {/* Mini receipt top stub */}
-              <div className="w-5 h-1.5 bg-white/95 rounded-t-[1px] border-b border-dashed border-amber-500" />
-              {/* Mini receipt lower body tearing off gently */}
-              <div className="w-5 h-4 bg-white rounded-b-[2px] flex flex-col items-center justify-center gap-0.5 p-0.5 shadow-2xs animate-mini-receipt-tear">
-                <div className="w-full h-2 bg-zinc-800/80 rounded-[1px]" />
+          <div className="mt-1.5 w-full max-w-xs bg-white border border-zinc-300 rounded-2xl px-3 py-1.5 shadow-xs flex items-center gap-2.5 text-left animate-fadeIn">
+            {/* Mini Looping Downward Receipt Badge (Slot at Bottom, Receipt Feeding Down) */}
+            <div className="w-9 h-9 rounded-xl bg-zinc-900 text-white flex flex-col items-center justify-between shrink-0 shadow-2xs relative overflow-hidden p-1.5">
+              {/* Mini receipt body sliding downward */}
+              <div className="w-5 h-4 bg-white rounded-t-[2px] flex flex-col items-center justify-center gap-0.5 p-0.5 shadow-2xs animate-mini-receipt-tear">
+                <div className="w-full h-2 bg-zinc-800 rounded-[1px]" />
                 <div className="w-3 h-0.5 bg-zinc-400 rounded-full" />
               </div>
+              {/* Bottom printer slot bar */}
+              <div className="w-6 h-1 bg-zinc-500 rounded-full shrink-0" />
             </div>
             <div className="leading-tight">
-              <div className="text-[11px] font-extrabold text-amber-950">
-                Tear your thermal photo receipt carefully
+              <div className="text-[11px] font-extrabold text-zinc-950 flex items-center gap-1">
+                <span>Collect &amp; tear receipt below</span>
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-900 animate-arrow-down-below" />
               </div>
-              <div className="text-[9.5px] text-amber-800 mt-0.5">
-                Printed ({activeCopiesCount}x) • Hold the edge &amp; tear gently along the tear bar
+              <div className="text-[9.5px] text-zinc-600 mt-0.5">
+                Printed ({activeCopiesCount}x) • Tear carefully from the printer below the tablet
               </div>
             </div>
           </div>
@@ -548,33 +536,22 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
 
       {/* Action Buttons */}
       <div className="w-full space-y-1.5 max-w-xs pt-0.5 shrink-0">
-        {/* Button 1: Show Offline QR Code & Quick Share */}
-        <button
-          onClick={() => {
-            soundEffects.playTap();
-            setQuickShareStatus(null);
-            setShowQrModal(true);
-          }}
-          className="w-full py-2 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-        >
-          <QrCode className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Offline QR & Quick Share to Phone</span>
-        </button>
+        {/* Button 1: Show QR Code & Quick Share (Hidden when photobooth is offline) */}
+        {isOnline && (
+          <button
+            onClick={() => {
+              soundEffects.playTap();
+              setQuickShareStatus(null);
+              setShowQrModal(true);
+            }}
+            className="w-full py-2 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+          >
+            <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+            <span>QR & Quick Share to Phone</span>
+          </button>
+        )}
 
-        {/* Button 2: Send to Email */}
-        <button
-          onClick={() => {
-            soundEffects.playTap();
-            setEmailSentStatus(null);
-            setShowEmailModal(true);
-          }}
-          className="w-full py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-medium transition flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <Mail className="w-3.5 h-3.5 text-zinc-600" />
-          <span>Send to Email (Color & GIF)</span>
-        </button>
-
-        {/* Button 3: Save Digital & GIF */}
+        {/* Button 2: Save Digital & GIF */}
         <button
           onClick={() => {
             soundEffects.playTap();
@@ -657,8 +634,8 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
         )}
       </div>
 
-      {/* Modal 1: Offline QR Code & Quick Share Hub Modal */}
-      {showQrModal && (
+      {/* Modal 1: QR Code & Quick Share Hub Modal (Hidden when photobooth is offline) */}
+      {isOnline && showQrModal && (
         <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 z-50 animate-fadeIn">
           <div className="bg-white rounded-3xl p-4 sm:p-5 max-w-sm w-full max-h-[92dvh] overflow-y-auto text-center shadow-2xl border border-zinc-200 flex flex-col items-center">
             <div className="w-full flex items-center justify-between mb-1">
@@ -722,139 +699,11 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
               )}
             </div>
 
-            {/* Quick Email Send Form inside QR Modal (Auto-queues when offline) */}
-            <div className="w-full pt-2 border-t border-zinc-100 text-left mb-2.5">
-              <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block mb-1">
-                Or queue email delivery (sends automatically when online):
-              </label>
-              <div className="flex gap-1.5">
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="your.email@example.com"
-                  className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-zinc-300 focus:outline-none focus:ring-1 focus:ring-black bg-zinc-50"
-                />
-                <button
-                  disabled={isSendingEmail || !emailInput.includes('@')}
-                  onClick={() => handleSendEmail(emailInput)}
-                  className="px-3 py-1.5 rounded-xl bg-black hover:bg-zinc-800 disabled:opacity-40 text-white text-xs font-medium flex items-center gap-1 cursor-pointer"
-                >
-                  {isSendingEmail ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  <span>Send</span>
-                </button>
-              </div>
-
-              {/* Status Message */}
-              {emailSentStatus && (
-                <div className="mt-2 text-[11px] text-emerald-600 bg-emerald-50 rounded-lg p-1.5 flex items-center gap-1.5 border border-emerald-200">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>{emailSentStatus}</span>
-                </div>
-              )}
-            </div>
-
             <button
               onClick={() => setShowQrModal(false)}
               className="w-full py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-medium cursor-pointer"
             >
               Done
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Modal 2: Dedicated Email Modal */}
-      {showEmailModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-zinc-200 flex flex-col items-center text-center">
-            <div className="w-full flex justify-end">
-              <button
-                onClick={() => setShowEmailModal(false)}
-                className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="w-10 h-10 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center mb-2">
-              <Mail className="w-5 h-5" />
-            </div>
-
-            <h3 className="text-base font-bold text-zinc-950 mb-1">
-              Email Full-Color Photos & GIF
-            </h3>
-            <p className="text-xs text-zinc-500 mb-3 max-w-xs leading-relaxed">
-              We'll send your high-resolution color photostrip and animated motion reel directly to your inbox.
-            </p>
-
-            {/* Thumbnail of color keepsake strip */}
-            <div className="w-24 h-32 rounded-lg overflow-hidden border border-zinc-200 shadow-sm mb-3 bg-zinc-50 flex items-center justify-center">
-              <img
-                src={result.compositeDataUrl}
-                alt="Color Photostrip"
-                className="w-full h-full object-contain"
-              />
-            </div>
-
-            {/* Email Input Field */}
-            <div className="w-full space-y-2 mb-3">
-              <input
-                type="email"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="Enter your email address..."
-                className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-black text-xs text-zinc-900 bg-zinc-50"
-              />
-
-              {/* Fast Kiosk Domain Helper Buttons */}
-              <div className="flex items-center justify-center gap-1.5 flex-wrap text-[10px]">
-                {['@gmail.com', '@yahoo.com', '@icloud.com', '@outlook.com'].map((domain) => (
-                  <button
-                    key={domain}
-                    onClick={() => appendDomain(domain)}
-                    className="px-2 py-1 rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-mono transition cursor-pointer"
-                  >
-                    {domain}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {emailSentStatus && (
-              <div className="w-full mb-3 text-xs text-emerald-700 bg-emerald-50 rounded-xl p-2.5 flex items-center gap-2 border border-emerald-200 text-left">
-                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>{emailSentStatus}</span>
-              </div>
-            )}
-
-            <button
-              disabled={isSendingEmail || !emailInput.includes('@')}
-              onClick={() => handleSendEmail(emailInput)}
-              className="w-full py-3 rounded-full bg-black hover:bg-zinc-800 disabled:opacity-40 text-white text-xs font-semibold shadow-md transition flex items-center justify-center gap-2 cursor-pointer mb-2"
-            >
-              {isSendingEmail ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Sending photos...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  <span>Send Photos & Motion GIF</span>
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={() => setShowEmailModal(false)}
-              className="text-xs text-zinc-400 hover:text-zinc-700 py-1"
-            >
-              Close
             </button>
           </div>
         </div>

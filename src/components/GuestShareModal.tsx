@@ -7,17 +7,13 @@ import React, { useState } from 'react';
 import {
   Smartphone,
   Download,
-  Check,
   X,
-  Mail,
-  Send,
   Loader2,
   Sparkles,
   Share2,
 } from 'lucide-react';
 import { PhotostripResult } from '../types';
 import { soundEffects } from '../services/soundEffects';
-import { emailDeliveryService } from '../services/email';
 import { storageService } from '../services/storage';
 import {
   shareOfflineViaQuickShare,
@@ -38,7 +34,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
       result.photos.length >= 1
   );
 
-  const [activeTab, setActiveTab] = useState<'strip' | 'gif' | 'email' | 'thermal' | 'individual'>('strip');
+  const [activeTab, setActiveTab] = useState<'strip' | 'gif' | 'thermal' | 'individual'>('strip');
   const [gifFrameIndex, setGifFrameIndex] = useState(0);
   const [iosReadyJpegUrl, setIosReadyJpegUrl] = useState<string>(
     isAlreadyFullHd ? result.compositeDataUrl : ''
@@ -48,12 +44,7 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
   );
   const [hdPhotos, setHdPhotos] = useState<string[]>(isAlreadyFullHd ? result.photos : []);
   const [isHdSynced, setIsHdSynced] = useState<boolean>(isAlreadyFullHd);
-  const [syncProgress, setSyncProgress] = useState<number>(isAlreadyFullHd ? 100 : 18);
-
-  // Email form states
-  const [emailInput, setEmailInput] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [sentMessage, setSentMessage] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<number>(isAlreadyFullHd ? 18 : 18);
   const [quickShareMsg, setQuickShareMsg] = useState<string | null>(null);
 
   const isIos = isIosDevice();
@@ -154,28 +145,6 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-  };
-
-  const handleSendEmail = async () => {
-    if (!emailInput.includes('@')) return;
-    soundEffects.playTap();
-    setIsSending(true);
-    setSentMessage(null);
-
-    try {
-      const res = await emailDeliveryService.sendPhotoEmail({
-        recipientEmail: emailInput.trim(),
-        photostripId: result.id,
-        photostripUrl: iosReadyJpegUrl || result.compositeDataUrl,
-        eventTitle: result.eventTitle || 'JCVcreatives Photobooth',
-      });
-      setSentMessage(res.message);
-      soundEffects.playSuccessChime();
-    } catch {
-      setSentMessage('Delivery queued offline. Your photos will be emailed automatically when online.');
-    } finally {
-      setIsSending(false);
-    }
   };
 
   return (
@@ -373,52 +342,6 @@ export const GuestShareModal: React.FC<GuestShareModalProps> = ({ result, onClos
                 <Download className="w-4 h-4" />
                 <span>Save Burst Frame</span>
               </button>
-            </div>
-          )}
-
-          {activeTab === 'email' && (
-            <div className="flex flex-col items-center w-full py-2">
-              <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 mb-3">
-                <Mail className="w-6 h-6" />
-              </div>
-              <h4 className="text-sm font-bold text-white mb-1">Email Your Photos</h4>
-              <p className="text-xs text-zinc-400 text-center mb-4">
-                Receive your high-resolution color photostrip directly in your inbox.
-              </p>
-
-              <div className="w-full space-y-2.5">
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="Enter your email address..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-400"
-                />
-                <button
-                  onClick={handleSendEmail}
-                  disabled={isSending || !emailInput.includes('@')}
-                  className="w-full py-3 rounded-xl bg-sky-400 hover:bg-sky-300 disabled:opacity-40 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  {isSending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Sending Photos...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4" />
-                      <span>Send to My Inbox</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {sentMessage && (
-                <div className="mt-3 p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-800/70 text-emerald-300 text-[11px] text-center flex items-center justify-center gap-1.5 w-full">
-                  <Check className="w-4 h-4 shrink-0" />
-                  <span>{sentMessage}</span>
-                </div>
-              )}
             </div>
           )}
 

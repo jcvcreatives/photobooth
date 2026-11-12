@@ -11,11 +11,8 @@ import {
   ZapOff,
   Sun,
   Timer,
-  Sparkles,
-  RotateCcw,
   Minus,
   Plus,
-  ScanFace,
   ZoomIn,
 } from 'lucide-react';
 import { FrameLayoutType, PhotoFilterType } from '../types';
@@ -23,12 +20,6 @@ import { soundEffects } from '../services/soundEffects';
 import { cameraStreamService } from '../services/cameraStreamService';
 import { safeStorageGet } from '../services/storage';
 import { enterBrowserFullscreenApi } from './KioskNavBar';
-import {
-  FUN_CAMERA_FILTERS,
-  FunCameraFilterId,
-  applyFunCameraFilterToCanvas,
-} from '../services/funCameraFilters';
-import { faceTrackerService } from '../services/faceTrackerService';
 
 interface CaptureBoothProps {
   layout: FrameLayoutType;
@@ -88,19 +79,9 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   const [showZoomHud, setShowZoomHud] = useState<boolean>(false);
   const [logoTapCount, setLogoTapCount] = useState(0);
 
-  // Live Fun Character & Warp Filter state (Baby Body, Alien Head, Muscle Body, etc.)
-  const [activeFunFilter, setActiveFunFilter] = useState<FunCameraFilterId>('none');
-  const [autoTrackFace, setAutoTrackFace] = useState<boolean>(true);
-  const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false);
-  const [filterOffset, setFilterOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [filterScale, setFilterScale] = useState<number>(1.0);
-
   const currentPose = POSE_PROMPTS[currentShotIndex % POSE_PROMPTS.length];
-  const activeFilterMeta =
-    FUN_CAMERA_FILTERS.find((f) => f.id === activeFunFilter) || FUN_CAMERA_FILTERS[0];
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewfinderRef = useRef<HTMLDivElement | null>(null);
   const zoomHudTimeoutRef = useRef<number | null>(null);
 
@@ -116,7 +97,6 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   } | null>(null);
 
   const dragStateRef = useRef<{
-    mode: 'filter' | 'framePan';
     startX: number;
     startY: number;
     origX: number;
@@ -225,126 +205,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     };
   }, []);
 
-  // 60fps Automated Face-Detection & Live Filter Viewfinder Loop
-  useEffect(() => {
-    if (activeFunFilter === 'none') return;
-
-    let rafId = 0;
-    let running = true;
-    let lastStateSync = 0;
-
-    const renderLoop = () => {
-      if (!running) return;
-      const canvas = liveCanvasRef.current;
-      const video = videoRef.current;
-
-      if (canvas) {
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
-          const targetW = 640;
-          const targetH = 480;
-          if (canvas.width !== targetW || canvas.height !== targetH) {
-            canvas.width = targetW;
-            canvas.height = targetH;
-          }
-
-          ctx.save();
-          ctx.clearRect(0, 0, targetW, targetH);
-
-          if (isCameraActive && video && video.readyState >= 2 && video.videoWidth > 0) {
-            ctx.filter = `brightness(${brightness}%)`;
-            ctx.translate(
-              targetW / 2 + panOffset.x * targetW,
-              targetH / 2 + panOffset.y * targetH
-            );
-            ctx.scale(isMirrored ? -zoomLevel : zoomLevel, zoomLevel);
-
-            // Cover-fit video into targetW x targetH
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
-            const scaleCover = Math.max(targetW / vw, targetH / vh);
-            const drawW = vw * scaleCover;
-            const drawH = vh * scaleCover;
-            ctx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
-          } else {
-            // Studio simulation background when camera is unavailable (respects zoom & pan)
-            ctx.fillStyle = '#e2e8f0';
-            ctx.fillRect(0, 0, targetW, targetH);
-            ctx.translate(
-              targetW / 2 + panOffset.x * targetW,
-              targetH / 2 + panOffset.y * targetH
-            );
-            ctx.scale(isMirrored ? -zoomLevel : zoomLevel, zoomLevel);
-            ctx.translate(-targetW / 2, -targetH / 2);
-
-            ctx.fillStyle = '#f1c27d';
-            ctx.beginPath();
-            ctx.arc(targetW * 0.5, targetH * 0.38, 86, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#0f172a';
-            ctx.beginPath();
-            ctx.arc(targetW * 0.5 - 30, targetH * 0.36, 9, 0, Math.PI * 2);
-            ctx.arc(targetW * 0.5 + 30, targetH * 0.36, 9, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#0f172a';
-            ctx.lineWidth = 6;
-            ctx.beginPath();
-            ctx.arc(targetW * 0.5, targetH * 0.4, 36, 0.1 * Math.PI, 0.9 * Math.PI);
-            ctx.stroke();
-          }
-          ctx.restore();
-
-          // 1. Run automated real-time face detection on the clean camera frame
-          const trackedFace = faceTrackerService.updateFromFrame(canvas, isCameraActive);
-          const now = performance.now();
-          if (now - lastStateSync > 180) {
-            lastStateSync = now;
-            setIsFaceDetected(trackedFace.detected);
-          }
-
-          // 2. Dynamically place the selected filter (Baby Body, Alien Head, etc.) over the user's detected face
-          const effectiveScale =
-            (autoTrackFace && trackedFace.detected ? trackedFace.recommendedScale : 1.0) *
-            filterScale;
-
-          applyFunCameraFilterToCanvas(ctx, targetW, targetH, activeFunFilter, {
-            faceCenterX:
-              autoTrackFace && trackedFace.detected ? trackedFace.centerX : undefined,
-            faceCenterY:
-              autoTrackFace && trackedFace.detected ? trackedFace.centerY : undefined,
-            faceDetected: autoTrackFace && trackedFace.detected,
-            rollAngleDeg:
-              autoTrackFace && trackedFace.detected ? trackedFace.rollAngleDeg : 0,
-            offsetX: filterOffset.x,
-            offsetY: filterOffset.y,
-            scale: effectiveScale,
-            showGuide: countdown === null,
-          });
-        }
-      }
-
-      rafId = requestAnimationFrame(renderLoop);
-    };
-
-    rafId = requestAnimationFrame(renderLoop);
-    return () => {
-      running = false;
-      cancelAnimationFrame(rafId);
-    };
-  }, [
-    activeFunFilter,
-    autoTrackFace,
-    isCameraActive,
-    isMirrored,
-    zoomLevel,
-    panOffset,
-    brightness,
-    filterOffset,
-    filterScale,
-    countdown,
-  ]);
-
-  // Multi-touch Pinch-to-Zoom + Framing Pan + Filter Offset Drag on Viewfinder
+  // Multi-touch Pinch-to-Zoom + Framing Pan on Viewfinder
   const handleViewfinderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
@@ -374,27 +235,15 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       return;
     }
 
-    if (pointers.length === 1) {
-      if (activeFunFilter !== 'none') {
-        dragStateRef.current = {
-          mode: 'filter',
-          startX: e.clientX,
-          startY: e.clientY,
-          origX: filterOffset.x,
-          origY: filterOffset.y,
-        };
-        setIsGestureActive(true);
-      } else if (zoomLevel > 1.01) {
-        dragStateRef.current = {
-          mode: 'framePan',
-          startX: e.clientX,
-          startY: e.clientY,
-          origX: panOffset.x,
-          origY: panOffset.y,
-        };
-        setIsGestureActive(true);
-        triggerZoomHud();
-      }
+    if (pointers.length === 1 && zoomLevel > 1.01) {
+      dragStateRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        origX: panOffset.x,
+        origY: panOffset.y,
+      };
+      setIsGestureActive(true);
+      triggerZoomHud();
     }
   };
 
@@ -431,28 +280,21 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       return;
     }
 
-    // Handle 1-finger drag (either filter offset or zoomed camera framing pan)
+    // Handle 1-finger drag when zoomed in to pan framing
     if (pointers.length === 1 && dragStateRef.current) {
       const dx = (e.clientX - dragStateRef.current.startX) / viewW;
       const dy = (e.clientY - dragStateRef.current.startY) / viewH;
 
-      if (dragStateRef.current.mode === 'filter' && activeFunFilter !== 'none') {
-        setFilterOffset({
-          x: Math.max(-0.32, Math.min(0.32, dragStateRef.current.origX + dx)),
-          y: Math.max(-0.32, Math.min(0.32, dragStateRef.current.origY + dy)),
-        });
-      } else if (dragStateRef.current.mode === 'framePan') {
-        setPanOffset(
-          clampPanForZoom(
-            {
-              x: dragStateRef.current.origX + dx,
-              y: dragStateRef.current.origY + dy,
-            },
-            zoomLevel
-          )
-        );
-        triggerZoomHud();
-      }
+      setPanOffset(
+        clampPanForZoom(
+          {
+            x: dragStateRef.current.origX + dx,
+            y: dragStateRef.current.origY + dy,
+          },
+          zoomLevel
+        )
+      );
+      triggerZoomHud();
     }
   };
 
@@ -466,11 +308,10 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     if (remaining.length < 2) {
       pinchStateRef.current = null;
     }
-    if (remaining.length === 1 && zoomLevel > 1.01 && activeFunFilter === 'none') {
+    if (remaining.length === 1 && zoomLevel > 1.01) {
       // Smoothly transition from 2-finger pinch to 1-finger pan if one finger remains down
       const [p1] = remaining;
       dragStateRef.current = {
-        mode: 'framePan',
         startX: p1.x,
         startY: p1.y,
         origX: panOffset.x,
@@ -520,7 +361,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     }
   }, [countdown]);
 
-  // Capture Snapshot (dynamically locked onto the user's real-time detected face + pinch-zoom framing)
+  // Capture Snapshot (preserving pinch-to-zoom & pan framing)
   const takeSnapshot = () => {
     soundEffects.playShutter();
     if (flashEnabled) {
@@ -529,10 +370,6 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
     }
 
     let dataUrl = '';
-    const trackedFace = faceTrackerService.getCurrentState();
-    const effectiveScale =
-      (autoTrackFace && trackedFace.detected ? trackedFace.recommendedScale : 1.0) *
-      filterScale;
 
     if (isCameraActive && videoRef.current && videoRef.current.videoWidth) {
       const video = videoRef.current;
@@ -541,7 +378,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       const targetH = 600;
       canvas.width = targetW;
       canvas.height = targetH;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const ctx = canvas.getContext('2d');
 
       if (ctx) {
         ctx.save();
@@ -560,23 +397,6 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         ctx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
         ctx.restore();
 
-        // Bake active Fun Camera Filter at the exact real-time tracked face coordinates
-        if (activeFunFilter !== 'none') {
-          applyFunCameraFilterToCanvas(ctx, targetW, targetH, activeFunFilter, {
-            faceCenterX:
-              autoTrackFace && trackedFace.detected ? trackedFace.centerX : undefined,
-            faceCenterY:
-              autoTrackFace && trackedFace.detected ? trackedFace.centerY : undefined,
-            faceDetected: false,
-            rollAngleDeg:
-              autoTrackFace && trackedFace.detected ? trackedFace.rollAngleDeg : 0,
-            offsetX: filterOffset.x,
-            offsetY: filterOffset.y,
-            scale: effectiveScale,
-            showGuide: false,
-          });
-        }
-
         dataUrl = canvas.toDataURL('image/jpeg', 0.94);
       }
     } else {
@@ -584,7 +404,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       const canvas = document.createElement('canvas');
       canvas.width = 800;
       canvas.height = 600;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+      const ctx = canvas.getContext('2d')!;
 
       const hue = (currentShotIndex * 50 + 20) % 360;
       ctx.fillStyle = `hsl(${hue}, 20%, 93%)`;
@@ -614,28 +434,12 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       ctx.beginPath();
       ctx.arc(400, 245, 48, 0.1 * Math.PI, 0.9 * Math.PI);
       ctx.stroke();
-      ctx.restore();
 
-      if (activeFunFilter !== 'none') {
-        applyFunCameraFilterToCanvas(ctx, 800, 600, activeFunFilter, {
-          faceCenterX:
-            autoTrackFace && trackedFace.detected ? trackedFace.centerX : undefined,
-          faceCenterY:
-            autoTrackFace && trackedFace.detected ? trackedFace.centerY : undefined,
-          faceDetected: false,
-          rollAngleDeg:
-            autoTrackFace && trackedFace.detected ? trackedFace.rollAngleDeg : 0,
-          offsetX: filterOffset.x,
-          offsetY: filterOffset.y,
-          scale: effectiveScale,
-          showGuide: false,
-        });
-      } else {
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 22px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`PHOTO ${currentShotIndex + 1}`, 400, 480);
-      }
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`PHOTO ${currentShotIndex + 1}`, 400, 480);
+      ctx.restore();
 
       dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     }
@@ -661,7 +465,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   };
 
   return (
-    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between gap-1.5 px-3 py-2 sm:px-5 sm:py-2.5 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-3xl lg:max-w-4xl mx-auto w-full">
+    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between gap-2 px-3 py-2 sm:px-5 sm:py-3 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-3xl lg:max-w-4xl mx-auto w-full">
       {/* Flash effect overlay */}
       {isFlashing && (
         <div className="fixed inset-0 bg-white z-50 pointer-events-none transition-opacity duration-200" />
@@ -696,8 +500,6 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
                   ? `Capturing in ${countdown}...`
                   : isPreparingPose
                   ? 'Get ready for next shot...'
-                  : activeFunFilter !== 'none'
-                  ? `${activeFilterMeta.emoji} ${activeFilterMeta.name} • Pinch to Zoom`
                   : zoomLevel > 1.01
                   ? `${zoomLevel.toFixed(1)}x Zoom • Drag to adjust frame`
                   : 'Pinch to zoom • Tap shutter when ready'}
@@ -719,7 +521,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
               }`}
             >
               <span className="text-xl sm:text-2xl leading-none inline-block animate-pose-emoji select-none">
-                {activeFunFilter !== 'none' ? activeFilterMeta.emoji : currentPose.emoji}
+                {currentPose.emoji}
               </span>
             </div>
             <div className="flex flex-col text-left pr-1">
@@ -731,7 +533,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
                 Shot #{Math.min(currentShotIndex + 1, targetShotCount)} {currentPose.subEmoji}
               </span>
               <span className="text-xs sm:text-base font-black tracking-wide uppercase leading-tight whitespace-nowrap mt-0.5">
-                {activeFunFilter !== 'none' ? activeFilterMeta.shortLabel : currentPose.label}
+                {currentPose.label}
               </span>
             </div>
           </div>
@@ -760,9 +562,7 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
         onPointerCancel={handleViewfinderPointerEnd}
         style={{ touchAction: 'none' }}
         className={`relative flex-1 w-full min-h-0 rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-lg flex items-center justify-center ${
-          activeFunFilter !== 'none' || zoomLevel > 1.01
-            ? 'cursor-grab active:cursor-grabbing'
-            : ''
+          zoomLevel > 1.01 ? 'cursor-grab active:cursor-grabbing' : ''
         }`}
       >
         <video
@@ -778,98 +578,14 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           }}
           className={`w-full h-full object-cover ${
             isGestureActive ? 'transition-none' : 'transition-transform duration-150 ease-out'
-          } ${activeFunFilter !== 'none' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+          }`}
         />
-
-        {/* 60fps Automated Face-Detection & Live Filter Overlay Canvas */}
-        {activeFunFilter !== 'none' && (
-          <canvas
-            ref={liveCanvasRef}
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-          />
-        )}
-
-        {/* Top Floating Automated Face-Detection Status & Fine-Tune Controls */}
-        {activeFunFilter !== 'none' && countdown === null && (
-          <div
-            onPointerDown={(e) => e.stopPropagation()}
-            className="absolute top-3 inset-x-3 z-20 flex items-center justify-between gap-2 pointer-events-auto"
-          >
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.playTap();
-                setAutoTrackFace((prev) => !prev);
-              }}
-              className={`px-3 py-1.5 rounded-full backdrop-blur-md text-[11px] font-bold border flex items-center gap-1.5 shadow-sm transition cursor-pointer ${
-                autoTrackFace && isFaceDetected
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-400/60'
-                  : autoTrackFace
-                  ? 'bg-black/65 text-amber-300 border-amber-400/40'
-                  : 'bg-black/65 text-white/80 border-white/20'
-              }`}
-              title="Toggle Automated Real-Time Face Tracking"
-            >
-              <ScanFace className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                {autoTrackFace
-                  ? isFaceDetected
-                    ? 'Face Locked • Auto-Tracking'
-                    : 'Scanning Face...'
-                  : 'Manual Position Mode'}
-              </span>
-            </button>
-
-            <div className="flex items-center gap-1 bg-black/65 backdrop-blur-md rounded-full p-1 border border-white/20 text-white">
-              <button
-                type="button"
-                onClick={() => {
-                  soundEffects.playTap();
-                  setFilterScale((s) => Math.max(0.65, Number((s - 0.1).toFixed(2))));
-                }}
-                title="Smaller Filter"
-                className="w-6 h-6 rounded-full hover:bg-white/20 flex items-center justify-center cursor-pointer"
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-[10px] font-mono px-1">
-                {Math.round(filterScale * 100)}%
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEffects.playTap();
-                  setFilterScale((s) => Math.min(1.45, Number((s + 0.1).toFixed(2))));
-                }}
-                title="Larger Filter"
-                className="w-6 h-6 rounded-full hover:bg-white/20 flex items-center justify-center cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEffects.playTap();
-                  setFilterOffset({ x: 0, y: 0 });
-                  setFilterScale(1.0);
-                  setAutoTrackFace(true);
-                }}
-                title="Reset Filter Position & Re-Enable Auto-Track"
-                className="w-6 h-6 rounded-full hover:bg-white/20 flex items-center justify-center cursor-pointer"
-              >
-                <RotateCcw className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Live Pinch-to-Zoom Indicator & Quick Reset HUD */}
         {(showZoomHud || zoomLevel > 1.01) && countdown === null && (
           <div
             onPointerDown={(e) => e.stopPropagation()}
-            className={`absolute ${
-              activeFunFilter !== 'none' ? 'top-14' : 'top-3'
-            } left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/65 backdrop-blur-md text-white border border-white/20 shadow-md text-xs font-mono transition-opacity duration-200`}
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/65 backdrop-blur-md text-white border border-white/20 shadow-md text-xs font-mono transition-opacity duration-200"
           >
             <ZoomIn className="w-3.5 h-3.5 text-amber-300 shrink-0" />
             <span className="font-bold">{zoomLevel.toFixed(2).replace(/\.00$/, '.0')}x</span>
@@ -917,13 +633,11 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
           </div>
         </div>
 
-        {/* Camera fallback message (when no Fun Filter is active) */}
-        {cameraError && !isCameraActive && activeFunFilter === 'none' && (
+        {/* Camera fallback message */}
+        {cameraError && !isCameraActive && (
           <div className="absolute inset-0 bg-zinc-100 flex flex-col items-center justify-center p-4 text-center z-10 text-zinc-800">
             <Camera className="w-8 h-8 text-zinc-400 mb-2" />
-            <p className="text-xs text-zinc-500 mb-3">
-              Select a Fun Filter below (Baby Body, Alien Head, etc.) or tap Shutter to test!
-            </p>
+            <p className="text-xs text-zinc-500 mb-3">{cameraError}</p>
             <button
               onClick={startCountdown}
               className="px-4 py-2 rounded-full bg-black text-white text-xs font-medium cursor-pointer"
@@ -932,35 +646,6 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
             </button>
           </div>
         )}
-      </div>
-
-      {/* Fun Character & Face Warp Filter Bar (Baby Body, Alien Head, Muscle Body, Astronaut, etc.) */}
-      <div className="w-full shrink-0 flex items-center gap-1.5 overflow-x-auto py-1 px-1 no-scrollbar">
-        <div className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 pr-1 shrink-0">
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span>Filters:</span>
-        </div>
-        {FUN_CAMERA_FILTERS.map((fItem) => {
-          const isSelected = activeFunFilter === fItem.id;
-          return (
-            <button
-              key={fItem.id}
-              type="button"
-              onClick={() => {
-                soundEffects.playTap();
-                setActiveFunFilter(fItem.id);
-              }}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shrink-0 transition cursor-pointer border ${
-                isSelected
-                  ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm scale-102'
-                  : 'bg-white hover:bg-zinc-100 text-zinc-700 border-zinc-300'
-              }`}
-            >
-              <span className="text-sm leading-none">{fItem.emoji}</span>
-              <span>{fItem.shortLabel}</span>
-            </button>
-          );
-        })}
       </div>
 
       {/* Bottom Shutter & Timer Bar */}
