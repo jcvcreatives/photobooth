@@ -3,21 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Check,
   ArrowRight,
   ArrowLeft,
   Camera,
-  Minus,
-  Plus,
   Ticket,
 } from 'lucide-react';
 import { FrameLayoutType, FrameTheme, PhotoFilterType } from '../types';
 import { soundEffects } from '../services/soundEffects';
-import { cameraStreamService } from '../services/cameraStreamService';
-import { safeStorageGet } from '../services/storage';
-import { enterBrowserFullscreenApi } from './KioskNavBar';
 
 interface FrameSelectorProps {
   selectedLayout: FrameLayoutType;
@@ -82,41 +77,16 @@ const LAYOUTS: LayoutItemConfig[] = [
 ];
 
 const MiniLiveVideo: React.FC<{
-  stream: MediaStream | null;
-  facingMode: 'user' | 'environment';
+  stream?: MediaStream | null;
+  facingMode?: 'user' | 'environment';
   className?: string;
-}> = ({ stream, facingMode, className = '' }) => {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      if (videoRef.current.srcObject !== stream) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
-      }
-    }
-  }, [stream]);
-
-  if (!stream) {
-    return (
-      <div className={`w-full h-full bg-sky-50 flex items-center justify-center text-sky-500 overflow-hidden ${className}`}>
-        <Camera className="w-2.5 h-2.5 opacity-60" />
-      </div>
-    );
-  }
-
-  return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className={`w-full h-full object-cover pointer-events-none select-none ${
-        facingMode === 'user' ? 'scale-x-[-1]' : ''
-      } ${className}`}
-    />
-  );
-};
+}> = ({ className = '' }) => (
+  <div
+    className={`w-full h-full bg-zinc-100 flex items-center justify-center text-zinc-400 overflow-hidden ${className}`}
+  >
+    <Camera className="w-2.5 h-2.5 opacity-60" />
+  </div>
+);
 
 export const FrameSelector: React.FC<FrameSelectorProps> = ({
   selectedLayout,
@@ -130,9 +100,7 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
   onSecretAdminTap,
 }) => {
   const [facingMode] = useState<'user' | 'environment'>('user');
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(() =>
-    cameraStreamService.getCachedStream('user')
-  );
+  const cameraStream = null;
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [logoTapCount, setLogoTapCount] = useState(0);
 
@@ -142,47 +110,13 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
     return () => clearTimeout(t);
   }, [logoTapCount]);
 
-  // Attach persistent camera stream (keeps stream alive across screens without stopping tracks)
-  useEffect(() => {
-    let isMounted = true;
-
-    const cached = cameraStreamService.getCachedStream(facingMode);
-    if (cached) {
-      setCameraStream(cached);
-      return;
-    }
-
-    cameraStreamService
-      .getOrStartStream(facingMode)
-      .then((stream) => {
-        if (!isMounted) return;
-        if (stream) {
-          setCameraStream(stream);
-        }
-        if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
-          enterBrowserFullscreenApi();
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      isMounted = false;
-    };
-  }, [facingMode]);
-
   const handleContinue = () => {
     soundEffects.playTap();
-    if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
-      enterBrowserFullscreenApi();
-    }
     onContinue();
   };
 
   const handleBack = () => {
     soundEffects.playTap();
-    if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
-      enterBrowserFullscreenApi();
-    }
     onBack();
   };
 
@@ -196,7 +130,7 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
   const totalPrice = currentUnitPrice;
 
   return (
-    <div className="flex-1 h-full min-h-0 flex flex-col justify-between p-3 sm:p-5 max-w-xl mx-auto w-full select-none text-zinc-900 overflow-hidden">
+    <div className="flex-1 h-full min-h-0 flex flex-col justify-between p-3 sm:p-5 max-w-xl mx-auto w-full select-none text-zinc-900 overflow-y-auto">
       {/* Top Header */}
       <div className="flex items-center justify-between pb-1.5 shrink-0">
         <div className="flex items-center gap-2">

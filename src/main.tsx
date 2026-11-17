@@ -1,6 +1,5 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 
@@ -40,94 +39,21 @@ try {
   // Ignore
 }
 
-// Critical booth assets to warm in CacheStorage for 9–12 hour offline operation
-const CRITICAL_OFFLINE_ASSETS = [
-  './',
-  './index.html',
-  './icon.svg',
-  './apple-touch-icon.png',
-  './pwa-192x192.png',
-  './pwa-512x512.png',
-  './pwa-maskable-512x512.png',
-  './assets/aistudio/01_shredded_beef_and_egg_883d5ffc.png',
-  './assets/aistudio/02_tapa_and_garlic_rice_77785a88.png',
-  './assets/aistudio/03_hotdogs_and_scrambled_egg_28f526aa.png',
-  './assets/aistudio/05_diced_hotdogs_and_egg_44d5a234.png',
-  './assets/aistudio/06_beef_and_egg_rice_062af470.png',
-  './assets/aistudio/07_luncheon_meat_rice_8770438d.png',
-  './assets/aistudio/08_beef_and_scrambled_egg_177c915a.png',
-  './assets/aistudio/09_creamy_chicken_and_egg_rice_bfe9e7b2.png',
-];
-
 export async function warmKioskOfflineCache(): Promise<number> {
-  if (typeof window === 'undefined' || !('caches' in window)) return 0;
-  try {
-    const cache = await caches.open('jcv-kiosk-offline-shell-v1');
-    let cachedCount = 0;
-
-    // Cache all loaded script & stylesheet URLs on the page plus critical assets
-    const resourceUrls = new Set<string>(CRITICAL_OFFLINE_ASSETS);
-    document.querySelectorAll('script[src], link[rel="stylesheet"][href]').forEach((el) => {
-      const src = (el as HTMLScriptElement).src || (el as HTMLLinkElement).href;
-      if (src && src.startsWith(window.location.origin)) {
-        resourceUrls.add(src);
-      }
-    });
-
-    await Promise.allSettled(
-      Array.from(resourceUrls).map(async (url) => {
-        try {
-          const req = new Request(url, { cache: 'reload' });
-          const res = await fetch(req);
-          if (res && (res.ok || res.type === 'opaque')) {
-            await cache.put(url, res);
-            cachedCount += 1;
-          }
-        } catch {
-          // Already cached or offline
-        }
-      })
-    );
-
-    window.dispatchEvent(
-      new CustomEvent('jcv-offline-ready', { detail: { cachedCount } })
-    );
-    return cachedCount;
-  } catch {
-    return 0;
-  }
+  return 0;
 }
 
-// Register Service Worker for 100% offline 9–12 hour booth operation
+// Clean up any stale service workers in dev/preview mode so fresh code always runs without freezing
 try {
-  const updateSW = registerSW({
-    immediate: true,
-    onOfflineReady() {
-      window.dispatchEvent(new CustomEvent('jcv-offline-ready'));
-    },
-    onRegisteredSW(_swUrl, registration) {
-      // Warm critical kiosk assets in CacheStorage as soon as SW is registered
-      warmKioskOfflineCache().catch(() => {});
-      // Request persistent storage on Galaxy Tab A11 so Android never evicts the offline cache
-      if (navigator.storage && typeof navigator.storage.persist === 'function') {
-        navigator.storage.persist().catch(() => {});
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const reg of registrations) {
+        reg.unregister().catch(() => {});
       }
-      if (registration) {
-        window.dispatchEvent(new CustomEvent('jcv-offline-ready'));
-      }
-    },
-    onNeedRefresh() {
-      // Auto-apply new service worker in the background
-      updateSW(true).catch(() => {});
-    },
-  });
-} catch {
-  // Fallback in environments where virtual SW registration is unavailable
-  if (typeof window !== 'undefined') {
-    window.addEventListener('load', () => {
-      warmKioskOfflineCache().catch(() => {});
-    });
+    }).catch(() => {});
   }
+} catch {
+  // Ignore
 }
 
 

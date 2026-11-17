@@ -207,23 +207,21 @@ interface StartCallToActionProps {
   ctaSubtextClass: string;
 }
 
-// Memoized Start CTA so photo shuffles never trigger React reconciliation on the moving button
+// Memoized Start CTA so photo shuffles never trigger React reconciliation on the button
 const StartCallToAction = React.memo(
   ({ onStart, buttonClass, buttonText, ctaSubtext, ctaSubtextClass }: StartCallToActionProps) => (
     <div className="relative flex flex-col items-center mt-3 z-20">
-      <div className="animate-floatBob">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            soundEffects.playTap();
-            onStart();
-          }}
-          className={`group relative inline-flex items-center justify-center px-12 py-4 font-bold text-base sm:text-lg tracking-wide active:scale-95 transition-transform duration-150 cursor-pointer select-none ${buttonClass}`}
-        >
-          <span>{buttonText}</span>
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          soundEffects.playTap();
+          onStart();
+        }}
+        className={`group relative inline-flex items-center justify-center px-12 py-4 font-bold text-base sm:text-lg tracking-wide active:scale-95 transition-transform duration-150 cursor-pointer select-none ${buttonClass}`}
+      >
+        <span>{buttonText}</span>
+      </button>
 
       <p className={`mt-3.5 text-xs font-normal ${ctaSubtextClass}`}>{ctaSubtext}</p>
     </div>
@@ -515,7 +513,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
         soundEffects.playTap();
         onStartSession();
       }}
-      className={`relative flex-1 flex flex-col justify-between items-center p-6 sm:p-10 select-none cursor-pointer overflow-hidden min-h-[90vh] transition-colors duration-500 ${theme.screenBgClass}`}
+      className={`relative flex-1 flex flex-col justify-between items-center p-6 sm:p-10 select-none cursor-pointer overflow-y-auto min-h-0 h-full transition-colors duration-500 ${theme.screenBgClass}`}
     >
       {/* Background Animated Video / GIF / Canva Embed Layer (if enabled by operator) */}
       {isBackgroundMedia && (

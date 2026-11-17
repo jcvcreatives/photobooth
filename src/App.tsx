@@ -17,7 +17,7 @@ import {
 import { FRAME_THEMES } from './services/frameTemplates';
 import { remoteConfigService } from './services/remoteConfig';
 import { analyticsService } from './services/analytics';
-import { storageService, safeStorageGet } from './services/storage';
+import { storageService } from './services/storage';
 import { soundEffects } from './services/soundEffects';
 import { cameraStreamService } from './services/cameraStreamService';
 import { enduranceManager, TabletPowerStatus } from './services/enduranceManager';
@@ -26,9 +26,7 @@ import { decodeOfflinePhotoFromLocation } from './services/offlineQrTransfer';
 // Components
 import {
   KioskNavBar,
-  lockKioskFullscreen,
   unlockKioskFullscreen,
-  enterBrowserFullscreenApi,
 } from './components/KioskNavBar';
 import { AttractScreen } from './components/AttractScreen';
 import { PaymentModal } from './components/PaymentModal';
@@ -162,20 +160,8 @@ export default function App() {
       return false;
     };
 
-    const isGuestPhoneView = checkShareUrlOrHash();
+    checkShareUrlOrHash();
     window.addEventListener('hashchange', checkShareUrlOrHash);
-
-    // Only eagerly acquire kiosk camera stream if not opened as a guest mobile share link
-    if (!isGuestPhoneView) {
-      cameraStreamService
-        .getOrStartStream('user')
-        .then(() => {
-          if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
-            enterBrowserFullscreenApi();
-          }
-        })
-        .catch(() => {});
-    }
 
     remoteConfigService
       .init()
@@ -262,14 +248,6 @@ export default function App() {
     setSelectedBrightness(config.thermalPrinter?.brightness ?? 45);
     soundEffects.playTap();
 
-    // Hide top menu bar cleanly if autoFullscreenLock is enabled
-    if (config.autoFullscreenLock !== false) {
-      lockKioskFullscreen(true);
-    }
-
-    // Warm up camera stream asynchronously without blocking screen navigation
-    cameraStreamService.getOrStartStream('user').catch(() => {});
-
     // If free play mode active, skip payment gate straight to frame customization
     if (config.freePlayMode) {
       setCurrentScreen('frame_select');
@@ -278,7 +256,6 @@ export default function App() {
     }
   }, [
     config.freePlayMode,
-    config.autoFullscreenLock,
     config.thermalPrinter?.brightness,
   ]);
 
@@ -376,7 +353,7 @@ export default function App() {
       />
 
       {/* Screen Router */}
-      <main className="flex-1 flex flex-col overflow-hidden relative bg-[#faf8f5]">
+      <main className="flex-1 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden relative bg-[#faf8f5]">
         {/* 1. Attract Screen */}
         {currentScreen === 'attract' && (
           <AttractScreen

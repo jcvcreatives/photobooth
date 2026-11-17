@@ -18,8 +18,6 @@ import {
 import { FrameLayoutType, PhotoFilterType } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { cameraStreamService } from '../services/cameraStreamService';
-import { safeStorageGet } from '../services/storage';
-import { enterBrowserFullscreenApi } from './KioskNavBar';
 
 interface CaptureBoothProps {
   layout: FrameLayoutType;
@@ -151,10 +149,6 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
 
         const stream = await cameraStreamService.getOrStartStream(facingMode);
         if (!isMounted) return;
-
-        if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
-          enterBrowserFullscreenApi();
-        }
 
         if (stream) {
           if (videoRef.current) {
@@ -332,9 +326,6 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   // Start Countdown Sequence
   const startCountdown = () => {
     if (countdown !== null || isPreparingPose) return;
-    if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
-      enterBrowserFullscreenApi();
-    }
     soundEffects.playCountdownBeep(false);
     setCountdown(timerDuration);
   };
