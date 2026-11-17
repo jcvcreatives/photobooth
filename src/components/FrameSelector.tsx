@@ -29,6 +29,7 @@ interface FrameSelectorProps {
   copies: number;
   onSelectCopies: (copies: number) => void;
   layoutPrices?: Record<FrameLayoutType, number>;
+  freePlayMode?: boolean;
   lockedLayout?: FrameLayoutType;
   voucherCode?: string;
   onContinue: () => void;
@@ -121,6 +122,7 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
   selectedLayout,
   onSelectLayout,
   layoutPrices,
+  freePlayMode = false,
   lockedLayout,
   voucherCode,
   onContinue,
@@ -247,7 +249,7 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
       <div className="grid grid-cols-2 gap-2.5 my-auto shrink-0">
         {LAYOUTS.map((opt) => {
           const isSelected = selectedLayout === opt.id;
-          const isLockedOut = Boolean(lockedLayout && lockedLayout !== opt.id);
+          const isLockedOut = Boolean(!freePlayMode && lockedLayout && lockedLayout !== opt.id);
           return (
             <button
               key={opt.id}
@@ -273,11 +275,15 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
                   : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50/60 shadow-2xs'
               }`}
             >
-              {/* Top Row: Price badge and Checkmark */}
+              {/* Top Row: Price badge (hidden in free mode) and Checkmark */}
               <div className="w-full flex items-center justify-between text-xs">
-                <span className="text-[11px] font-medium text-zinc-500">
-                  P{getPriceForLayout(opt)}
-                </span>
+                {!freePlayMode ? (
+                  <span className="text-[11px] font-medium text-zinc-500">
+                    P{getPriceForLayout(opt)}
+                  </span>
+                ) : (
+                  <span />
+                )}
                 {isSelected ? (
                   <div className="w-4 h-4 rounded-full bg-black text-white flex items-center justify-center">
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
@@ -369,13 +375,15 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
           </div>
         )}
 
-        {/* 1 Voucher = 1 Print Copy Info Pill */}
-        <div className="flex items-center justify-center gap-2 text-xs text-zinc-600 font-medium">
-          <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-zinc-100 border border-zinc-200 text-[11px] text-zinc-700 font-semibold">
-            <Ticket className="w-3.5 h-3.5 text-zinc-700" />
-            <span>1 Voucher = 1 Print Copy • P{totalPrice}</span>
-          </span>
-        </div>
+        {/* 1 Voucher = 1 Print Copy Info Pill (Hidden in Free Mode) */}
+        {!freePlayMode && (
+          <div className="flex items-center justify-center gap-2 text-xs text-zinc-600 font-medium">
+            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-zinc-100 border border-zinc-200 text-[11px] text-zinc-700 font-semibold">
+              <Ticket className="w-3.5 h-3.5 text-zinc-700" />
+              <span>1 Voucher = 1 Print Copy • P{totalPrice}</span>
+            </span>
+          </div>
+        )}
 
         {/* Big Black Pill Button */}
         <button
@@ -384,11 +392,11 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
         >
           <ArrowRight className="w-4 h-4" />
           <span>
-            Continue (1 Print Copy) • P{totalPrice}
+            {freePlayMode ? 'Continue' : `Continue (1 Print Copy) • P${totalPrice}`}
           </span>
         </button>
 
-        {/* Subactions: Cancel & Buy Voucher */}
+        {/* Subactions: Cancel & Buy Voucher (Buy a voucher hidden in Free Mode) */}
         <div className="flex items-center justify-center gap-6 text-xs text-zinc-500">
           <button
             onClick={handleBack}
@@ -396,14 +404,18 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
           >
             Cancel
           </button>
-          <span>•</span>
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-1 hover:text-zinc-900 transition cursor-pointer"
-          >
-            <Ticket className="w-3.5 h-3.5" />
-            <span>Buy a voucher</span>
-          </button>
+          {!freePlayMode && (
+            <>
+              <span>•</span>
+              <button
+                onClick={handleBack}
+                className="flex items-center gap-1 hover:text-zinc-900 transition cursor-pointer"
+              >
+                <Ticket className="w-3.5 h-3.5" />
+                <span>Buy a voucher</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

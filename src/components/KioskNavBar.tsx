@@ -31,48 +31,12 @@ interface KioskNavBarProps {
 
 export function enterBrowserFullscreenApi(): void {
   try {
-    const doc = document as any;
-    const docEl = document.documentElement as any;
-    const isFs = !!(
-      doc.fullscreenElement ||
-      doc.webkitFullscreenElement ||
-      doc.mozFullScreenElement ||
-      doc.msFullscreenElement
-    );
-    if (!isFs) {
-      if (typeof docEl?.requestFullscreen === 'function') {
-        docEl.requestFullscreen({ navigationUI: 'hide' }).catch(() => {
-          try {
-            docEl.requestFullscreen().catch(() => {
-              if (typeof docEl?.webkitRequestFullscreen === 'function') {
-                docEl.webkitRequestFullscreen();
-              }
-            });
-          } catch {
-            if (typeof docEl?.webkitRequestFullscreen === 'function') {
-              docEl.webkitRequestFullscreen();
-            }
-          }
-        });
-      } else if (typeof docEl?.webkitRequestFullscreen === 'function') {
-        docEl.webkitRequestFullscreen();
-      } else if (typeof docEl?.webkitRequestFullScreen === 'function') {
-        docEl.webkitRequestFullScreen();
-      } else if (typeof docEl?.mozRequestFullScreen === 'function') {
-        docEl.mozRequestFullScreen();
-      } else if (typeof docEl?.msRequestFullscreen === 'function') {
-        docEl.msRequestFullscreen();
-      }
-    }
     const nav = navigator as any;
-    if (nav?.keyboard && typeof nav.keyboard.lock === 'function') {
-      nav.keyboard.lock(['Escape']).catch(() => {});
-    }
     if (nav?.wakeLock && typeof nav.wakeLock.request === 'function') {
       nav.wakeLock.request('screen').catch(() => {});
     }
   } catch {
-    // Ignore if blocked by iframe permissions
+    // Ignore if blocked by browser permissions
   }
 }
 
@@ -107,7 +71,6 @@ export function exitBrowserFullscreenApi(): void {
 
 export function lockKioskFullscreen(hideMenu: boolean = true): void {
   safeStorageSet('jcv_fullscreen_locked', 'true');
-  enterBrowserFullscreenApi();
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('jcv_fullscreen_lock_changed', {
@@ -134,7 +97,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   config,
   onRequestAdmin,
 }) => {
-  // Fullscreen / Maximized Lock state (persisted so fullscreen stays locked until toggled off)
+  // Fullscreen / Maximized Lock state (hides top menu bar cleanly without forcing native browser fullscreen blackout)
   const [isMaximizedLocked, setIsMaximizedLocked] = useState<boolean>(() => {
     return safeStorageGet('jcv_fullscreen_locked') === 'true';
   });
@@ -173,13 +136,12 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     return () => window.removeEventListener('jcv_fullscreen_lock_changed', handleExternalLockChange);
   }, []);
 
-  // Keep top menu hidden & re-assert fullscreen lock when navigating to another screen/tab while Maximized Lock is active
+  // Keep top menu hidden when navigating to another screen/tab while Maximized Lock is active
   useEffect(() => {
     if (isMaximizedLocked) {
       setIsTopMenuHidden(true);
-      enterBrowserFullscreen();
     }
-  }, [currentScreen, isMaximizedLocked, enterBrowserFullscreen]);
+  }, [currentScreen, isMaximizedLocked]);
 
   useEffect(() => {
     if (secretTapCount === 0) return;
@@ -199,55 +161,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onRequestAdmin]);
-
-  // Keep Fullscreen Locked on any touch/pointer/click if browser dropped native fullscreen
-  useEffect(() => {
-    if (!isMaximizedLocked) return;
-
-    const handleEnforceFullscreenLock = (e: Event) => {
-      const target = e.target as HTMLElement | null;
-      if (target && target.closest('[data-no-fullscreen-enforce="true"]')) {
-        return;
-      }
-      if (safeStorageGet('jcv_fullscreen_locked') !== 'true') {
-        return;
-      }
-      const doc = document as any;
-      const isFs = !!(
-        doc.fullscreenElement ||
-        doc.webkitFullscreenElement ||
-        doc.mozFullScreenElement ||
-        doc.msFullscreenElement
-      );
-      if (!isFs) {
-        enterBrowserFullscreen();
-      }
-    };
-
-    const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible' && safeStorageGet('jcv_fullscreen_locked') === 'true') {
-        enterBrowserFullscreen();
-      }
-    };
-
-    window.addEventListener('pointerdown', handleEnforceFullscreenLock, { capture: true, passive: true });
-    window.addEventListener('pointerup', handleEnforceFullscreenLock, { capture: true, passive: true });
-    window.addEventListener('touchstart', handleEnforceFullscreenLock, { capture: true, passive: true });
-    window.addEventListener('touchend', handleEnforceFullscreenLock, { capture: true, passive: true });
-    window.addEventListener('click', handleEnforceFullscreenLock, { capture: true });
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    window.addEventListener('focus', handleVisibilityOrFocus);
-
-    return () => {
-      window.removeEventListener('pointerdown', handleEnforceFullscreenLock, { capture: true });
-      window.removeEventListener('pointerup', handleEnforceFullscreenLock, { capture: true });
-      window.removeEventListener('touchstart', handleEnforceFullscreenLock, { capture: true });
-      window.removeEventListener('touchend', handleEnforceFullscreenLock, { capture: true });
-      window.removeEventListener('click', handleEnforceFullscreenLock, { capture: true });
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      window.removeEventListener('focus', handleVisibilityOrFocus);
-    };
-  }, [isMaximizedLocked, enterBrowserFullscreen]);
 
   // Global iPadOS WebKit Fullscreen Swipe-Down Blocker (Capture Phase, 0px threshold)
   useEffect(() => {
@@ -271,24 +184,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      const target = e.target as HTMLElement | null;
-
-      // Allow range sliders (e.g. exposure/size slider) and scrollable drawers/modals (Stickers, Admin, etc.) to scroll freely
-      const isRangeInput =
-        target?.tagName === 'INPUT' && (target as HTMLInputElement).type === 'range';
-      const isScrollableContainer = Boolean(
-        target?.closest('[data-admin-scrollable="true"], [data-kiosk-scrollable="true"]')
-      );
-
-      if (!isRangeInput && !isScrollableContainer) {
-        // CRITICAL for iPadOS Chrome / Safari (WKFullScreenWindowController):
-        // Calling e.preventDefault() on the VERY FIRST touchmove event in capture phase
-        // prevents WebKit's native "Swipe down to exit fullscreen" gesture recognizer from firing.
-        if (e.cancelable) {
-          e.preventDefault();
-        }
-      }
-
       if (!e.touches || e.touches.length === 0) return;
       const currentY = e.touches[0].clientY;
       const currentX = e.touches[0].clientX;
@@ -353,19 +248,17 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       swipeStartXRef.current = null;
     };
 
-    document.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
-    document.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
-    window.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
-    document.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchmove', handleTouchMove, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
     window.addEventListener('pointerdown', handlePointerDown, { passive: true });
     window.addEventListener('pointermove', handlePointerMove, { passive: true });
     window.addEventListener('pointerup', handlePointerUp, { passive: true });
 
     return () => {
-      document.removeEventListener('touchstart', handleTouchStart, { capture: true });
-      document.removeEventListener('touchmove', handleTouchMove, { capture: true });
-      window.removeEventListener('touchmove', handleTouchMove, { capture: true });
-      document.removeEventListener('touchend', handleTouchEnd, { capture: true });
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
@@ -405,10 +298,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         doc.msFullscreenElement
       );
       setIsNativeFullscreen(activeFs);
-      // If fullscreen was exited externally while lock is active, attempt immediate re-entry
-      if (!activeFs && safeStorageGet('jcv_fullscreen_locked') === 'true') {
-        enterBrowserFullscreen();
-      }
     };
     document.addEventListener('fullscreenchange', fsChange);
     document.addEventListener('webkitfullscreenchange', fsChange);

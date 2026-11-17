@@ -83,11 +83,6 @@ export default function App() {
     config.tabletEndurance?.powerSaverOnBattery !== false &&
     powerStatus.isCharging === false;
 
-  const powerSaverBrightnessReduction = Math.max(
-    10,
-    Math.min(60, config.tabletEndurance?.powerSaverBrightnessReductionPercent ?? 30)
-  );
-
   // Low-battery warning (< 35% and NOT plugged in): blink screen red and play warning sound.
   // Immediately stops all warnings as soon as charger is plugged in (isCharging === true).
   const isLowBatteryWarningActive =
@@ -267,20 +262,13 @@ export default function App() {
     setSelectedBrightness(config.thermalPrinter?.brightness ?? 45);
     soundEffects.playTap();
 
-    // Automatically lock tablet into Fullscreen Kiosk-Mode display upon session start if enabled
+    // Hide top menu bar cleanly if autoFullscreenLock is enabled
     if (config.autoFullscreenLock !== false) {
       lockKioskFullscreen(true);
     }
 
-    // Ensure persistent camera stream is active and re-assert fullscreen lock once ready
-    cameraStreamService
-      .getOrStartStream('user')
-      .then(() => {
-        if (config.autoFullscreenLock !== false || safeStorageGet('jcv_fullscreen_locked') === 'true') {
-          enterBrowserFullscreenApi();
-        }
-      })
-      .catch(() => {});
+    // Warm up camera stream asynchronously without blocking screen navigation
+    cameraStreamService.getOrStartStream('user').catch(() => {});
 
     // If free play mode active, skip payment gate straight to frame customization
     if (config.freePlayMode) {
@@ -305,10 +293,28 @@ export default function App() {
     setCurrentScreen('frame_select');
   };
 
-  // Handler: Captures Completed
+  // Handler: Captures Completed (Auto-saves photo taken immediately to gallery storage)
   const handleCapturesComplete = (photos: string[]) => {
     enduranceManager.recordTouchActivity();
     setCapturedPhotos(photos);
+    if (photos.length > 0) {
+      const capId = `CAP-${sessionStartTime}`;
+      const autoSavedCapture: PhotostripResult = {
+        id: capId,
+        photos,
+        compositeDataUrl: photos[0],
+        layout: selectedLayout,
+        themeId: selectedTheme.id,
+        filter: selectedFilter,
+        eventTitle: config.eventTitle || 'Photobooth',
+        shareCode: String(sessionStartTime).slice(-6),
+        shareUrl: typeof window !== 'undefined' ? `${window.location.origin}/?share=${capId}` : '',
+        stickers: [],
+        createdAt: Date.now(),
+        printCopies: 1,
+      };
+      storageService.saveCapture(autoSavedCapture).catch(() => {});
+    }
     setCurrentScreen('editor');
   };
 
@@ -353,7 +359,7 @@ export default function App() {
 
   return (
     <div
-      className={`flex flex-col h-dvh min-h-screen w-full bg-[#fafaf9] text-zinc-900 overflow-hidden font-sans ${
+      className={`flex flex-col h-dvh min-h-screen w-full bg-[#faf8f5] text-zinc-900 overflow-hidden font-sans ${
         showMobileShareModal ? 'select-auto' : 'select-none'
       } ${isBatteryPowerSaverActive ? 'power-saver-active' : ''}`}
     >
@@ -369,17 +375,8 @@ export default function App() {
         }}
       />
 
-      {/* Screen Router (Automatically reduces screen brightness when Power Saver Mode is active on battery) */}
-      <main
-        style={
-          isBatteryPowerSaverActive
-            ? {
-                filter: `brightness(${((100 - powerSaverBrightnessReduction) / 100).toFixed(2)})`,
-              }
-            : undefined
-        }
-        className="flex-1 flex flex-col overflow-hidden relative transition-[filter] duration-500"
-      >
+      {/* Screen Router */}
+      <main className="flex-1 flex flex-col overflow-hidden relative bg-[#faf8f5]">
         {/* 1. Attract Screen */}
         {currentScreen === 'attract' && (
           <AttractScreen
@@ -417,6 +414,7 @@ export default function App() {
             copies={1}
             onSelectCopies={setSelectedCopies}
             layoutPrices={config.layoutPrices}
+            freePlayMode={config.freePlayMode}
             lockedLayout={activePayment?.layoutType}
             voucherCode={activePayment?.voucherCode}
             onContinue={() => setCurrentScreen('capture')}

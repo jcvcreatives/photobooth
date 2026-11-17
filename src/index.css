@@ -529,7 +529,7 @@
 }
 
 .animate-receipt-tear {
-  transform-origin: bottom center;
+  transform-origin: top center;
   animation: receiptSlideDownAndTearBelow 2.8s infinite ease-in-out;
   will-change: transform;
 }
@@ -544,26 +544,36 @@
   animation: miniReceiptTearOff 2.4s infinite ease-in-out;
 }
 
-/* Optimize touch tablet kiosk interaction & prevent iPadOS WebKit overscroll fullscreen exit */
+/* Optimize touch tablet & web kiosk interaction without fixed-body fullscreen blackouts */
 html,
 body {
-  position: fixed;
-  inset: 0;
   height: 100dvh;
+  min-height: 100vh;
   width: 100%;
   margin: 0;
   padding: 0;
+  background-color: #faf8f5;
+  color: #18181b;
   overflow: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
   -webkit-overflow-scrolling: auto;
 }
 
+html:fullscreen,
+body:fullscreen,
+#root:fullscreen,
+::backdrop {
+  background-color: #faf8f5 !important;
+}
+
 #root {
   height: 100dvh;
+  min-height: 100vh;
   width: 100%;
   margin: 0;
   padding: 0;
+  background-color: #faf8f5;
   overflow: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;

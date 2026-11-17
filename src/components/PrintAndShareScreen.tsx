@@ -10,7 +10,6 @@ import {
   QrCode,
   Download,
   RotateCcw,
-  Sparkles,
   X,
   Loader2,
   Ticket,
@@ -22,7 +21,6 @@ import { PhotostripResult, ThermalPrinterConfig, RemoteKioskConfig } from '../ty
 import { thermalPrinterService } from '../services/thermalPrinter';
 import { paymentService, LAYOUT_VOUCHER_META } from '../services/payment';
 import { soundEffects } from '../services/soundEffects';
-import { enduranceManager } from '../services/enduranceManager';
 import {
   OfflineQrPacket,
   buildOfflineQrPacket,
@@ -40,7 +38,7 @@ interface PrintAndShareScreenProps {
   config: RemoteKioskConfig;
   copies: number;
   onDone: () => void;
-  onOpenMobileShareModal: () => void;
+  onOpenMobileShareModal?: () => void;
   onSecretAdminTap?: () => void;
 }
 
@@ -48,12 +46,9 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   result,
   canvas,
   config,
-  copies,
   onDone,
-  onOpenMobileShareModal,
   onSecretAdminTap,
 }) => {
-  const sessionCopies = 1; // 1 Voucher = 1 Print Copy for initial print
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
 
@@ -87,7 +82,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   const [isRedeemingCopyVoucher, setIsRedeemingCopyVoucher] = useState(false);
   const [activeCanvas, setActiveCanvas] = useState<HTMLCanvasElement>(canvas);
   const [isPrinting, setIsPrinting] = useState(false);
-  const [printedSuccessfully, setPrintedSuccessfully] = useState(false);
+  const [, setPrintedSuccessfully] = useState(false);
   const [printStatusText, setPrintStatusText] = useState<string>('');
   const [activeCopiesCount, setActiveCopiesCount] = useState<number>(1);
   const [qrShareDataUrl, setQrShareDataUrl] = useState<string>('');
@@ -104,6 +99,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     thermalPrinterService.isSilentBridgeActive()
   );
   const hasAutoPrintedRef = React.useRef<boolean>(false);
+  const hasAutoSavedPhotoRef = React.useRef<boolean>(false);
 
   const confettiCleanupRef = React.useRef<(() => void) | null>(null);
 
@@ -133,6 +129,22 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     const unsub = thermalPrinterService.subscribe(() => {
       setSilentBridgeReady(thermalPrinterService.isSilentBridgeActive());
     });
+
+    // Automatically save the photo taken directly to the device
+    if (!hasAutoSavedPhotoRef.current && result.compositeDataUrl) {
+      hasAutoSavedPhotoRef.current = true;
+      try {
+        const a = document.createElement('a');
+        a.href = result.compositeDataUrl;
+        a.download = `Photobooth-${result.id || Date.now()}.jpg`;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch {
+        // Ignore if blocked by restricted WebView
+      }
+    }
 
     // Automatically print 1 copy (1 Voucher = 1 Print Copy) to connected printer on session completion
     if (!hasAutoPrintedRef.current) {
@@ -307,7 +319,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
 
   return (
     <div className="flex-1 h-full min-h-0 flex flex-col items-center justify-between p-3 sm:p-4 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-md mx-auto w-full">
-      {/* FULL-SCREEN DEDICATED BIG RECEIPT PRINTING SCREEN (Slides Printout Downward Into Bottom Printer Below Tablet) */}
+      {/* FULL-SCREEN DEDICATED BIG RECEIPT PRINTING SCREEN */}
       {isFeeding && (
         <div className="fixed inset-0 z-50 bg-[#faf8f5] flex flex-col items-center justify-between overflow-hidden select-none animate-fadeIn">
           {/* Top Printing Status Header */}
@@ -320,13 +332,12 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
               Printing Your Photo Receipt...
             </h2>
             <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
-              {printStatusText || 'Sliding down into the thermal printer below the tablet'}
+              {printStatusText || 'Dispensing your photo receipt below'}
             </p>
           </div>
 
-          {/* Center-to-Bottom Giant Thermal Receipt Chute Sliding Downward Into Bottom Slot at 60fps */}
+          {/* Center-to-Bottom Giant Thermal Receipt Chute Sliding Downward at 60fps */}
           <div className="relative flex-1 w-full flex flex-col items-center justify-end overflow-hidden pb-0">
-            {/* Clipped Paper Chute Feeding Downward Into the Bottom Printer Slot */}
             <div className="relative flex-1 w-full flex justify-center items-start overflow-hidden pt-2 z-10">
               <div
                 key={`big-feed-${feedAnimationKey}`}
@@ -357,39 +368,18 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                     decoding="sync"
                     className="max-h-[54vh] sm:max-h-[58vh] w-auto object-contain select-none pointer-events-none"
                   />
-
-                  <div className="w-full mt-3 pt-2 border-t border-dashed border-zinc-300 text-center text-[10px] font-mono text-zinc-600 font-bold uppercase tracking-widest flex items-center justify-center gap-1.5">
-                    <ChevronDown className="w-3.5 h-3.5 animate-arrow-down-below" />
-                    <span>FEEDING DOWN TO PRINTER BELOW</span>
-                    <ChevronDown className="w-3.5 h-3.5 animate-arrow-down-below" />
-                  </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Bottom Thermal Printhead Slot Bar (Positioned at the Bottom Because Printer is Below Tablet) */}
-            <div className="w-76 sm:w-96 md:w-[420px] bg-zinc-800 border-2 border-zinc-700 rounded-t-2xl pt-2 pb-2.5 px-4 shadow-lg z-30 flex flex-col items-center shrink-0 -mb-1">
-              <div className="w-full h-2.5 bg-black rounded-full border border-zinc-600 mb-1.5" />
-              <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-300 uppercase tracking-widest px-1">
-                <span>VOZY G80 • PRINTER BELOW TABLET</span>
-                <span className="flex items-center gap-1.5 text-white font-bold">
-                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                  DISPENSING BELOW ▼
-                </span>
               </div>
             </div>
           </div>
 
-          {/* Bottom Edge Exit Slot Pointing Directly to the Physical Printer Below the Tablet */}
+          {/* Bottom Edge Exit Banner */}
           <div className="w-full bg-zinc-950 text-white py-3.5 px-6 border-t-2 border-zinc-700 shadow-2xl z-30 flex flex-col items-center justify-center shrink-0">
             <div className="flex items-center gap-3 text-sm sm:text-base font-black uppercase tracking-wider text-white">
               <ChevronDown className="w-6 h-6 text-white animate-arrow-down-below" />
-              <span>Collect Your Printout Below the Tablet</span>
+              <span>Collect Your Printout Below</span>
               <ChevronDown className="w-6 h-6 text-white animate-arrow-down-below" />
             </div>
-            <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
-              Your photo receipt is dispensing from the printer directly underneath this screen
-            </p>
           </div>
         </div>
       )}
@@ -426,46 +416,23 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
         </p>
       </div>
 
-      {/* Thermal Output Dispenser Oriented Downward Toward Physical Printer Below Tablet */}
+      {/* Thermal Output Dispenser */}
       <div className="my-auto w-full flex flex-col items-center py-1 shrink-0">
-        {/* Paper Chute at Top Feeding Downward Into Bottom Printer Slot */}
-        <div className="w-60 sm:w-68 bg-white/60 border-x border-t border-zinc-200 rounded-t-2xl p-2 pb-0 flex flex-col items-center overflow-hidden relative shadow-sm">
-          <div className="w-full flex items-center justify-center gap-1 text-[8px] font-mono font-bold text-zinc-400 uppercase tracking-widest pb-1">
-            <ChevronDown className="w-3 h-3 animate-arrow-down-below text-zinc-500" />
-            <span>SENDING DOWN TO PRINTER BELOW</span>
-            <ChevronDown className="w-3 h-3 animate-arrow-down-below text-zinc-500" />
-          </div>
-
-          <div className="w-full overflow-hidden flex justify-center pt-0.5 pb-2">
+        {/* Clean Receipt Box with Tear Receipt Below at the Top of the Receipt */}
+        <div className="w-60 sm:w-68 bg-white/60 border border-zinc-200 rounded-2xl p-2.5 flex flex-col items-center overflow-hidden relative shadow-sm">
+          <div className="w-full overflow-hidden flex justify-center py-0.5">
             <div
               key={feedAnimationKey}
-              className={`relative max-h-[28vh] sm:max-h-[32vh] flex flex-col items-center transition-transform ${
+              className={`relative max-h-[30vh] sm:max-h-[34vh] flex flex-col items-center transition-transform ${
                 isFeeding ? 'animate-thermalFeed' : ''
               }`}
             >
-              {/* Thermal Receipt Body (slides downward toward the bottom printer slot & tears gently) */}
-              <div
-                className={`relative rounded shadow-md bg-white border border-zinc-200 overflow-hidden ${
-                  !isFeeding ? 'animate-receipt-tear' : ''
-                }`}
-              >
-                <img
-                  src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
-                  alt="Printed Thermal Photostrip"
-                  className="max-h-[23vh] sm:max-h-[27vh] w-auto object-contain select-none pointer-events-none"
-                />
-                {activeCopiesCount > 1 && (
-                  <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px] font-mono font-bold shadow">
-                    {activeCopiesCount} COPIES
-                  </span>
-                )}
-              </div>
-
-              {/* Bottom Animated Serrated Receipt Tear Line right above the Bottom Printer Slot */}
-              <div className="w-full relative mt-1.5 pt-1.5 flex items-center justify-center gap-1 text-[8px] font-mono text-zinc-800 font-bold uppercase tracking-widest overflow-visible">
+              {/* Top Animated Serrated Receipt Tear Line at the Top of the Receipt */}
+              <div className="w-full relative mb-1.5 pb-1.5 flex items-center justify-center gap-1 text-[8px] font-mono text-zinc-800 font-bold uppercase tracking-widest overflow-visible">
+                <span>▼ TEAR RECEIPT BELOW ▼</span>
                 {/* Serrated perforation teeth line */}
                 <svg
-                  className="absolute top-0 inset-x-0 w-full h-1.5 text-zinc-400"
+                  className="absolute bottom-0 inset-x-0 w-full h-1.5 text-zinc-400"
                   viewBox="0 0 120 6"
                   preserveAspectRatio="none"
                 >
@@ -479,39 +446,46 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 </svg>
                 {!isFeeding && (
                   <>
-                    {/* Animated tear split line progressing across the bottom slot */}
-                    <div className="absolute left-0 top-0.5 h-0.5 bg-zinc-900 rounded-full animate-tear-line" />
-                    {/* Gentle hand pulling & tearing receipt at the bottom slot */}
-                    <div className="absolute -top-1.5 animate-tear-hand pointer-events-none z-20 flex items-center">
+                    {/* Animated tear split line progressing across the top of the receipt */}
+                    <div className="absolute left-0 bottom-0.5 h-0.5 bg-zinc-900 rounded-full animate-tear-line" />
+                    {/* Gentle hand pulling & tearing receipt at the top tear line */}
+                    <div className="absolute -bottom-1.5 animate-tear-hand pointer-events-none z-20 flex items-center">
                       <span className="text-xs leading-none drop-shadow-xs">🤏</span>
                     </div>
                   </>
                 )}
-                <span>▼ TEAR RECEIPT BELOW ▼</span>
+              </div>
+
+              {/* Thermal Receipt Body */}
+              <div
+                className={`relative rounded shadow-md bg-white border border-zinc-200 overflow-hidden ${
+                  !isFeeding ? 'animate-receipt-tear' : ''
+                }`}
+              >
+                <img
+                  src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
+                  alt="Printed Thermal Photostrip"
+                  className="max-h-[24vh] sm:max-h-[28vh] w-auto object-contain select-none pointer-events-none"
+                />
+                {activeCopiesCount > 1 && (
+                  <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px] font-mono font-bold shadow">
+                    {activeCopiesCount} COPIES
+                  </span>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Bottom Printer Output Slot Bezel (Placed at Bottom Because Physical Printer is Below the Tablet) */}
-        <div className="w-60 sm:w-68 bg-zinc-900 text-white border border-zinc-800 rounded-b-2xl pt-1.5 pb-2 px-3 shadow-md flex flex-col items-center z-10">
-          <div className="w-11/12 h-1.5 bg-black rounded-full border border-zinc-700 mb-1" />
-          <div className="flex items-center justify-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-widest text-zinc-200">
-            <ChevronDown className="w-3 h-3 animate-arrow-down-below text-white" />
-            <span>PRINTER IS BELOW TABLET</span>
-            <ChevronDown className="w-3 h-3 animate-arrow-down-below text-white" />
-          </div>
-        </div>
-
-        {/* Post-Animation Careful Receipt Tear Instruction Banner (Minimalist & Pointing Downward) */}
+        {/* Post-Animation Careful Receipt Tear Instruction Banner */}
         {isFeeding ? (
-          <div className="mt-1.5 text-[10px] text-zinc-600 text-center flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-zinc-200 shadow-2xs">
+          <div className="mt-2 text-[10px] text-zinc-600 text-center flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-zinc-200 shadow-2xs">
             <Loader2 className="w-3 h-3 animate-spin text-zinc-700" />
-            <span>Dispensing receipt to printer below — please wait...</span>
+            <span>Dispensing receipt — please wait...</span>
           </div>
         ) : (
-          <div className="mt-1.5 w-full max-w-xs bg-white border border-zinc-300 rounded-2xl px-3 py-1.5 shadow-xs flex items-center gap-2.5 text-left animate-fadeIn">
-            {/* Mini Looping Downward Receipt Badge (Slot at Bottom, Receipt Feeding Down) */}
+          <div className="mt-2 w-full max-w-xs bg-white border border-zinc-300 rounded-2xl px-3 py-1.5 shadow-xs flex items-center gap-2.5 text-left animate-fadeIn">
+            {/* Mini Looping Downward Receipt Badge */}
             <div className="w-9 h-9 rounded-xl bg-zinc-900 text-white flex flex-col items-center justify-between shrink-0 shadow-2xs relative overflow-hidden p-1.5">
               {/* Mini receipt body sliding downward */}
               <div className="w-5 h-4 bg-white rounded-t-[2px] flex flex-col items-center justify-center gap-0.5 p-0.5 shadow-2xs animate-mini-receipt-tear">
@@ -527,7 +501,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 <ChevronDown className="w-3.5 h-3.5 text-zinc-900 animate-arrow-down-below" />
               </div>
               <div className="text-[9.5px] text-zinc-600 mt-0.5">
-                Printed ({activeCopiesCount}x) • Tear carefully from the printer below the tablet
+                Printed ({activeCopiesCount}x) • Photo auto-saved
               </div>
             </div>
           </div>
@@ -551,19 +525,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           </button>
         )}
 
-        {/* Button 2: Save Digital & GIF */}
-        <button
-          onClick={() => {
-            soundEffects.playTap();
-            onOpenMobileShareModal();
-          }}
-          className="w-full py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-medium transition flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-zinc-600" />
-          <span>Save Digital & Motion GIF</span>
-        </button>
-
-        {/* Button 4: Print Another Copy (Free in Free Play Mode, or Single-Use Voucher in Paid Mode) */}
+        {/* Button 2: Print Another Copy (Free in Free Play Mode, or Single-Use Voucher in Paid Mode) */}
         <button
           disabled={isPrinting}
           onClick={() => {
@@ -590,11 +552,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             <Ticket className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
           )}
           <span>
-            {isPrinting
-              ? 'Printing Copy...'
-              : config.freePlayMode
-              ? 'Print Another Copy (Free)'
-              : 'Print Another Copy'}
+            {isPrinting ? 'Printing Copy...' : 'Print Another Copy'}
           </span>
         </button>
 
