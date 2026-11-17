@@ -272,57 +272,57 @@
 
 .sticker-disco-spin {
   animation: discoSpinShine 4s infinite linear;
-  will-change: transform;
+  background: transparent;
 }
 
 .sticker-disco-rays {
   animation: discoRaysFlash 2.2s infinite ease-in-out;
-  will-change: transform, opacity;
+  background: transparent;
 }
 
 .sticker-clown-wiggle {
   animation: clownWiggle 2.4s infinite ease-in-out;
-  will-change: transform;
+  background: transparent;
 }
 
 .sticker-candle-flicker {
   animation: candleFlameFlicker 0.9s infinite ease-in-out;
-  will-change: transform, opacity;
+  background: transparent;
 }
 
 .sticker-cake-bob {
   animation: cakeBob 2.6s infinite ease-in-out;
-  will-change: transform;
+  background: transparent;
 }
 
 .sticker-balloon-rise {
   animation: balloonRiseUp 7.5s infinite linear;
-  will-change: transform, opacity;
+  background: transparent;
 }
 
 .sticker-wing-glide {
   animation: wingGlide 3.2s infinite ease-in-out;
-  will-change: transform;
+  background: transparent;
 }
 
 .sticker-twinkle-shine {
   animation: twinkleShine 2.2s infinite ease-in-out;
-  will-change: transform, opacity;
+  background: transparent;
 }
 
 .sticker-snow-fall {
   animation: snowFallDown 8s infinite linear;
-  will-change: transform, opacity;
+  background: transparent;
 }
 
 .sticker-heartbeat {
   animation: heartBeatPulse 1.8s infinite ease-in-out;
-  will-change: transform;
+  background: transparent;
 }
 
 .sticker-ghost-float {
   animation: ghostSpookyFloat 3.6s infinite ease-in-out;
-  will-change: transform;
+  background: transparent;
 }
 
 @keyframes foodStickerDrop {
@@ -374,12 +374,12 @@
 
 .sticker-food-drop {
   animation: foodStickerDrop 7.2s infinite cubic-bezier(0.32, 0, 0.67, 1);
-  will-change: transform, opacity;
+  background: transparent;
 }
 
 .sticker-food-land {
   animation: foodStickerLandBounce 3.2s infinite ease-in-out;
-  will-change: transform;
+  background: transparent;
 }
 
 /* Thermal Printer Physical Output Slide-Down Toward Printer Below Tablet (60fps GPU-composited) */

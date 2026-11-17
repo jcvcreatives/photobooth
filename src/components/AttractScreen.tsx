@@ -39,10 +39,11 @@ export const sanitizeStoredAttractPhotos = (photos: unknown): string[] => {
 
 export const resolveStickerAssetUrl = (url: string): string => {
   if (!url) return '';
+  const suffix = url.includes('?') ? '&v=clean2' : '?v=clean2';
   if (url.startsWith('/assets/')) {
-    return `.${url}`;
+    return `.${url}${suffix}`;
   }
-  return url;
+  return `${url}${suffix}`;
 };
 
 /**
@@ -120,7 +121,7 @@ const AnimatedThemeStickers = React.memo(
                       img.src = `./stickers/gobble-haus/${fileName}`;
                     }
                   }}
-                  className="w-full h-full object-contain drop-shadow-[0_8px_14px_rgba(44,26,14,0.22)]"
+                  className="w-full h-full object-contain bg-transparent"
                 />
               </div>
             );
@@ -131,13 +132,8 @@ const AnimatedThemeStickers = React.memo(
             return (
               <div
                 key={item.id}
-                className={`absolute ${item.positionClass} flex items-center justify-center`}
+                className={`absolute ${item.positionClass} flex items-center justify-center bg-transparent`}
               >
-                {/* Counter-rotating & pulsing neon shine starburst */}
-                <div
-                  style={style}
-                  className="absolute -inset-4 rounded-full bg-gradient-to-tr from-cyan-400/35 via-fuchsia-400/40 to-amber-300/35 blur-md sticker-disco-rays"
-                />
                 <span
                   style={style}
                   className="absolute -top-3 -right-3 text-xs sm:text-sm text-amber-300 sticker-disco-rays"
@@ -168,7 +164,7 @@ const AnimatedThemeStickers = React.memo(
               >
                 {/* Flickering Candle Flame dancing on top of the cake */}
                 <div className="relative -mb-2.5 z-10 flex items-center justify-center">
-                  <span className="text-sm sm:text-base sticker-candle-flicker drop-shadow-[0_0_8px_rgba(251,191,36,0.9)]">
+                  <span className="text-sm sm:text-base sticker-candle-flicker">
                     🔥
                   </span>
                   <span className="absolute -top-1 -right-2 text-[10px] sticker-twinkle-shine">
@@ -591,7 +587,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               <img
                 src={resolveStickerAssetUrl(theme.leftCornerStickerImage)}
                 alt="Left Strip Sticker"
-                className={`absolute -top-4 -left-4 w-10 h-10 object-contain z-20 pointer-events-none drop-shadow-md ${
+                className={`absolute -top-4 -left-4 w-10 h-10 object-contain z-20 pointer-events-none bg-transparent ${
                   theme.leftCornerAnimClass || 'sticker-food-land'
                 }`}
               />
@@ -655,7 +651,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               <img
                 src={resolveStickerAssetUrl(theme.centerCornerBadgeImage)}
                 alt="Center Strip Sticker"
-                className={`absolute -top-5 -right-5 w-11 h-11 object-contain z-20 pointer-events-none drop-shadow-md ${
+                className={`absolute -top-5 -right-5 w-11 h-11 object-contain z-20 pointer-events-none bg-transparent ${
                   theme.centerCornerAnimClass || 'sticker-food-land'
                 }`}
               />
@@ -668,7 +664,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
                   <span className="absolute -top-1 -right-1 text-[10px] sticker-disco-rays">✨</span>
                 )}
                 <span
-                  className={`text-base drop-shadow-xs ${
+                  className={`text-base ${
                     theme.centerCornerAnimClass || 'sticker-twinkle-shine'
                   }`}
                 >
@@ -711,7 +707,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               <img
                 src={resolveStickerAssetUrl(theme.rightCornerStickerImage)}
                 alt="Right Strip Sticker"
-                className={`absolute -top-4 -right-4 w-10 h-10 object-contain z-20 pointer-events-none drop-shadow-md ${
+                className={`absolute -top-4 -right-4 w-10 h-10 object-contain z-20 pointer-events-none bg-transparent ${
                   theme.rightCornerAnimClass || 'sticker-food-land'
                 }`}
               />
