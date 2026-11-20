@@ -485,8 +485,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   };
 
   const displayedThemes = themeMode === 'thermal'
-    ? THERMAL_FRAME_THEMES.slice(0, 6)
-    : DIGITAL_COLOR_THEMES.slice(0, 6);
+    ? THERMAL_FRAME_THEMES
+    : DIGITAL_COLOR_THEMES;
 
   const activeCategoryObj =
     EMOJI_CATEGORIES.find((c) => c.id === activeStickerCategory) || EMOJI_CATEGORIES[0];
@@ -884,7 +884,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 : 'Centered photo with colored top & bottom Gobble Haus frame art'}
             </div>
             <span className="text-[10px] font-mono font-semibold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full shrink-0">
-              6 Gobble Haus Frames
+              {displayedThemes.length} Gobble Haus Frames
             </span>
           </div>
 
@@ -1024,8 +1024,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               </div>
             </div>
           ) : (
-            /* Zero-Scroll 3x2 Template Grid (All 6 Gobble Haus frames fit simultaneously) */
-            <div className="grid grid-cols-3 gap-2 flex-1 min-h-0 overflow-hidden content-center">
+            /* 3x3 Template Grid (All 9 Gobble Haus frames) */
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto content-start p-0.5">
               {displayedThemes.map((t) => {
                 const isSelected = thermalTheme.id === t.id || digitalTheme.id === t.id;
 

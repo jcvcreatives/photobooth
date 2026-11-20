@@ -23,6 +23,45 @@ export const THEME_GROUPS: ThemeGroup[] = [
  */
 export const THERMAL_FRAME_THEMES: FrameTheme[] = [
   {
+    id: 'gobble_old_phone',
+    name: 'Gobble Haus Phone',
+    category: 'gobble',
+    background: '#ffffff',
+    borderStyle: 'old_phone',
+    textColor: '#000000',
+    accentColor: '#000000',
+    headerText: 'GOBBLE HAUS PHONE • 5G BUSOG',
+    footerText: 'CALLING: INASAL & FLOAT HOTLINE',
+    dateVisible: true,
+    cornerIcon: '📟',
+  },
+  {
+    id: 'gobble_arcade_boy',
+    name: 'Gobble Boy Arcade',
+    category: 'gobble',
+    background: '#ffffff',
+    borderStyle: 'arcade_boy',
+    textColor: '#000000',
+    accentColor: '#000000',
+    headerText: 'GOBBLE BOY • 8-BIT KITCHEN',
+    footerText: 'HIGH SCORE 999,990 • INASAL & FLOAT',
+    dateVisible: true,
+    cornerIcon: '🕹️',
+  },
+  {
+    id: 'gobble_wanted_poster',
+    name: 'Wanted: Food Bandit',
+    category: 'gobble',
+    background: '#ffffff',
+    borderStyle: 'wanted_poster',
+    textColor: '#000000',
+    accentColor: '#000000',
+    headerText: 'WANTED • DEAD OR BUSOG',
+    footerText: 'REWARD: 999,999,000 RICE BOXES',
+    dateVisible: true,
+    cornerIcon: '🤠',
+  },
+  {
     id: 'gobble_pokemon_card',
     name: 'Poké-Gobble Card',
     category: 'gobble',
@@ -107,6 +146,45 @@ export const THERMAL_FRAME_THEMES: FrameTheme[] = [
  * Matching 6 themes with vibrant colors for phone QR & GIF downloads.
  */
 export const DIGITAL_COLOR_THEMES: FrameTheme[] = [
+  {
+    id: 'gobble_old_phone',
+    name: 'Gobble Haus Phone',
+    category: 'gobble',
+    background: '#e2e8f0',
+    borderStyle: 'old_phone',
+    textColor: '#0f172a',
+    accentColor: '#334155',
+    headerText: 'GOBBLE HAUS PHONE • 5G BUSOG',
+    footerText: 'CALLING: INASAL & FLOAT HOTLINE',
+    dateVisible: true,
+    cornerIcon: '📟',
+  },
+  {
+    id: 'gobble_arcade_boy',
+    name: 'Gobble Boy Arcade',
+    category: 'gobble',
+    background: '#ede9fe',
+    borderStyle: 'arcade_boy',
+    textColor: '#1e1b4b',
+    accentColor: '#6d28d9',
+    headerText: 'GOBBLE BOY • 8-BIT KITCHEN',
+    footerText: 'HIGH SCORE 999,990 • INASAL & FLOAT',
+    dateVisible: true,
+    cornerIcon: '🕹️',
+  },
+  {
+    id: 'gobble_wanted_poster',
+    name: 'Wanted: Food Bandit',
+    category: 'gobble',
+    background: '#fef3c7',
+    borderStyle: 'wanted_poster',
+    textColor: '#451a03',
+    accentColor: '#b45309',
+    headerText: 'WANTED • DEAD OR BUSOG',
+    footerText: 'REWARD: 999,999,000 RICE BOXES',
+    dateVisible: true,
+    cornerIcon: '🤠',
+  },
   {
     id: 'gobble_pokemon_card',
     name: 'Poké-Gobble Card',
@@ -579,10 +657,803 @@ function drawGobbleFrameTopAndBottomArt(
 
   const styleId = theme.borderStyle || theme.id;
 
+  const drawRoundedRectPath = (x: number, y: number, w: number, h: number, r: number) => {
+    const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  };
+
+  // =========================================================================
+  // 0. OLD PHONE THEME — GOBBLE HAUS PHONE ('old_phone' / 'gobble_old_phone')
+  // =========================================================================
+  if (styleId === 'old_phone' || theme.id === 'gobble_old_phone') {
+    const phoneTopY = 24 * s;
+    const phoneBottomY = canvasHeight - 16 * s;
+    const innerPad = 14 * s;
+    const innerLeftX = leftX + innerPad;
+    const innerRightX = rightX - innerPad;
+    const innerW = contentW - innerPad * 2;
+
+    // 1. Stubby Retro External Antenna on top-right of the phone
+    const antW = 24 * s;
+    const antH = 16 * s;
+    const antX = rightX - 56 * s;
+    const antY = phoneTopY - antH + 2 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#334155';
+    drawRoundedRectPath(antX, antY, antW, antH, 8 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    // Signal wave arcs radiating from the antenna
+    ctx.lineWidth = 2 * s;
+    [7 * s, 13 * s].forEach((arcR) => {
+      ctx.beginPath();
+      ctx.arc(antX + antW + 3 * s, antY + 6 * s, arcR, -Math.PI * 0.35, Math.PI * 0.35);
+      ctx.stroke();
+    });
+
+    // 2. Outer Retro Cell Phone Body Chassis (enclosing top earpiece, LCD screen, and bottom keypad)
+    ctx.lineWidth = 4 * s;
+    ctx.strokeStyle = ink;
+    drawRoundedRectPath(leftX, phoneTopY, contentW, phoneBottomY - phoneTopY, 34 * s);
+    ctx.stroke();
+
+    // Subtle inner phone casing contour line
+    ctx.lineWidth = 1.5 * s;
+    drawRoundedRectPath(
+      leftX + 5 * s,
+      phoneTopY + 5 * s,
+      contentW - 10 * s,
+      phoneBottomY - phoneTopY - 10 * s,
+      29 * s
+    );
+    ctx.stroke();
+
+    // 3. Earpiece Speaker Recessed Grille at Top Center
+    const earW = 124 * s;
+    const earH = 16 * s;
+    const earX = centerX - earW / 2;
+    const earY = phoneTopY + 13 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#cbd5e1';
+    drawRoundedRectPath(earX, earY, earW, earH, 8 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    // 5 Speaker acoustic holes inside earpiece
+    ctx.fillStyle = ink;
+    [-36 * s, -18 * s, 0, 18 * s, 36 * s].forEach((dx) => {
+      ctx.beginPath();
+      ctx.arc(centerX + dx, earY + earH / 2, 2.6 * s, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // 4. Phone Model Nameplate Badge: "GOBBLE HAUS PHONE"
+    const plateW = innerW - 24 * s;
+    const plateH = 34 * s;
+    const plateX = centerX - plateW / 2;
+    const plateY = phoneTopY + 37 * s;
+    ctx.lineWidth = 2.8 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#0f172a';
+    drawRoundedRectPath(plateX, plateY, plateW, plateH, 9 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isThermalMode ? ink : '#f8fafc';
+    ctx.textAlign = 'center';
+    fillFittedText(
+      'GOBBLE HAUS PHONE',
+      centerX,
+      plateY + 23 * s,
+      plateW - 20 * s,
+      19.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // Sub-model tagline above LCD screen bezel
+    ctx.fillStyle = ink;
+    fillFittedText(
+      '★ RETRO EDITION • MODEL GH-3310 • 100% UNBREAKABLE ★',
+      centerX,
+      plateY + plateH + 17 * s,
+      innerW - 12 * s,
+      10.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // 5. Continuous Inner LCD Screen Bezel (wraps top LCD status bar, photo slots, and bottom soft-keys)
+    const screenTopY = headerZoneHeight - 72 * s;
+    const screenBottomY = bottomStartY + 30 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.strokeStyle = ink;
+    drawRoundedRectPath(
+      innerLeftX - 4 * s,
+      screenTopY,
+      innerW + 8 * s,
+      screenBottomY - screenTopY,
+      12 * s
+    );
+    ctx.stroke();
+
+    // Top LCD Status Bar: Signal Bars + Carrier on Left, SMS icon center, Battery Bars on Right
+    const statusY = screenTopY + 22 * s;
+    const sigBaseX = innerLeftX + 6 * s;
+    [6 * s, 10 * s, 14 * s, 18 * s].forEach((barH, idx) => {
+      ctx.fillStyle = ink;
+      ctx.fillRect(sigBaseX + idx * 6 * s, statusY - barH + 2 * s, 4 * s, barH);
+    });
+    ctx.textAlign = 'left';
+    fillFittedText(
+      '5G GOBBLE-TEL',
+      sigBaseX + 28 * s,
+      statusY,
+      130 * s,
+      11.5 * s,
+      '900',
+      'monospace'
+    );
+
+    ctx.textAlign = 'center';
+    fillFittedText('✉ 1 VIP SNAP', centerX, statusY, 110 * s, 11 * s, '900', 'monospace');
+
+    // Retro 4-cell battery indicator on top-right of LCD
+    const batW = 30 * s;
+    const batH = 14 * s;
+    const batX = innerRightX - batW - 6 * s;
+    const batY = statusY - 12 * s;
+    ctx.lineWidth = 2 * s;
+    ctx.strokeRect(batX, batY, batW, batH);
+    ctx.fillRect(batX + batW, batY + 3.5 * s, 3 * s, batH - 7 * s);
+    for (let b = 0; b < 4; b++) {
+      ctx.fillRect(batX + 3 * s + b * 6.2 * s, batY + 3 * s, 4.5 * s, batH - 6 * s);
+    }
+    ctx.textAlign = 'right';
+    fillFittedText('100%', batX - 5 * s, statusY, 45 * s, 11 * s, '900', 'monospace');
+
+    // LCD Caller ID / Header Strip immediately above photo
+    const bannerH = 28 * s;
+    const bannerY = headerZoneHeight - bannerH - 10 * s;
+    ctx.lineWidth = 2 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#dcfce7';
+    ctx.fillRect(innerLeftX, bannerY, innerW, bannerH);
+    ctx.strokeRect(innerLeftX, bannerY, innerW, bannerH);
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      `☎ CALLING: INASAL & FLOAT HOTLINE  •  ${dateStr.toUpperCase()}`,
+      centerX,
+      bannerY + 19 * s,
+      innerW - 16 * s,
+      11 * s,
+      '900',
+      'monospace'
+    );
+
+    // 6. Bottom LCD Soft-Key Bar (directly under photo, inside the LCD screen bezel)
+    const softBarY = bottomStartY + 21 * s;
+    ctx.textAlign = 'left';
+    fillFittedText('◄ MENU', innerLeftX + 6 * s, softBarY, 90 * s, 12.5 * s, '900', 'monospace');
+    ctx.textAlign = 'center';
+    fillFittedText(
+      'GOBBLE HAUS PHONE',
+      centerX,
+      softBarY,
+      innerW - 180 * s,
+      11.5 * s,
+      '900',
+      'monospace'
+    );
+    ctx.textAlign = 'right';
+    fillFittedText('ORDER ►', innerRightX - 6 * s, softBarY, 90 * s, 12.5 * s, '900', 'monospace');
+
+    // 7. Physical Navigation Cluster (Call Button, Center Gobble D-Pad, End Button)
+    const navY = bottomStartY + 38 * s;
+    const navH = 31 * s;
+    const sideBtnW = innerW * 0.27;
+    const centerPadW = innerW * 0.4;
+
+    // Left Call Key
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#bbf7d0';
+    drawRoundedRectPath(innerLeftX, navY, sideBtnW, navH, 10 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      '✆ CALL',
+      innerLeftX + sideBtnW / 2,
+      navY + 20.5 * s,
+      sideBtnW - 12 * s,
+      12.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // Center D-Pad / Navi Key
+    const padX = centerX - centerPadW / 2;
+    ctx.lineWidth = 3 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fef08a';
+    drawRoundedRectPath(padX, navY - 1 * s, centerPadW, navH + 2 * s, 12 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 1.5 * s;
+    drawRoundedRectPath(padX + 4 * s, navY + 3 * s, centerPadW - 8 * s, navH - 6 * s, 8 * s);
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    fillFittedText(
+      '▲ GOBBLE ▼',
+      centerX,
+      navY + 20.5 * s,
+      centerPadW - 18 * s,
+      12.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // Right End Key
+    const rightBtnX = innerRightX - sideBtnW;
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fecdd3';
+    drawRoundedRectPath(rightBtnX, navY, sideBtnW, navH, 10 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    fillFittedText(
+      '✖ END',
+      rightBtnX + sideBtnW / 2,
+      navY + 20.5 * s,
+      sideBtnW - 12 * s,
+      12.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // 8. Classic 3x4 T9 Physical Alphanumeric Button Keypad
+    const keypadStartY = bottomStartY + 77 * s;
+    const colGap = 10 * s;
+    const rowGap = 4.5 * s;
+    const keyW = (innerW - colGap * 2) / 3;
+    const keyH = 19.5 * s;
+
+    const keypadRows: [string, string][][] = [
+      [
+        ['1', 'VOICEMAIL'],
+        ['2', 'ABC'],
+        ['3', 'DEF'],
+      ],
+      [
+        ['4', 'GHI'],
+        ['5', 'JKL'],
+        ['6', 'MNO'],
+      ],
+      [
+        ['7', 'PQRS'],
+        ['8', 'TUV'],
+        ['9', 'WXYZ'],
+      ],
+      [
+        ['*', '+'],
+        ['0', 'INASAL'],
+        ['#', 'FLOAT'],
+      ],
+    ];
+
+    keypadRows.forEach((row, rIdx) => {
+      const ky = keypadStartY + rIdx * (keyH + rowGap);
+      row.forEach(([digit, letters], cIdx) => {
+        const kx = innerLeftX + cIdx * (keyW + colGap);
+        ctx.lineWidth = 2.2 * s;
+        ctx.fillStyle = isThermalMode ? '#ffffff' : '#f8fafc';
+        drawRoundedRectPath(kx, ky, keyW, keyH, 8 * s);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = ink;
+        ctx.textAlign = 'left';
+        fillFittedText(
+          digit,
+          kx + 12 * s,
+          ky + 14.5 * s,
+          keyW * 0.35,
+          13.5 * s,
+          '900',
+          'sans-serif'
+        );
+        ctx.textAlign = 'right';
+        fillFittedText(
+          letters,
+          kx + keyW - 10 * s,
+          ky + 14 * s,
+          keyW * 0.55,
+          9.5 * s,
+          '900',
+          'monospace'
+        );
+      });
+    });
+
+    // 9. Bottom Microphone Pinhole & Model Stamp inside Phone Chin
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      '●  MODEL: GOBBLE HAUS PHONE  •  CHICKEN INASAL & FLOAT  ●',
+      centerX,
+      phoneBottomY - 7 * s,
+      innerW - 10 * s,
+      9.5 * s,
+      '900',
+      'monospace'
+    );
+  }
+
+  // =========================================================================
+  // 0B. GOBBLE BOY ARCADE CONSOLE THEME ('arcade_boy' / 'gobble_arcade_boy')
+  // =========================================================================
+  else if (styleId === 'arcade_boy' || theme.id === 'gobble_arcade_boy') {
+    const consoleTopY = 20 * s;
+    const consoleBottomY = canvasHeight - 18 * s;
+    const innerPad = 14 * s;
+    const innerLeftX = leftX + innerPad;
+    const innerRightX = rightX - innerPad;
+    const innerW = contentW - innerPad * 2;
+
+    // 1. Outer Handheld Game Boy Console Body Shell
+    ctx.lineWidth = 4 * s;
+    ctx.strokeStyle = ink;
+    drawRoundedRectPath(leftX, consoleTopY, contentW, consoleBottomY - consoleTopY, 26 * s);
+    ctx.stroke();
+
+    // Top Cartridge Grip Grooves & Power Switch Label
+    ctx.lineWidth = 2 * s;
+    for (let g = -3; g <= 3; g++) {
+      const gx = centerX + g * 18 * s;
+      ctx.beginPath();
+      ctx.moveTo(gx, consoleTopY);
+      ctx.lineTo(gx, consoleTopY + 10 * s);
+      ctx.stroke();
+    }
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'left';
+    fillFittedText(
+      '◄ OFF•ON ►',
+      innerLeftX + 4 * s,
+      consoleTopY + 22 * s,
+      100 * s,
+      10 * s,
+      '900',
+      'monospace'
+    );
+    ctx.textAlign = 'right';
+    fillFittedText(
+      '8-BIT STEREO SOUND',
+      innerRightX - 4 * s,
+      consoleTopY + 22 * s,
+      140 * s,
+      10 * s,
+      '900',
+      'monospace'
+    );
+
+    // 2. Retro Console Brand Header Plate: "GOBBLE BOY ARCADE"
+    const brandY = consoleTopY + 32 * s;
+    const brandH = 34 * s;
+    ctx.lineWidth = 2.8 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#1e1b4b';
+    drawRoundedRectPath(innerLeftX, brandY, innerW, brandH, 8 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isThermalMode ? ink : '#f5f3ff';
+    ctx.textAlign = 'center';
+    fillFittedText(
+      '🕹️  GOBBLE BOY • 8-BIT ARCADE  🕹️',
+      centerX,
+      brandY + 23 * s,
+      innerW - 20 * s,
+      18.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // Sub-header dot matrix rule
+    ctx.fillStyle = ink;
+    fillFittedText(
+      '═══ DOT MATRIX WITH GOBBLE HAUS INASAL POWER ═══',
+      centerX,
+      brandY + brandH + 17 * s,
+      innerW - 8 * s,
+      10 * s,
+      '900',
+      'monospace'
+    );
+
+    // 3. Continuous Inner Arcade Screen Bezel (wraps top HUD, photo slots, and bottom HUD)
+    const screenTopY = headerZoneHeight - 72 * s;
+    const screenBottomY = bottomStartY + 30 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.strokeStyle = ink;
+    drawRoundedRectPath(
+      innerLeftX - 4 * s,
+      screenTopY,
+      innerW + 8 * s,
+      screenBottomY - screenTopY,
+      12 * s
+    );
+    ctx.stroke();
+
+    // Top Arcade HUD: Battery LED on Left, 1UP High Score Center, Hearts HP on Right
+    const hudY = screenTopY + 22 * s;
+    ctx.beginPath();
+    ctx.arc(innerLeftX + 12 * s, hudY - 4 * s, 5 * s, 0, Math.PI * 2);
+    ctx.fillStyle = isThermalMode ? ink : '#ef4444';
+    ctx.fill();
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'left';
+    fillFittedText(
+      'BATTERY MAX',
+      innerLeftX + 22 * s,
+      hudY,
+      110 * s,
+      11 * s,
+      '900',
+      'monospace'
+    );
+
+    ctx.textAlign = 'center';
+    fillFittedText(
+      '1UP: 999,990',
+      centerX,
+      hudY,
+      120 * s,
+      12 * s,
+      '900',
+      'monospace'
+    );
+
+    ctx.textAlign = 'right';
+    fillFittedText(
+      'HP ♥♥♥♥',
+      innerRightX - 6 * s,
+      hudY,
+      100 * s,
+      11.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // Stage Banner immediately above photo
+    const stageH = 28 * s;
+    const stageY = headerZoneHeight - stageH - 10 * s;
+    ctx.lineWidth = 2 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#ddd6fe';
+    ctx.fillRect(innerLeftX, stageY, innerW, stageH);
+    ctx.strokeRect(innerLeftX, stageY, innerW, stageH);
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      `STAGE 088: CHICKEN INASAL & FLOAT  •  ${dateStr.toUpperCase()}`,
+      centerX,
+      stageY + 19 * s,
+      innerW - 16 * s,
+      11 * s,
+      '900',
+      'monospace'
+    );
+
+    // 4. Bottom Arcade Screen Status Bar (inside screen bezel)
+    const botHudY = bottomStartY + 21 * s;
+    ctx.textAlign = 'left';
+    fillFittedText('LVL 99 BUSOG', innerLeftX + 6 * s, botHudY, 110 * s, 11.5 * s, '900', 'monospace');
+    ctx.textAlign = 'center';
+    fillFittedText('★ WINNER! ★', centerX, botHudY, 110 * s, 11.5 * s, '900', 'monospace');
+    ctx.textAlign = 'right';
+    fillFittedText('CREDIT 99', innerRightX - 6 * s, botHudY, 100 * s, 11.5 * s, '900', 'monospace');
+
+    // 5. Console Emblem Strip Below Screen Bezel
+    const subBrandY = bottomStartY + 48 * s;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      'NINTEN-GOBBLE  •  GOBBLE HAUS POCKET SYSTEM',
+      centerX,
+      subBrandY,
+      innerW - 12 * s,
+      12.5 * s,
+      '900',
+      'sans-serif'
+    );
+
+    // 6. Left Cross D-Pad + Right A/B Action Buttons + Center Power Badge
+    const controlsCy = bottomStartY + 102 * s;
+    const dpadCx = innerLeftX + 58 * s;
+    const dpadCy = controlsCy;
+    const armLen = 38 * s;
+    const armHalfW = 13 * s;
+
+    // Unified 12-point Cross D-Pad Polygon
+    ctx.lineWidth = 3 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#312e81';
+    ctx.beginPath();
+    ctx.moveTo(dpadCx - armHalfW, dpadCy - armLen);
+    ctx.lineTo(dpadCx + armHalfW, dpadCy - armLen);
+    ctx.lineTo(dpadCx + armHalfW, dpadCy - armHalfW);
+    ctx.lineTo(dpadCx + armLen, dpadCy - armHalfW);
+    ctx.lineTo(dpadCx + armLen, dpadCy + armHalfW);
+    ctx.lineTo(dpadCx + armHalfW, dpadCy + armHalfW);
+    ctx.lineTo(dpadCx + armHalfW, dpadCy + armLen);
+    ctx.lineTo(dpadCx - armHalfW, dpadCy + armLen);
+    ctx.lineTo(dpadCx - armHalfW, dpadCy + armHalfW);
+    ctx.lineTo(dpadCx - armLen, dpadCy + armHalfW);
+    ctx.lineTo(dpadCx - armLen, dpadCy - armHalfW);
+    ctx.lineTo(dpadCx - armHalfW, dpadCy - armHalfW);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Center D-Pad Pivot Circle
+    ctx.lineWidth = 2 * s;
+    ctx.strokeStyle = isThermalMode ? ink : '#ede9fe';
+    ctx.beginPath();
+    ctx.arc(dpadCx, dpadCy, 7 * s, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = ink;
+
+    // Center Mini Cartridge / Combo Box between D-Pad and A/B Buttons
+    const midBoxW = 128 * s;
+    const midBoxH = 48 * s;
+    ctx.lineWidth = 2.2 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#f5f3ff';
+    drawRoundedRectPath(centerX - midBoxW / 2, controlsCy - midBoxH / 2, midBoxW, midBoxH, 10 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText('COMBO MOVE', centerX, controlsCy - 4 * s, midBoxW - 14 * s, 11.5 * s, '900', 'monospace');
+    fillFittedText('INASAL + FLOAT', centerX, controlsCy + 14 * s, midBoxW - 14 * s, 11.5 * s, '900', 'sans-serif');
+
+    // Right A & B Round Action Buttons
+    const btnR = 19 * s;
+    const bBtnCx = innerRightX - 88 * s;
+    const bBtnCy = controlsCy + 12 * s;
+    const aBtnCx = innerRightX - 34 * s;
+    const aBtnCy = controlsCy - 12 * s;
+
+    [
+      { cx: bBtnCx, cy: bBtnCy, label: 'B', sub: 'FLOAT' },
+      { cx: aBtnCx, cy: aBtnCy, label: 'A', sub: 'INASAL' },
+    ].forEach((btn) => {
+      ctx.lineWidth = 3 * s;
+      ctx.fillStyle = isThermalMode ? '#ffffff' : '#db2777';
+      ctx.beginPath();
+      ctx.arc(btn.cx, btn.cy, btnR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isThermalMode ? ink : '#ffffff';
+      ctx.textAlign = 'center';
+      fillFittedText(btn.label, btn.cx, btn.cy + 6 * s, btnR * 1.4, 17 * s, '900', 'sans-serif');
+
+      ctx.fillStyle = ink;
+      fillFittedText(btn.sub, btn.cx, btn.cy + btnR + 14 * s, 54 * s, 9.5 * s, '900', 'monospace');
+    });
+
+    // 7. Bottom SELECT & START Pill Buttons + Speaker Grille Vents
+    const pillY = bottomStartY + 150 * s;
+    const pillW = 68 * s;
+    const pillH = 16 * s;
+    [
+      { x: centerX - pillW - 10 * s, label: 'SELECT' },
+      { x: centerX + 10 * s, label: 'START' },
+    ].forEach((p) => {
+      ctx.lineWidth = 2.2 * s;
+      ctx.fillStyle = isThermalMode ? '#ffffff' : '#cbd5e1';
+      drawRoundedRectPath(p.x, pillY, pillW, pillH, 8 * s);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = ink;
+      ctx.textAlign = 'center';
+      fillFittedText(p.label, p.x + pillW / 2, pillY + 12 * s, pillW - 10 * s, 10 * s, '900', 'monospace');
+    });
+
+    // Speaker Vents on Bottom-Right Corner
+    ctx.lineWidth = 2.5 * s;
+    for (let v = 0; v < 4; v++) {
+      const vx = innerRightX - 50 * s + v * 12 * s;
+      ctx.beginPath();
+      ctx.moveTo(vx, pillY + 2 * s);
+      ctx.lineTo(vx - 10 * s, pillY + 18 * s);
+      ctx.stroke();
+    }
+
+    // Bottom Console Serial Line
+    ctx.textAlign = 'center';
+    fillFittedText(
+      '© 2026 GOBBLE HAUS ARCADE • PLAYER 1 READY!',
+      centerX,
+      consoleBottomY - 8 * s,
+      innerW - 16 * s,
+      9.5 * s,
+      '900',
+      'monospace'
+    );
+  }
+
+  // =========================================================================
+  // 0C. WANTED: FOOD BANDIT POSTER THEME ('wanted_poster' / 'gobble_wanted_poster')
+  // =========================================================================
+  else if (styleId === 'wanted_poster' || theme.id === 'gobble_wanted_poster') {
+    const posterTopY = 20 * s;
+    const posterBottomY = canvasHeight - 20 * s;
+    const innerPad = 14 * s;
+    const innerLeftX = leftX + innerPad;
+    const innerRightX = rightX - innerPad;
+    const innerW = contentW - innerPad * 2;
+
+    // 1. Double Western Bounty Poster Border (Outer Heavy Frame + Inner Thin Frame)
+    ctx.lineWidth = 4 * s;
+    ctx.strokeStyle = ink;
+    ctx.strokeRect(leftX, posterTopY, contentW, posterBottomY - posterTopY);
+    ctx.lineWidth = 1.8 * s;
+    ctx.strokeRect(
+      leftX + 7 * s,
+      posterTopY + 7 * s,
+      contentW - 14 * s,
+      posterBottomY - posterTopY - 14 * s
+    );
+
+    // 4 Corner Sheriff Stars inside Poster Frame
+    const starOff = 20 * s;
+    drawStar(leftX + starOff, posterTopY + starOff, 9 * s, 4 * s, true);
+    drawStar(rightX - starOff, posterTopY + starOff, 9 * s, 4 * s, true);
+    drawStar(leftX + starOff, posterBottomY - starOff, 9 * s, 4 * s, true);
+    drawStar(rightX - starOff, posterBottomY - starOff, 9 * s, 4 * s, true);
+
+    // 2. Top Sheriff Notice Line
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      '★  GOBBLE HAUS SHERIFF DEPARTMENT • BOUNTY NOTICE  ★',
+      centerX,
+      posterTopY + 26 * s,
+      innerW - 44 * s,
+      11 * s,
+      '900',
+      'monospace'
+    );
+
+    // 3. Giant Western Saloon "W A N T E D" Headline
+    fillFittedText(
+      'W A N T E D',
+      centerX,
+      posterTopY + 72 * s,
+      innerW - 10 * s,
+      42 * s,
+      '900',
+      'serif'
+    );
+
+    // 4. Bold Ribbon Box: "DEAD OR 100% BUSOG!"
+    const ribY = posterTopY + 84 * s;
+    const ribH = 30 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fde68a';
+    ctx.fillRect(innerLeftX, ribY, innerW, ribH);
+    ctx.strokeRect(innerLeftX, ribY, innerW, ribH);
+    ctx.fillStyle = ink;
+    fillFittedText(
+      'DEAD OR 100% BUSOG  •  ARMED WITH CHOPSTICKS & SPOON',
+      centerX,
+      ribY + 20 * s,
+      innerW - 18 * s,
+      12 * s,
+      '900',
+      'monospace'
+    );
+
+    // 5. Crime Dossier Strip right above photo
+    const crimeH = 28 * s;
+    const crimeY = headerZoneHeight - crimeH - 10 * s;
+    ctx.lineWidth = 2 * s;
+    ctx.strokeRect(innerLeftX, crimeY, innerW, crimeH);
+    fillFittedText(
+      `CRIME: STEALING ALL THE CHICKEN INASAL & FLOATS  •  ${dateStr.toUpperCase()}`,
+      centerX,
+      crimeY + 19 * s,
+      innerW - 16 * s,
+      10.8 * s,
+      '900',
+      'monospace'
+    );
+
+    // 6. Bottom Reward Header & Giant Bounty Amount Box
+    const rewardTitleY = bottomStartY + 28 * s;
+    drawStar(centerX - 118 * s, rewardTitleY - 7 * s, 10 * s, 4.5 * s, true);
+    drawStar(centerX + 118 * s, rewardTitleY - 7 * s, 10 * s, 4.5 * s, true);
+    fillFittedText(
+      'R E W A R D',
+      centerX,
+      rewardTitleY,
+      200 * s,
+      22 * s,
+      '900',
+      'serif'
+    );
+
+    const bountyBoxY = bottomStartY + 38 * s;
+    const bountyBoxH = 44 * s;
+    ctx.lineWidth = 3 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fef08a';
+    ctx.fillRect(innerLeftX, bountyBoxY, innerW, bountyBoxH);
+    ctx.strokeRect(innerLeftX, bountyBoxY, innerW, bountyBoxH);
+    ctx.fillStyle = ink;
+    fillFittedText(
+      '₿ 999,999,000  RICE BOXES',
+      centerX,
+      bountyBoxY + 30 * s,
+      innerW - 20 * s,
+      25 * s,
+      '900',
+      'monospace'
+    );
+
+    // 7. Bandit Profile Dossier Rows
+    const dosY = bountyBoxY + bountyBoxH + 22 * s;
+    ctx.textAlign = 'left';
+    fillFittedText(
+      'KNOWN ALIAS: "THE INASAL & ICE CREAM FLOAT BANDIT"',
+      innerLeftX + 4 * s,
+      dosY,
+      innerW - 8 * s,
+      12 * s,
+      '900',
+      'monospace'
+    );
+    fillFittedText(
+      'CAUTION: EXTREMELY HUNGRY • FEED IMMEDIATELY AT GOBBLE HAUS!',
+      innerLeftX + 4 * s,
+      dosY + 20 * s,
+      innerW - 8 * s,
+      11.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // Divider line above Sheriff Stamp
+    ctx.lineWidth = 2 * s;
+    ctx.beginPath();
+    ctx.moveTo(innerLeftX, dosY + 32 * s);
+    ctx.lineTo(innerRightX, dosY + 32 * s);
+    ctx.stroke();
+
+    // 8. Bottom Sheriff Seal Signature
+    ctx.textAlign = 'center';
+    fillFittedText(
+      'BY ORDER OF SHERIFF GOBBLE HAUS  •  CASE #GH-088  •  NO CRUMBS LEFT',
+      centerX,
+      posterBottomY - 14 * s,
+      innerW - 36 * s,
+      10 * s,
+      '900',
+      'monospace'
+    );
+  }
+
   // =========================================================================
   // 1. POKÉMON CARD THEME ('pokemon_card' / 'gobble_pokemon_card')
   // =========================================================================
-  if (styleId === 'pokemon_card' || theme.id === 'gobble_pokemon_card') {
+  else if (styleId === 'pokemon_card' || theme.id === 'gobble_pokemon_card') {
     const cardTopY = 22 * s;
     const cardBottomY = canvasHeight - 22 * s;
     const innerPad = 14 * s;
@@ -1373,12 +2244,19 @@ export async function renderPhotostripCanvas(options: {
   const s = canvasWidth / 600;
   const isPokemonCard =
     theme.borderStyle === 'pokemon_card' || theme.id === 'gobble_pokemon_card';
-  const innerPhotoInset = isPokemonCard ? Math.round(14 * s) : 0;
+  const isOldPhone =
+    theme.borderStyle === 'old_phone' || theme.id === 'gobble_old_phone';
+  const isArcadeBoy =
+    theme.borderStyle === 'arcade_boy' || theme.id === 'gobble_arcade_boy';
+  const isWantedPoster =
+    theme.borderStyle === 'wanted_poster' || theme.id === 'gobble_wanted_poster';
+  const hasEnclosedOuterCard = isPokemonCard || isOldPhone || isArcadeBoy || isWantedPoster;
+  const innerPhotoInset = hasEnclosedOuterCard ? Math.round(14 * s) : 0;
 
   const drawPhotoFrameBorder = (x: number, y: number, w: number, h: number, lineW: number) => {
     ctx.save();
-    if (isPokemonCard && !isThermalMode) {
-      // Double collector frame border around the photo inside the Pokémon card
+    if (hasEnclosedOuterCard && !isThermalMode) {
+      // Double collector/LCD frame border around the photo inside the enclosed card/device screen
       ctx.strokeStyle = effectiveAccentColor;
       ctx.lineWidth = lineW + 1.5;
       ctx.strokeRect(x, y, w, h);
