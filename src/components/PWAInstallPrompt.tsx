@@ -126,18 +126,28 @@ export const PWAInstallPrompt: React.FC = () => {
 
       {/* In-App Tablet/Desktop PWA Install Prompt Banner */}
       {!isInstalled && !dismissedBanner && (deferredPrompt || isIOS) && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/95 border border-zinc-700/80 shadow-2xl backdrop-blur-md max-w-sm text-zinc-100 animate-fadeIn">
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/95 border border-zinc-700/80 shadow-2xl backdrop-blur-md max-w-md text-zinc-100 animate-fadeIn">
           <div className="w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
             <Tablet className="w-4 h-4 text-zinc-300" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="text-xs font-semibold text-zinc-100 tracking-tight">Install Offline App</div>
-            <div className="text-[10px] text-zinc-400">Run fullscreen & 100% offline without internet</div>
+            <div className="text-[10px] text-zinc-400">Run fullscreen &amp; 100% offline without internet</div>
           </div>
+          <a
+            href="./JCVcreatives-Photobooth.apk"
+            download="JCVcreatives-Photobooth.apk"
+            data-no-fullscreen-enforce="true"
+            onClick={() => soundEffects.playTap()}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-semibold text-zinc-100 shadow-xs transition active:scale-95 cursor-pointer shrink-0"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>.APK</span>
+          </a>
           {deferredPrompt ? (
             <button
               onClick={handleInstallClick}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-xs font-semibold text-zinc-950 shadow-sm transition active:scale-95 cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-xs font-semibold text-zinc-950 shadow-sm transition active:scale-95 cursor-pointer shrink-0"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Install</span>
@@ -148,14 +158,14 @@ export const PWAInstallPrompt: React.FC = () => {
                 soundEffects.playTap();
                 setShowIOSGuide(true);
               }}
-              className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-xs font-semibold text-zinc-950 shadow-sm transition active:scale-95 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-xs font-semibold text-zinc-950 shadow-sm transition active:scale-95 cursor-pointer shrink-0"
             >
               How to Install
             </button>
           )}
           <button
             onClick={() => setDismissedBanner(true)}
-            className="p-1 text-zinc-400 hover:text-white transition cursor-pointer"
+            className="p-1 text-zinc-400 hover:text-white transition cursor-pointer shrink-0"
             title="Dismiss"
           >
             <X className="w-3.5 h-3.5" />

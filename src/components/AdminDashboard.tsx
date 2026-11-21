@@ -1178,6 +1178,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5">
+            <a
+              href="./JCVcreatives-Photobooth.apk"
+              download="JCVcreatives-Photobooth.apk"
+              data-no-fullscreen-enforce="true"
+              onClick={() => soundEffects.playTap()}
+              title="Download Android 7+ Offline APK"
+              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Download .APK</span>
+              <span className="sm:hidden">.APK</span>
+            </a>
             <button
               type="button"
               data-no-fullscreen-enforce="true"
@@ -2678,6 +2690,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB: Settings */}
           {activeTab === 'config' && (
             <div className="space-y-4">
+              {/* Standalone Offline Android 7+ APK Download Card */}
+              <div className="p-4 bg-white border border-zinc-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Download className="w-4 h-4 text-zinc-700" />
+                    <h3 className="text-sm font-bold text-zinc-900">
+                      Android Offline App (.APK)
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-zinc-700">
+                      ANDROID 7.0+
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Download the standalone offline Android installer (<span className="font-mono text-zinc-700">JCVcreatives-Photobooth.apk</span>) with native USB OTG &amp; Bluetooth thermal printing.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href="./JCVcreatives-Photobooth.apk"
+                    download="JCVcreatives-Photobooth.apk"
+                    data-no-fullscreen-enforce="true"
+                    onClick={() => soundEffects.playTap()}
+                    className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download .APK</span>
+                  </a>
+                </div>
+              </div>
+
               {/* Full Screen Kiosk-Mode Display & Session Auto-Lock Card */}
               <div className="p-4 bg-white border border-zinc-200 rounded-xl space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

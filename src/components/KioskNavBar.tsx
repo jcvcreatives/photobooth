@@ -151,6 +151,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   const [secretTapCount, setSecretTapCount] = useState(0);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const isAndroidWebView =
+    typeof window !== 'undefined' && Boolean((window as unknown as { AndroidPrinter?: unknown }).AndroidPrinter);
 
   const headerRef = useRef<HTMLElement | null>(null);
   const wasNativeFsRef = useRef<boolean>(false);
@@ -328,13 +330,27 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
             </button>
           </div>
 
-          {/* Right Controls: Install App + Hide Bar (when maximized) + Maximize Toggle + Optional Admin */}
+          {/* Right Controls: Download .APK + Install App + Hide Bar (when maximized) + Maximize Toggle + Optional Admin */}
           <div className="flex items-center gap-1.5">
+            {!isAndroidWebView && (
+              <a
+                href="./JCVcreatives-Photobooth.apk"
+                download="JCVcreatives-Photobooth.apk"
+                data-no-fullscreen-enforce="true"
+                onClick={() => soundEffects.playTap()}
+                title="Download Offline Android 7+ APK (JCVcreatives-Photobooth.apk)"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-medium transition cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download .APK</span>
+              </a>
+            )}
+
             {!isInstalled && deferredPrompt && (
               <button
                 onClick={handleInstallApp}
                 title="Install Offline App"
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black hover:bg-zinc-800 text-white text-[11px] font-medium transition cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 hover:text-zinc-900 text-[11px] font-medium transition cursor-pointer"
               >
                 <Download className="w-3 h-3" />
                 <span className="hidden sm:inline">Install App</span>
