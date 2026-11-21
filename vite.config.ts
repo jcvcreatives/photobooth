@@ -242,7 +242,7 @@ function apkPackageHeaderPlugin(): Plugin {
       const urlPath = (req.url || '').split('?')[0];
       if (urlPath.endsWith('.apk')) {
         res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-        res.setHeader('Content-Disposition', 'attachment; filename="JCVcreatives-Photobooth.apk"');
+        res.setHeader('Content-Disposition', 'attachment; filename="JCVcreatives-Photobooth-v3.0.apk"');
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
         res.setHeader('X-Content-Type-Options', 'nosniff');
       }
@@ -340,7 +340,7 @@ export default defineConfig(() => {
                 !url.pathname.startsWith('/downloads/'),
               handler: 'NetworkFirst',
               options: {
-                cacheName: 'jcv-pages-navigation-cache-v7',
+                cacheName: 'jcv-pages-navigation-cache-v30',
                 networkTimeoutSeconds: 3,
                 expiration: {
                   maxEntries: 25,
@@ -359,7 +359,7 @@ export default defineConfig(() => {
                 request.destination === 'worker',
               handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'jcv-static-assets-cache-v7',
+                cacheName: 'jcv-static-assets-cache-v30',
                 expiration: {
                   maxEntries: 120,
                   maxAgeSeconds: 60 * 60 * 24 * 60, // 60 days
@@ -374,7 +374,7 @@ export default defineConfig(() => {
               urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'jcv-images-cache-v7',
+                cacheName: 'jcv-images-cache-v30',
                 expiration: {
                   maxEntries: 250,
                   maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year

@@ -1347,16 +1347,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <div className="flex items-center gap-1.5">
             <a
-              href="./downloads/JCVcreatives-Photobooth.apk?v=2.7.0"
-              download="JCVcreatives-Photobooth.apk"
+              href="./downloads/JCVcreatives-Photobooth-v3.0.apk?v=3.0.0"
+              download="JCVcreatives-Photobooth-v3.0.apk"
               data-no-fullscreen-enforce="true"
               onClick={() => soundEffects.playTap()}
-              title="Download v1+v2 Signed Android 7–14+ Offline APK"
+              title="Download v3.0 Signed Android 7–14+ Offline APK"
               className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Download .APK</span>
-              <span className="sm:hidden">.APK</span>
+              <span className="hidden sm:inline">Download .APK (v3.0)</span>
+              <span className="sm:hidden">.APK v3.0</span>
             </a>
             <button
               type="button"
@@ -2117,17 +2117,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       await thermalPrinterService.connectUSB();
                     }}
                     className={`p-3 rounded-lg border text-left transition cursor-pointer flex items-center justify-between ${
-                      (localConfig.thermalPrinter.printerModel || 'vozy_g80') === 'vozy_g80' &&
-                      printerStatus.connectionType === 'usb' &&
-                      printerStatus.isConnected
-                        ? 'bg-zinc-900 border-zinc-900 text-white'
+                      printerStatus.connectionType === 'usb' && printerStatus.isConnected
+                        ? 'bg-emerald-950 border-emerald-700 text-white'
                         : 'bg-zinc-50 border-zinc-200 hover:border-zinc-400 text-zinc-900'
                     }`}
                   >
                     <div>
-                      <div className="font-semibold text-xs">2. Connect USB Cable</div>
-                      <div className="text-[11px] opacity-70 mt-0.5">
-                        Direct USB / OTG
+                      <div className="font-semibold text-xs flex items-center gap-1.5">
+                        {printerStatus.connectionType === 'usb' && printerStatus.isConnected && (
+                          <span className="relative flex h-2.5 w-2.5 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
+                          </span>
+                        )}
+                        <span>
+                          {printerStatus.connectionType === 'usb' && printerStatus.isConnected
+                            ? '2. USB Cable Connected'
+                            : '2. Connect USB Cable'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] opacity-80 mt-0.5">
+                        {printerStatus.connectionType === 'usb' && printerStatus.isConnected
+                          ? printerStatus.deviceName
+                          : 'Direct USB / OTG'}
                       </div>
                     </div>
                     <ArrowRight className="w-3.5 h-3.5 shrink-0" />
@@ -2150,6 +2162,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <Printer className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
                   </button>
                 </div>
+
+                {typeof window !== 'undefined' && Boolean(window.AndroidPrinter?.openBluetoothSettings) && (
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-zinc-50 border border-zinc-200 text-xs">
+                    <span className="text-zinc-600">
+                      First time using Bluetooth on this tablet? Pair <strong>VOZY G80</strong> (PIN 0000 or 1234) in Android Bluetooth Settings:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        window.AndroidPrinter?.openBluetoothSettings?.();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs shrink-0 cursor-pointer"
+                    >
+                      Open Android Bluetooth Settings
+                    </button>
+                  </div>
+                )}
 
                 {/* VOZY G80 Hardware Feature Toggles & Profile Switcher */}
                 <div className="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -3393,24 +3423,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       Android Offline App (.APK)
                     </h3>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700">
-                      V1 + V2 SIGNED (ANDROID 7–14+)
+                      V3.0 • V1 + V2 SIGNED (ANDROID 7–14+)
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    Download the v1+v2 cryptographically signed offline Android installer (<span className="font-mono text-zinc-700">JCVcreatives-Photobooth.apk</span>) with native USB OTG &amp; Bluetooth thermal printing.
+                    Download the v3.0 cryptographically signed offline Android installer (<span className="font-mono text-zinc-700">JCVcreatives-Photobooth-v3.0.apk</span>) with active VOZY G80 Bluetooth SPP &amp; USB OTG printing + 60fps Home Screen animations.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
                   <a
-                    href="./downloads/JCVcreatives-Photobooth.apk?v=2.7.0"
-                    download="JCVcreatives-Photobooth.apk"
+                    href="./downloads/JCVcreatives-Photobooth-v3.0.apk?v=3.0.0"
+                    download="JCVcreatives-Photobooth-v3.0.apk"
                     data-no-fullscreen-enforce="true"
                     onClick={() => soundEffects.playTap()}
                     className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Download .APK</span>
+                    <span>Download .APK (v3.0)</span>
                   </a>
                 </div>
               </div>

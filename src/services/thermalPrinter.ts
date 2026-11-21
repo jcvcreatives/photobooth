@@ -44,6 +44,8 @@ interface AndroidPrinterNativeBridge {
   printBluetoothBase64?: (base64Data: string) => string;
   printTcpBase64?: (ip: string, port: number, base64Data: string) => string;
   printSystemImage?: (dataUrl: string, jobName: string) => string;
+  openBluetoothSettings?: () => string;
+  getBridgeVersion?: () => string;
 }
 
 declare global {
@@ -110,6 +112,7 @@ class ThermalPrinterService {
   private usbInterfaceNumber: number | null = null;
   private usbEndpointNumber: number | null = null;
   private nativeUsbActive = false;
+  private usbPermPollTimer: ReturnType<typeof setInterval> | null = null;
 
   // Web Serial port for USB-Serial (CH340 / PL2303 / CP210x / FTDI) USB cord printers
   private serialPort: any = null;
@@ -176,6 +179,110 @@ class ThermalPrinterService {
     this.setupTabletLockWakeListeners();
     this.setupSilentBridgeListener();
     this.probeSilentBridge();
+    this.probeAndroidApkPrinterOnStartup();
+  }
+
+  /**
+   * When running inside the Native Android .APK (window.AndroidPrinter), automatically checks
+   * if a USB OTG thermal printer is plugged in or a paired Bluetooth printer (like VOZY G80) is ready.
+   */
+  public probeAndroidApkPrinterOnStartup(): boolean {
+    if (typeof window === 'undefined' || !window.AndroidPrinter) return false;
+
+    try {
+      // 1. If a physical USB OTG printer is plugged into the tablet, check if permission is already granted
+      if (window.AndroidPrinter.hasUsbPrinter?.() && window.AndroidPrinter.connectUsb) {
+        const usbRes = window.AndroidPrinter.connectUsb();
+        if (usbRes && usbRes.startsWith('OK:')) {
+          const usbName = usbRes.slice(3) || 'VOZY G80 (USB OTG)';
+          this.nativeUsbActive = true;
+          this.currentStatus = {
+            isConnected: true,
+            connectionType: 'usb',
+            deviceName: usbName,
+            details: 'Connected via Native Android USB OTG Host',
+          };
+          safeStorageSet('snapkiosk_printer_type', 'usb');
+          safeStorageSet('snapkiosk_printer_name', usbName);
+          this.notify();
+          return true;
+        } else if (usbRes && (usbRes.startsWith('PENDING:') || usbRes.includes('tap Allow'))) {
+          this.startAndroidUsbPermissionPolling();
+        }
+      }
+
+      // 2. If already connected via native Bluetooth or USB, don't overwrite
+      if (this.nativeBluetoothActive || this.nativeUsbActive) return true;
+
+      // 3. Check if a paired Bluetooth printer (VOZY G80) is available via Android Bluetooth Adapter
+      // Only auto-probe Bluetooth without opening Settings if we don't already have a physical connection
+      if (
+        (this.currentStatus.connectionType === 'virtual' ||
+          this.currentStatus.connectionType === 'bluetooth' ||
+          !this.currentStatus.isConnected) &&
+        window.AndroidPrinter.connectBluetooth
+      ) {
+        // Avoid auto-launching Android Settings on passive startup; only connect if already paired
+        const savedType = safeStorageGet('snapkiosk_printer_type');
+        if (savedType === 'bluetooth') {
+          const btRes = window.AndroidPrinter.connectBluetooth();
+          if (btRes && btRes.startsWith('OK:')) {
+            const devName = btRes.slice(3) || 'VOZY G80 (Bluetooth)';
+            this.nativeBluetoothActive = true;
+            this.currentStatus = {
+              isConnected: true,
+              connectionType: 'bluetooth',
+              deviceName: devName,
+              details: 'Connected via Native Android Bluetooth SPP',
+            };
+            safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+            safeStorageSet('snapkiosk_printer_name', devName);
+            this.notify();
+            return true;
+          }
+        }
+      }
+    } catch {
+      // Ignore startup probe errors
+    }
+    return false;
+  }
+
+  private startAndroidUsbPermissionPolling() {
+    if (this.usbPermPollTimer) {
+      clearInterval(this.usbPermPollTimer);
+      this.usbPermPollTimer = null;
+    }
+    let attempts = 0;
+    this.usbPermPollTimer = setInterval(() => {
+      attempts++;
+      if (attempts > 40 || typeof window === 'undefined' || !window.AndroidPrinter?.connectUsb) {
+        if (this.usbPermPollTimer) clearInterval(this.usbPermPollTimer);
+        this.usbPermPollTimer = null;
+        return;
+      }
+      try {
+        if (!window.AndroidPrinter.hasUsbPrinter?.()) return;
+        const res = window.AndroidPrinter.connectUsb();
+        if (res && res.startsWith('OK:')) {
+          if (this.usbPermPollTimer) clearInterval(this.usbPermPollTimer);
+          this.usbPermPollTimer = null;
+          const usbName = res.slice(3) || 'VOZY G80 (USB OTG)';
+          this.nativeUsbActive = true;
+          this.currentStatus = {
+            isConnected: true,
+            connectionType: 'usb',
+            deviceName: usbName,
+            details: 'Connected via Native Android USB OTG Host',
+          };
+          safeStorageSet('snapkiosk_printer_type', 'usb');
+          safeStorageSet('snapkiosk_printer_name', usbName);
+          this.notify();
+        }
+      } catch {
+        // Wait for next poll tick
+      }
+    }, 600);
   }
 
   private setupSilentBridgeListener() {
@@ -326,6 +433,15 @@ class ThermalPrinterService {
 
   public async wakeAndReconnectRememberedPrinter(): Promise<boolean> {
     if (this.isPrintingBusy) return true;
+
+    // On Android APK, also check if user just plugged in USB OTG or just returned from Android Bluetooth Settings
+    if (typeof window !== 'undefined' && window.AndroidPrinter) {
+      if (window.AndroidPrinter.hasUsbPrinter?.() && !this.nativeUsbActive) {
+        const okUsb = await this.reconnectRememberedUsb();
+        if (okUsb) return true;
+      }
+    }
+
     const savedType =
       (safeStorageGet('snapkiosk_printer_type') as PrinterConnectionType | null) ||
       this.currentStatus.connectionType;
@@ -731,15 +847,19 @@ class ThermalPrinterService {
           this.notify();
           return true;
         } else if (res && res.startsWith('FALLBACK:')) {
+          safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+          try {
+            window.AndroidPrinter.openBluetoothSettings?.();
+          } catch {}
           // If running inside Android APK WebView where navigator.bluetooth is not exposed,
           // guide the operator to pair the printer once in Android Settings -> Bluetooth
           if (typeof navigator === 'undefined' || !('bluetooth' in navigator) || !navigator.bluetooth) {
             this.currentStatus = {
               isConnected: false,
               connectionType: 'bluetooth',
-              deviceName: 'No Paired Bluetooth Printer Found',
+              deviceName: 'Pair VOZY G80 in Android Bluetooth Settings',
               error:
-                'Please pair your printer (e.g. VOZY G80) once in Android Settings → Bluetooth (PIN 0000 or 1234), then tap "Connect Bluetooth" again.',
+                'Android Bluetooth Settings opened — tap your printer (VOZY G80 / Gprinter) to pair (PIN 0000 or 1234), then switch back to this app and it will connect automatically!',
             };
             this.notify();
             return false;
@@ -769,7 +889,7 @@ class ThermalPrinterService {
         connectionType: 'bluetooth',
         deviceName: 'Bluetooth Unavailable in This View',
         error:
-          'If using the Android APK, pair your printer in Android Settings → Bluetooth first. If running inside the AI Studio preview iframe, open the app URL in Chrome browser (top-right button) or use the installed Android .APK.',
+          'Install the latest Android .APK (v3.0) for direct Bluetooth & USB printing, or open the app URL in Chrome browser.',
       };
       this.notify();
       return false;
@@ -946,12 +1066,24 @@ class ThermalPrinterService {
           safeStorageSet('snapkiosk_printer_name', usbName);
           this.notify();
           return true;
+        } else if (res && (res.startsWith('PENDING:') || res.includes('tap Allow'))) {
+          safeStorageSet('snapkiosk_printer_type', 'usb');
+          this.currentStatus = {
+            isConnected: false,
+            connectionType: 'usb',
+            deviceName: 'Tap "OK" / "Allow" on Android USB Popup',
+            details: 'Waiting for Android USB OTG permission confirmation...',
+            error: 'Please tap "OK" or "Allow" on the Android USB permission dialog on screen — it will connect automatically!',
+          };
+          this.notify();
+          this.startAndroidUsbPermissionPolling();
+          return false;
         } else if (res && res.startsWith('ERR:')) {
           this.currentStatus = {
             isConnected: false,
             connectionType: 'usb',
             deviceName: 'No USB Printer Detected on OTG Cord',
-            error: `${res.replace(/^ERR:/, '')}. Check that your USB OTG adapter is firmly plugged into the tablet and the printer is powered ON.`,
+            error: `${res.replace(/^ERR:/, '')}. Check that your USB OTG adapter is firmly plugged into the tablet and the VOZY G80 printer is powered ON.`,
           };
           this.notify();
           return false;

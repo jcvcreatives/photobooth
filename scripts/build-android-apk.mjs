@@ -122,8 +122,8 @@ function buildBinaryAndroidManifest() {
   const manifestTree = {
     tag: 'manifest',
     attrs: [
-      { ns: true, name: 'versionCode', type: 0x10, data: 207 },
-      { ns: true, name: 'versionName', type: 0x03, data: '2.7.0' },
+      { ns: true, name: 'versionCode', type: 0x10, data: 300 },
+      { ns: true, name: 'versionName', type: 0x03, data: '3.0.0' },
       { ns: false, name: 'package', type: 0x03, data: 'com.jcvcreatives.photobooth' },
     ],
     children: [
@@ -131,7 +131,7 @@ function buildBinaryAndroidManifest() {
         tag: 'uses-sdk',
         attrs: [
           { ns: true, name: 'minSdkVersion', type: 0x10, data: 21 },
-          { ns: true, name: 'targetSdkVersion', type: 0x10, data: 33 },
+          { ns: true, name: 'targetSdkVersion', type: 0x10, data: 28 },
         ],
         children: [],
       },
@@ -144,6 +144,8 @@ function buildBinaryAndroidManifest() {
         'android.permission.BLUETOOTH_ADMIN',
         'android.permission.BLUETOOTH_CONNECT',
         'android.permission.BLUETOOTH_SCAN',
+        'android.permission.ACCESS_FINE_LOCATION',
+        'android.permission.ACCESS_COARSE_LOCATION',
       ].map((perm) => ({
         tag: 'uses-permission',
         attrs: [{ ns: true, name: 'name', type: 0x03, data: perm }],
@@ -550,9 +552,11 @@ function buildClassesDex() {
   const S_ERR_NO_USB = addStr('ERR:No USB printer detected on OTG cord');
   const S_OK_USB = addStr('OK:USB Thermal Printer');
   const S_OK_PREFIX = addStr('OK:');
+  const S_PENDING_USB = addStr('PENDING:Please tap Allow/OK on the USB permission prompt');
   const S_ERR_USB_PERM = addStr('ERR:Please tap Allow on the USB permission prompt and print again');
   const S_ERR_USB_EP = addStr('ERR:No writable USB endpoint found on printer');
   const S_OK = addStr('OK');
+  const S_VER_300 = addStr('3.0.0');
   const S_ERR_NO_BT = addStr('ERR:Bluetooth is not supported on this tablet');
   const S_ACT_BT_EN = addStr('android.bluetooth.adapter.action.REQUEST_ENABLE');
   const S_ERR_BT_OFF = addStr('ERR:Bluetooth is turned off on tablet — please turn on Bluetooth');
@@ -567,6 +571,8 @@ function buildClassesDex() {
   const F_MAIN_WV = addField(T_MAIN, 'webView', T_WV);
   const F_BR_ACT = addField(T_BRIDGE, 'activity', T_ACT);
   const F_BR_USB = addField(T_BRIDGE, 'selectedUsbDevice', T_USBDEV);
+  const F_BR_USBCONN = addField(T_BRIDGE, 'usbConn', T_USBCONN);
+  const F_BR_USBEP = addField(T_BRIDGE, 'usbEp', T_USBEP);
   const F_BR_BT = addField(T_BRIDGE, 'selectedBtDevice', T_BTDEV);
   const F_BR_BTSOCK = addField(T_BRIDGE, 'btSocket', T_BTSOCK);
 
@@ -668,6 +674,10 @@ function buildClassesDex() {
   const M_BR_CONN_BT = addMethod(T_BRIDGE, 'connectBluetooth', T_STR, []);
   const M_BR_PRT_BT = addMethod(T_BRIDGE, 'printBluetoothBase64', T_STR, [T_STR]);
   const M_BR_PRT_TCP = addMethod(T_BRIDGE, 'printTcpBase64', T_STR, [T_STR, T_INT, T_STR]);
+  const M_BR_TRY_BT = addMethod(T_BRIDGE, 'tryConnectBtSocket', T_BOOL, [T_BTDEV]);
+  const M_BR_TRY_BT_SEC = addMethod(T_BRIDGE, 'tryConnectSecureBtSocket', T_BOOL, [T_BTDEV]);
+  const M_BR_OPEN_BT_SET = addMethod(T_BRIDGE, 'openBluetoothSettings', T_STR, []);
+  const M_BR_GET_VER = addMethod(T_BRIDGE, 'getBridgeVersion', T_STR, []);
 
   // Sort tables strictly according to Dalvik DEX specification
   const sortedStrings = Array.from(stringSet).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -961,6 +971,70 @@ function buildClassesDex() {
     ...opReturnVoid(),
   ]);
 
+  // getBridgeVersion()String: v1 = this
+  const codeBrGetVer = makeCodeItem(2, 1, 0, [
+    ...opConstStr(0, S_VER_300),
+    ...opReturnObj(0),
+  ]);
+
+  // openBluetoothSettings()String: v3 = this
+  const codeBrOpenBtSet = makeCodeItem(4, 1, 2, [], {
+    tryItems: [
+      ...opNewInstance(0, T_INTENT),
+      ...opConstStr(1, S_ACT_BT_SET),
+      ...opInvokeDirect(M_INTENT_INIT, [0, 1]),
+      ...opIgetObj(1, 3, F_BR_ACT),
+      ...opInvokeVirtual(M_ACT_START_ACT, [1, 0]),
+      ...opConstStr(0, S_OK),
+      ...opReturnObj(0),
+    ],
+    catchItems: [...opMoveException(0), ...opConstStr(0, S_ERR_NO_BT), ...opReturnObj(0)],
+  });
+
+  // tryConnectBtSocket(BluetoothDevice)Z: v3 = this, v4 = BluetoothDevice
+  const codeBrTryBt = makeCodeItem(5, 2, 2, [], {
+    tryItems: [
+      ...opInvokeStatic(M_BT_DEFAULT, []),
+      ...opMoveResultObj(0),
+      opIfEqz(0, 'no_disc_insec'),
+      ...opInvokeVirtual(M_BT_CANCEL_DISC, [0]),
+      label('no_disc_insec'),
+      ...opConstStr(0, S_SPP_UUID),
+      ...opInvokeStatic(M_UUID_FROM, [0]),
+      ...opMoveResultObj(0),
+      ...opInvokeVirtual(M_BTDEV_INSECURE_RFCOMM, [4, 0]),
+      ...opMoveResultObj(1),
+      ...opInvokeVirtual(M_BTSOCK_CONN, [1]),
+      ...opIputObj(1, 3, F_BR_BTSOCK),
+      ...opIputObj(4, 3, F_BR_BT),
+      ...opConst4(0, 1),
+      ...opReturn(0),
+    ],
+    catchItems: [...opMoveException(0), ...opConst4(0, 0), ...opReturn(0)],
+  });
+
+  // tryConnectSecureBtSocket(BluetoothDevice)Z: v3 = this, v4 = BluetoothDevice
+  const codeBrTryBtSec = makeCodeItem(5, 2, 2, [], {
+    tryItems: [
+      ...opInvokeStatic(M_BT_DEFAULT, []),
+      ...opMoveResultObj(0),
+      opIfEqz(0, 'no_disc_sec'),
+      ...opInvokeVirtual(M_BT_CANCEL_DISC, [0]),
+      label('no_disc_sec'),
+      ...opConstStr(0, S_SPP_UUID),
+      ...opInvokeStatic(M_UUID_FROM, [0]),
+      ...opMoveResultObj(0),
+      ...opInvokeVirtual(M_BTDEV_RFCOMM, [4, 0]),
+      ...opMoveResultObj(1),
+      ...opInvokeVirtual(M_BTSOCK_CONN, [1]),
+      ...opIputObj(1, 3, F_BR_BTSOCK),
+      ...opIputObj(4, 3, F_BR_BT),
+      ...opConst4(0, 1),
+      ...opReturn(0),
+    ],
+    catchItems: [...opMoveException(0), ...opConst4(0, 0), ...opReturn(0)],
+  });
+
   // hasUsbPrinter()Z: v3 = this
   const codeBrHasUsb = makeCodeItem(4, 1, 2, [], {
     tryItems: [
@@ -985,7 +1059,7 @@ function buildClassesDex() {
 
   // connectUsb()Ljava/lang/String;: v5 = this
   // Safe PendingIntent flags for Android 7–14+: uses FLAG_MUTABLE (33554432) only on SDK_INT >= 31, else 0.
-  // Returns "OK:USB Thermal Printer" ONLY when permission is granted; if permission was just requested, returns "ERR:Please tap Allow on the USB permission prompt and tap Connect USB again".
+  // Returns "OK:USB Thermal Printer" ONLY when permission is granted; if permission was just requested, returns "PENDING:Please tap Allow/OK on the USB permission prompt".
   const codeBrConnUsb = makeCodeItem(6, 1, 4, [], {
     tryItems: [
       ...opIgetObj(0, 5, F_BR_ACT),
@@ -1027,7 +1101,7 @@ function buildClassesDex() {
       ...opMoveResultObj(2),
       ...opIgetObj(1, 5, F_BR_USB),
       ...opInvokeVirtual(M_USBMGR_REQ_PERM, [0, 1, 2]),
-      ...opConstStr(0, S_ERR_USB_PERM),
+      ...opConstStr(0, S_PENDING_USB),
       ...opReturnObj(0),
       label('usb_perm_ok'),
       ...opConstStr(0, S_OK_USB),
@@ -1037,10 +1111,15 @@ function buildClassesDex() {
   });
 
   // printUsbBase64(String)String: v9 = this, v10 = base64Data
-  // Scans ALL interfaces and ALL endpoints on the USB device to find the true USB_DIR_OUT (0) bulk endpoint!
-  // Also automatically triggers UsbManager.requestPermission if not yet granted.
+  // Keeps UsbDeviceConnection (F_BR_USBCONN) and UsbEndpoint (F_BR_USBEP) open across 8KB raster chunks
+  // so multi-chunk photo strips stream smoothly over USB OTG without resetting the bulk pipe!
   const codeBrPrtUsb = makeCodeItem(11, 2, 5, [], {
     tryItems: [
+      ...opIgetObj(0, 9, F_BR_USBCONN),
+      opIfEqz(0, 'usb_open_fresh'),
+      ...opIgetObj(4, 9, F_BR_USBEP),
+      opIfNez(4, 'usb_do_transfer'),
+      label('usb_open_fresh'),
       ...opIgetObj(0, 9, F_BR_ACT),
       ...opConstStr(1, S_USB_SVC),
       ...opInvokeVirtual(M_ACT_GET_SYS, [0, 1]),
@@ -1122,6 +1201,9 @@ function buildClassesDex() {
       label('usb_conn_opened'),
       ...opConst4(1, 1),
       ...opInvokeVirtual(M_USBCONN_CLAIM, [0, 3, 1]),
+      ...opIputObj(0, 9, F_BR_USBCONN),
+      ...opIputObj(4, 9, F_BR_USBEP),
+      label('usb_do_transfer'),
       ...opConst4(2, 0),
       ...opInvokeStatic(M_B64_DEC, [10, 2]),
       ...opMoveResultObj(1),
@@ -1129,20 +1211,43 @@ function buildClassesDex() {
       ...opConst16(3, 6000),
       ...opInvokeVirtual(M_USBCONN_BULK, [0, 4, 1, 2, 3]),
       ...opMoveResult(5),
-      ...opInvokeVirtual(M_USBCONN_CLOSE, [0]),
       ...opConst4(6, 0),
-      opIfLt(5, 6, 'no_out_ep'),
+      opIfLt(5, 6, 'usb_transfer_err'),
       ...opConstStr(0, S_OK),
       ...opReturnObj(0),
+      label('usb_transfer_err'),
+      ...opInvokeVirtual(M_USBCONN_CLOSE, [0]),
+      ...opConst4(0, 0),
+      ...opIputObj(0, 9, F_BR_USBCONN),
+      ...opIputObj(0, 9, F_BR_USBEP),
+      ...opConstStr(0, S_ERR_USB_EP),
+      ...opReturnObj(0),
     ],
-    catchItems: [...opMoveException(0), ...opConstStr(0, S_ERR_USB_EP), ...opReturnObj(0)],
+    catchItems: [
+      ...opMoveException(0),
+      ...opConst4(0, 0),
+      ...opIputObj(0, 9, F_BR_USBCONN),
+      ...opIputObj(0, 9, F_BR_USBEP),
+      ...opConstStr(0, S_ERR_USB_EP),
+      ...opReturnObj(0),
+    ],
   });
 
   // connectBluetooth()String: v6 = this
-  // Iterates through ALL bonded Bluetooth devices, preferring any IMAGING (0x0600 = 1536) or UNCATEGORIZED (0x1F00 = 7936) printer device,
-  // and returns "OK:" + device.getName() so the operator sees the exact paired printer name.
+  // Actively connects an RFCOMM BluetoothSocket in two passes across bonded devices:
+  // Pass 1: IMAGING (1536) and UNCATEGORIZED (7936) thermal printers
+  // Pass 2: Any other bonded device accepting SPP UUID 00001101-0000-1000-8000-00805F9B34FB
   const codeBrConnBt = makeCodeItem(7, 1, 2, [], {
     tryItems: [
+      // Reuse already-open BluetoothSocket if still connected
+      ...opIgetObj(0, 6, F_BR_BTSOCK),
+      opIfEqz(0, 'bt_check_adapter'),
+      ...opInvokeVirtual(M_BTSOCK_IS_CONN, [0]),
+      ...opMoveResult(1),
+      opIfEqz(1, 'bt_check_adapter'),
+      ...opIgetObj(0, 6, F_BR_BT),
+      opIfNez(0, 'bt_format_name'),
+      label('bt_check_adapter'),
       ...opInvokeStatic(M_BT_DEFAULT, []),
       ...opMoveResultObj(0),
       opIfNez(0, 'bt_has_adapter'),
@@ -1173,42 +1278,69 @@ function buildClassesDex() {
       ...opConstStr(1, S_FB_NO_BT),
       ...opReturnObj(1),
       label('bt_has_bonded'),
+      // Pass 1: Try connecting RFCOMM socket to IMAGING (1536) or UNCATEGORIZED (7936) devices
       ...opInvokeInterface(M_SET_ITER, [0]),
-      ...opMoveResultObj(0), // v0 = Iterator
-      ...opConst4(1, 0), // v1 = bestDevice
-      label('bt_iter_loop'),
-      ...opInvokeInterface(M_ITER_HAS_NEXT, [0]),
+      ...opMoveResultObj(1), // v1 = Iterator
+      label('bt_pass1_loop'),
+      ...opInvokeInterface(M_ITER_HAS_NEXT, [1]),
       ...opMoveResult(2),
-      opIfEqz(2, 'bt_iter_done'),
-      ...opInvokeInterface(M_ITER_NEXT, [0]),
+      opIfEqz(2, 'bt_pass2_start'),
+      ...opInvokeInterface(M_ITER_NEXT, [1]),
       ...opMoveResultObj(2),
       ...opCheckCast(2, T_BTDEV), // v2 = candidate BluetoothDevice
-      opIfNez(1, 'bt_check_class'),
-      // Save first bonded device as fallback in v1
       ...opInvokeVirtual(M_BTDEV_GET_CLASS, [2]),
       ...opMoveResultObj(3),
-      ...opIputObj(2, 6, F_BR_BT),
-      ...opIgetObj(1, 6, F_BR_BT),
-      label('bt_check_class'),
-      ...opInvokeVirtual(M_BTDEV_GET_CLASS, [2]),
-      ...opMoveResultObj(3),
-      opIfEqz(3, 'bt_iter_loop'),
+      opIfEqz(3, 'bt_pass1_loop'),
       ...opInvokeVirtual(M_BTCLASS_MAJOR, [3]),
       ...opMoveResult(3),
-      // Major Class 0x0600 (1536) = IMAGING (Printers)
       ...opConst16(4, 1536),
-      opIfEq(3, 4, 'bt_found_printer'),
-      // Major Class 0x1F00 (7936) = UNCATEGORIZED (many ESC/POS SPP thermal printers)
+      opIfEq(3, 4, 'bt_pass1_try'),
       ...opConst16(4, 7936),
-      opIfEq(3, 4, 'bt_found_printer'),
-      opGoto('bt_iter_loop'),
-      label('bt_found_printer'),
+      opIfEq(3, 4, 'bt_pass1_try'),
+      opGoto('bt_pass1_loop'),
+      label('bt_pass1_try'),
       ...opIputObj(2, 6, F_BR_BT),
-      ...opIgetObj(1, 6, F_BR_BT),
-      label('bt_iter_done'),
+      ...opInvokeVirtual(M_BR_TRY_BT, [6, 2]),
+      ...opMoveResult(3),
+      opIfNez(3, 'bt_connected_ok'),
+      ...opInvokeVirtual(M_BR_TRY_BT_SEC, [6, 2]),
+      ...opMoveResult(3),
+      opIfNez(3, 'bt_connected_ok'),
+      opGoto('bt_pass1_loop'),
+      // Pass 2: Try connecting RFCOMM socket to any bonded device
+      label('bt_pass2_start'),
+      ...opInvokeInterface(M_SET_ITER, [0]),
+      ...opMoveResultObj(1), // v1 = Iterator
+      label('bt_pass2_loop'),
+      ...opInvokeInterface(M_ITER_HAS_NEXT, [1]),
+      ...opMoveResult(2),
+      opIfEqz(2, 'bt_no_live_sock'),
+      ...opInvokeInterface(M_ITER_NEXT, [1]),
+      ...opMoveResultObj(2),
+      ...opCheckCast(2, T_BTDEV),
+      ...opInvokeVirtual(M_BR_TRY_BT, [6, 2]),
+      ...opMoveResult(3),
+      opIfNez(3, 'bt_connected_ok'),
+      ...opInvokeVirtual(M_BR_TRY_BT_SEC, [6, 2]),
+      ...opMoveResult(3),
+      opIfNez(3, 'bt_connected_ok'),
+      opGoto('bt_pass2_loop'),
+      label('bt_no_live_sock'),
+      // If a paired IMAGING/UNCATEGORIZED printer was found in Pass 1, return its name
       ...opIgetObj(0, 6, F_BR_BT),
       opIfNez(0, 'bt_format_name'),
+      // Otherwise no printer is paired yet -> launch Android Bluetooth Settings so user can pair VOZY G80
+      ...opNewInstance(1, T_INTENT),
+      ...opConstStr(2, S_ACT_BT_SET),
+      ...opInvokeDirect(M_INTENT_INIT, [1, 2]),
+      ...opIgetObj(2, 6, F_BR_ACT),
+      ...opInvokeVirtual(M_ACT_START_ACT, [2, 1]),
       ...opConstStr(0, S_FB_NO_BT),
+      ...opReturnObj(0),
+      label('bt_connected_ok'),
+      ...opIgetObj(0, 6, F_BR_BT),
+      opIfNez(0, 'bt_format_name'),
+      ...opConstStr(0, S_OK_BT),
       ...opReturnObj(0),
       label('bt_format_name'),
       ...opInvokeVirtual(M_BTDEV_GET_NAME, [0]),
@@ -1227,18 +1359,9 @@ function buildClassesDex() {
 
   // printBluetoothBase64(String)String: v5 = this, v6 = base64Data
   // Keeps the BluetoothSocket open across chunks in F_BR_BTSOCK so multi-chunk raster strips stream continuously
-  // without dropping or resetting the printer between 8KB chunks. Also calls cancelDiscovery() and falls back
-  // to createInsecureRfcommSocketToServiceRecord if needed.
+  // without dropping or resetting the printer between 8KB chunks. Uses tryConnectBtSocket & tryConnectSecureBtSocket.
   const codeBrPrtBt = makeCodeItem(7, 2, 2, [], {
     tryItems: [
-      ...opIgetObj(0, 5, F_BR_BT),
-      opIfNez(0, 'bt_dev_ready'),
-      ...opInvokeVirtual(M_BR_CONN_BT, [5]),
-      ...opIgetObj(0, 5, F_BR_BT),
-      opIfNez(0, 'bt_dev_ready'),
-      ...opConstStr(0, S_FB_NO_BT),
-      ...opReturnObj(0),
-      label('bt_dev_ready'),
       ...opConst4(1, 0),
       ...opInvokeStatic(M_B64_DEC, [6, 1]),
       ...opMoveResultObj(1), // v1 = byte[]
@@ -1249,19 +1372,33 @@ function buildClassesDex() {
       ...opMoveResult(3),
       opIfNez(3, 'bt_write_stream'),
       label('bt_open_new_sock'),
-      // Cancel discovery before connecting RFCOMM socket for stability
-      ...opInvokeStatic(M_BT_DEFAULT, []),
-      ...opMoveResultObj(3),
-      opIfEqz(3, 'bt_create_sock'),
-      ...opInvokeVirtual(M_BT_CANCEL_DISC, [3]),
-      label('bt_create_sock'),
-      ...opConstStr(3, S_SPP_UUID),
-      ...opInvokeStatic(M_UUID_FROM, [3]),
-      ...opMoveResultObj(3),
-      ...opInvokeVirtual(M_BTDEV_INSECURE_RFCOMM, [0, 3]),
-      ...opMoveResultObj(2),
-      ...opInvokeVirtual(M_BTSOCK_CONN, [2]),
-      ...opIputObj(2, 5, F_BR_BTSOCK),
+      ...opIgetObj(0, 5, F_BR_BT),
+      opIfNez(0, 'bt_dev_ready'),
+      ...opInvokeVirtual(M_BR_CONN_BT, [5]),
+      ...opIgetObj(2, 5, F_BR_BTSOCK),
+      opIfEqz(2, 'bt_check_selected_dev'),
+      ...opInvokeVirtual(M_BTSOCK_IS_CONN, [2]),
+      ...opMoveResult(3),
+      opIfNez(3, 'bt_write_stream'),
+      label('bt_check_selected_dev'),
+      ...opIgetObj(0, 5, F_BR_BT),
+      opIfNez(0, 'bt_dev_ready'),
+      ...opConstStr(0, S_FB_NO_BT),
+      ...opReturnObj(0),
+      label('bt_dev_ready'),
+      ...opInvokeVirtual(M_BR_TRY_BT, [5, 0]),
+      ...opMoveResult(3),
+      opIfNez(3, 'bt_sock_ready'),
+      ...opInvokeVirtual(M_BR_TRY_BT_SEC, [5, 0]),
+      ...opMoveResult(3),
+      opIfNez(3, 'bt_sock_ready'),
+      ...opConstStr(0, S_ERR_GEN),
+      ...opReturnObj(0),
+      label('bt_sock_ready'),
+      ...opIgetObj(2, 5, F_BR_BTSOCK),
+      opIfNez(2, 'bt_write_stream'),
+      ...opConstStr(0, S_ERR_GEN),
+      ...opReturnObj(0),
       label('bt_write_stream'),
       ...opInvokeVirtual(M_BTSOCK_OUT, [2]),
       ...opMoveResultObj(3),
@@ -1318,17 +1455,32 @@ function buildClassesDex() {
         { fKey: F_BR_BT, flags: 0x0002 },
         { fKey: F_BR_BTSOCK, flags: 0x0002 },
         { fKey: F_BR_USB, flags: 0x0002 },
+        { fKey: F_BR_USBCONN, flags: 0x0002 },
+        { fKey: F_BR_USBEP, flags: 0x0002 },
       ],
       directMethods: [{ mKey: M_BR_INIT, flags: 0x10001, code: codeBrInit }],
       virtualMethods: [
         { mKey: M_BR_CONN_BT, flags: 0x0001, code: codeBrConnBt },
         { mKey: M_BR_CONN_USB, flags: 0x0001, code: codeBrConnUsb },
+        { mKey: M_BR_GET_VER, flags: 0x0001, code: codeBrGetVer },
         { mKey: M_BR_HAS_USB, flags: 0x0001, code: codeBrHasUsb },
+        { mKey: M_BR_OPEN_BT_SET, flags: 0x0001, code: codeBrOpenBtSet },
         { mKey: M_BR_PRT_BT, flags: 0x0001, code: codeBrPrtBt },
         { mKey: M_BR_PRT_TCP, flags: 0x0001, code: codeBrPrtTcp },
         { mKey: M_BR_PRT_USB, flags: 0x0001, code: codeBrPrtUsb },
+        { mKey: M_BR_TRY_BT, flags: 0x0001, code: codeBrTryBt },
+        { mKey: M_BR_TRY_BT_SEC, flags: 0x0001, code: codeBrTryBtSec },
       ],
-      annotatedMethods: [M_BR_CONN_BT, M_BR_CONN_USB, M_BR_HAS_USB, M_BR_PRT_BT, M_BR_PRT_TCP, M_BR_PRT_USB],
+      annotatedMethods: [
+        M_BR_CONN_BT,
+        M_BR_CONN_USB,
+        M_BR_GET_VER,
+        M_BR_HAS_USB,
+        M_BR_OPEN_BT_SET,
+        M_BR_PRT_BT,
+        M_BR_PRT_TCP,
+        M_BR_PRT_USB,
+      ],
     },
     {
       cls: T_MAIN,
@@ -1885,7 +2037,7 @@ function collectWebAssets(dir, prefix = 'assets/www') {
   const results = [];
   if (!fs.existsSync(dir)) return results;
   for (const item of fs.readdirSync(dir)) {
-    if (isUnusedChatAttachment(item) || item === 'downloads') continue;
+    if (isUnusedChatAttachment(item) || item === 'downloads' || item.toLowerCase().endsWith('.apk')) continue;
     const fullPath = path.join(dir, item);
     const relPath = `${prefix}/${item}`;
     const stat = fs.statSync(fullPath);
@@ -1937,9 +2089,13 @@ async function buildApk() {
 
   const targets = [
     path.join(distDir, 'JCVcreatives-Photobooth.apk'),
+    path.join(distDir, 'JCVcreatives-Photobooth-v3.0.apk'),
     path.join(distDir, 'downloads', 'JCVcreatives-Photobooth.apk'),
+    path.join(distDir, 'downloads', 'JCVcreatives-Photobooth-v3.0.apk'),
     path.join(publicDir, 'JCVcreatives-Photobooth.apk'),
+    path.join(publicDir, 'JCVcreatives-Photobooth-v3.0.apk'),
     path.join(publicDir, 'downloads', 'JCVcreatives-Photobooth.apk'),
+    path.join(publicDir, 'downloads', 'JCVcreatives-Photobooth-v3.0.apk'),
   ];
 
   for (const t of targets) {
@@ -1948,7 +2104,7 @@ async function buildApk() {
 
   fs.rmSync(workDir, { recursive: true, force: true });
   console.log(
-    `Successfully built & v1+v2 signed JCVcreatives-Photobooth.apk (${(finalApkBuf.length / 1024).toFixed(1)} KB)`
+    `Successfully built & v1+v2 signed JCVcreatives-Photobooth-v3.0.apk (${(finalApkBuf.length / 1024).toFixed(1)} KB)`
   );
 }
 

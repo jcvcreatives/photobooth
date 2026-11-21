@@ -39,18 +39,20 @@ export const sanitizeStoredAttractPhotos = (photos: unknown): string[] => {
 
 export const resolveStickerAssetUrl = (url: string): string => {
   if (!url) return '';
-  const suffix = url.includes('?') ? '&v=clean2' : '?v=clean2';
-  if (url.startsWith('/assets/')) {
-    return `.${url}${suffix}`;
+  // Never append query strings (?v=...) because Android WebView AssetManager (file:///android_asset/)
+  // fails to resolve local APK file assets when a query parameter is attached.
+  const cleanUrl = url.split('?')[0];
+  if (cleanUrl.startsWith('/')) {
+    return `.${cleanUrl}`;
   }
-  return `${url}${suffix}`;
+  return cleanUrl;
 };
 
 /**
  * Memoized GPU-accelerated Animated Stickers Layer.
- * Renders dropping Gobble Haus rice-box stickers, spinning & shining disco balls,
- * moving clowns, birthday cakes with flickering candle flames, rising balloons,
- * gliding doves/bats, falling snowflakes, and pulsing hearts without main-thread lag.
+ * Uses data-js-sticker attributes driven by a 60fps requestAnimationFrame loop in AttractScreen
+ * so animations run smoothly in Android .APK WebView even when Android Battery Saver or
+ * ANIMATOR_DURATION_SCALE disables CSS @keyframes.
  */
 const AnimatedThemeStickers = React.memo(
   ({
@@ -60,54 +62,25 @@ const AnimatedThemeStickers = React.memo(
     stickers: AnimatedStickerItem[];
     opacityClass: string;
   }) => {
-    const getAnimClass = (anim: AnimatedStickerItem['animation']) => {
-      switch (anim) {
-        case 'food_drop':
-          return 'sticker-food-drop';
-        case 'food_land':
-          return 'sticker-food-land';
-        case 'disco_ball_shine':
-          return 'sticker-disco-spin';
-        case 'clown_wiggle':
-          return 'sticker-clown-wiggle';
-        case 'cake_with_candle':
-          return 'sticker-cake-bob';
-        case 'balloon_rise':
-          return 'sticker-balloon-rise';
-        case 'wing_glide':
-          return 'sticker-wing-glide';
-        case 'twinkle_shine':
-          return 'sticker-twinkle-shine';
-        case 'snow_fall':
-          return 'sticker-snow-fall';
-        case 'heartbeat':
-          return 'sticker-heartbeat';
-        case 'ghost_float':
-          return 'sticker-ghost-float';
-        default:
-          return 'sticker-twinkle-shine';
-      }
-    };
-
     return (
       <div
         className={`absolute inset-0 pointer-events-none overflow-hidden z-0 select-none ${opacityClass}`}
       >
-        {stickers.map((item) => {
-          const style: React.CSSProperties = {
-            ...(item.delayMs ? { animationDelay: `${item.delayMs}ms` } : {}),
-            ...(item.durationMs ? { animationDuration: `${item.durationMs}ms` } : {}),
-          };
+        {stickers.map((item, idx) => {
+          const delayMs = item.delayMs ?? idx * 320;
+          const durationMs = item.durationMs ?? 5200;
 
           // 0. Custom Die-Cut Image Sticker (e.g. Gobble Haus Rice Box Stickers dropping & bouncing)
           if (item.imageUrl) {
             return (
               <div
                 key={item.id}
-                style={style}
-                className={`absolute ${item.positionClass} ${item.sizeClass} ${getAnimClass(
-                  item.animation
-                )} flex items-center justify-center`}
+                data-js-sticker="1"
+                data-anim={item.animation}
+                data-delay={delayMs}
+                data-duration={durationMs}
+                style={{ animation: 'none', willChange: 'transform, opacity' }}
+                className={`absolute ${item.positionClass} ${item.sizeClass} flex items-center justify-center`}
               >
                 <img
                   src={resolveStickerAssetUrl(item.imageUrl)}
@@ -117,8 +90,8 @@ const AnimatedThemeStickers = React.memo(
                     const img = e.currentTarget;
                     if (!img.dataset.fallback) {
                       img.dataset.fallback = '1';
-                      const fileName = item.imageUrl?.split('/').pop() || '';
-                      img.src = `./stickers/gobble-haus/${fileName}`;
+                      const fileName = (item.imageUrl || '').split('?')[0].split('/').pop() || '';
+                      img.src = `./assets/aistudio/${fileName}`;
                     }
                   }}
                   className="w-full h-full object-contain bg-transparent"
@@ -132,22 +105,20 @@ const AnimatedThemeStickers = React.memo(
             return (
               <div
                 key={item.id}
+                data-js-sticker="1"
+                data-anim="disco_ball_shine"
+                data-delay={delayMs}
+                data-duration={durationMs}
+                style={{ animation: 'none', willChange: 'transform' }}
                 className={`absolute ${item.positionClass} flex items-center justify-center bg-transparent`}
               >
-                <span
-                  style={style}
-                  className="absolute -top-3 -right-3 text-xs sm:text-sm text-amber-300 sticker-disco-rays"
-                >
+                <span className="absolute -top-3 -right-3 text-xs sm:text-sm text-amber-300">
                   ✨
                 </span>
-                <span
-                  style={style}
-                  className="absolute -bottom-2 -left-3 text-xs sm:text-sm text-cyan-300 sticker-disco-rays"
-                >
+                <span className="absolute -bottom-2 -left-3 text-xs sm:text-sm text-cyan-300">
                   ✦
                 </span>
-                {/* Spinning Disco Ball */}
-                <span style={style} className={`relative ${item.sizeClass} sticker-disco-spin`}>
+                <span className={`relative ${item.sizeClass}`}>
                   {item.emoji}
                 </span>
               </div>
@@ -159,19 +130,21 @@ const AnimatedThemeStickers = React.memo(
             return (
               <div
                 key={item.id}
-                style={style}
-                className={`absolute ${item.positionClass} flex flex-col items-center sticker-cake-bob`}
+                data-js-sticker="1"
+                data-anim="cake_with_candle"
+                data-delay={delayMs}
+                data-duration={durationMs}
+                style={{ animation: 'none', willChange: 'transform' }}
+                className={`absolute ${item.positionClass} flex flex-col items-center`}
               >
-                {/* Flickering Candle Flame dancing on top of the cake */}
                 <div className="relative -mb-2.5 z-10 flex items-center justify-center">
-                  <span className="text-sm sm:text-base sticker-candle-flicker">
+                  <span className="text-sm sm:text-base">
                     🔥
                   </span>
-                  <span className="absolute -top-1 -right-2 text-[10px] sticker-twinkle-shine">
+                  <span className="absolute -top-1 -right-2 text-[10px]">
                     ✨
                   </span>
                 </div>
-                {/* Cake Base */}
                 <span className={item.sizeClass}>{item.emoji}</span>
               </div>
             );
@@ -181,10 +154,12 @@ const AnimatedThemeStickers = React.memo(
           return (
             <span
               key={item.id}
-              style={style}
-              className={`absolute ${item.positionClass} ${item.sizeClass} ${getAnimClass(
-                item.animation
-              )}`}
+              data-js-sticker="1"
+              data-anim={item.animation}
+              data-delay={delayMs}
+              data-duration={durationMs}
+              style={{ animation: 'none', willChange: 'transform, opacity' }}
+              className={`absolute ${item.positionClass} ${item.sizeClass}`}
             >
               {item.emoji}
             </span>
@@ -209,12 +184,14 @@ const StartCallToAction = React.memo(
     <div className="relative flex flex-col items-center mt-3 z-20">
       <button
         type="button"
+        data-js-float-cta="1"
+        style={{ animation: 'none', willChange: 'transform' }}
         onClick={(e) => {
           e.stopPropagation();
           soundEffects.playTap();
           onStart();
         }}
-        className={`group relative inline-flex items-center justify-center px-12 py-4 font-bold text-base sm:text-lg tracking-wide animate-floatBob active:scale-95 transition-transform duration-150 cursor-pointer select-none ${buttonClass}`}
+        className={`group relative inline-flex items-center justify-center px-12 py-4 font-bold text-base sm:text-lg tracking-wide active:scale-95 cursor-pointer select-none ${buttonClass}`}
       >
         <span>{buttonText}</span>
       </button>
@@ -248,12 +225,18 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
 
   // Strip shuffle position index (0, 1, 2)
   const [shuffleStep, setShuffleStep] = useState<number>(0);
+  const shuffleStepRef = React.useRef<number>(0);
+  shuffleStepRef.current = shuffleStep;
+
   const [isIdleDimmed, setIsIdleDimmed] = useState<boolean>(false);
   const [dvdColorIndex, setDvdColorIndex] = useState<number>(0);
 
-  // DVD Screensaver refs for "Touch Anywhere to Start" moving around the Home Screen
+  // DVD Screensaver & 60fps JS Animation refs (guaranteed to animate in Android .APK WebView)
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const dvdBadgeRef = React.useRef<HTMLDivElement | null>(null);
+  const stripLeftRef = React.useRef<HTMLDivElement | null>(null);
+  const stripCenterRef = React.useRef<HTMLDivElement | null>(null);
+  const stripRightRef = React.useRef<HTMLDivElement | null>(null);
 
   const theme = getAttractThemeById(activeThemeId);
 
@@ -454,9 +437,165 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
   };
 
   /**
-   * Pure GPU-accelerated transform states for the 3 shuffling strips.
-   * All 3 strips remain anchored at left-1/2 top-2 and only interpolate transform: translate3d(),
-   * eliminating main-thread layout reflows and paint lag completely.
+   * 60fps JavaScript requestAnimationFrame engine for the Home Screen (AttractScreen):
+   * - Animates all dropping/bouncing Gobble Haus stickers & occasion stickers ([data-js-sticker])
+   * - Animates the floating Start button ([data-js-float-cta])
+   * - Smoothly interpolates and bobs the 3 shuffling photostrip cards (stripLeftRef, stripCenterRef, stripRightRef)
+   * Works 100% reliably inside the Android .APK WebView even when Android Battery Saver or
+   * ANIMATOR_DURATION_SCALE disables CSS @keyframes and CSS transitions.
+   */
+  useEffect(() => {
+    let rafId = 0;
+    let lastTime = performance.now();
+
+    const curCards = {
+      left: { tx: -122, ty: 10, rot: -14, scale: 0.95 },
+      center: { tx: -50, ty: -6, rot: 0, scale: 1.06 },
+      right: { tx: 22, ty: 10, rot: 14, scale: 0.95 },
+    };
+
+    const slotTargets = {
+      posLeft: { tx: -122, ty: 10, rot: -14, scale: 0.95, z: 10 },
+      posCenter: { tx: -50, ty: -6, rot: 0, scale: 1.06, z: 25 },
+      posRight: { tx: 22, ty: 10, rot: 14, scale: 0.95, z: 10 },
+    };
+
+    const getTargetForCard = (cardId: 'left' | 'center' | 'right', stepIdx: number) => {
+      if (stepIdx === 0) {
+        if (cardId === 'left') return slotTargets.posLeft;
+        if (cardId === 'center') return slotTargets.posCenter;
+        return slotTargets.posRight;
+      } else if (stepIdx === 1) {
+        if (cardId === 'right') return slotTargets.posCenter;
+        if (cardId === 'left') return slotTargets.posRight;
+        return slotTargets.posLeft;
+      } else {
+        if (cardId === 'left') return slotTargets.posCenter;
+        if (cardId === 'center') return slotTargets.posRight;
+        return slotTargets.posLeft;
+      }
+    };
+
+    const animateFrame = (now: number) => {
+      const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+      lastTime = now;
+      const lerpFactor = Math.min(1, dt * 8.5);
+      const stepIdx = shuffleStepRef.current;
+
+      // 1. Animate the 3 shuffling photostrip cards
+      const cardEntries: [keyof typeof curCards, HTMLDivElement | null, number][] = [
+        ['left', stripLeftRef.current, 0],
+        ['center', stripCenterRef.current, 2.1],
+        ['right', stripRightRef.current, 4.2],
+      ];
+
+      for (const [id, el, phase] of cardEntries) {
+        if (!el) continue;
+        const target = getTargetForCard(id, stepIdx);
+        const cur = curCards[id];
+        cur.tx += (target.tx - cur.tx) * lerpFactor;
+        cur.ty += (target.ty - cur.ty) * lerpFactor;
+        cur.rot += (target.rot - cur.rot) * lerpFactor;
+        cur.scale += (target.scale - cur.scale) * lerpFactor;
+        const floatY = Math.sin(now / 650 + phase) * 3.2;
+        el.style.transition = 'none';
+        el.style.zIndex = String(target.z);
+        el.style.transform = `translate3d(${cur.tx.toFixed(2)}%, ${(cur.ty + floatY).toFixed(2)}px, 0) rotate(${cur.rot.toFixed(2)}deg) scale3d(${cur.scale.toFixed(3)}, ${cur.scale.toFixed(3)}, 1)`;
+      }
+
+      // 2. Animate all background & corner stickers ([data-js-sticker])
+      const root = containerRef.current;
+      if (root) {
+        const stickerEls = root.querySelectorAll<HTMLElement>('[data-js-sticker="1"]');
+        stickerEls.forEach((el, i) => {
+          const anim = el.dataset.anim || 'twinkle_shine';
+          const delay = Number(el.dataset.delay || i * 300);
+          const duration = Math.max(1200, Number(el.dataset.duration || 5000));
+          const p = ((((now + delay) % duration) + duration) % duration) / duration;
+          const angle = p * Math.PI * 2;
+
+          let tx = 0;
+          let ty = 0;
+          let rot = 0;
+          let scale = 1;
+          let opacity = 1;
+
+          if (anim === 'food_drop') {
+            if (p < 0.18) {
+              const t = p / 0.18;
+              ty = -68 * (1 - t) + Math.sin(t * Math.PI * 2) * 9;
+              scale = 0.72 + 0.28 * t;
+              rot = -14 + 20 * t;
+              opacity = Math.min(1, 0.2 + t * 1.4);
+            } else if (p < 0.86) {
+              const t = (p - 0.18) / 0.68;
+              ty = Math.sin(t * Math.PI * 4) * 11;
+              tx = Math.cos(t * Math.PI * 2) * 5;
+              rot = Math.sin(t * Math.PI * 4) * 9;
+              scale = 1 + Math.sin(t * Math.PI * 4) * 0.06;
+              opacity = 1;
+            } else {
+              const t = (p - 0.86) / 0.14;
+              ty = 30 * t;
+              scale = 1 - 0.22 * t;
+              rot = -10 * t;
+              opacity = Math.max(0.2, 1 - t * 0.8);
+            }
+          } else if (
+            anim === 'food_land' ||
+            anim === 'clown_wiggle' ||
+            anim === 'cake_with_candle'
+          ) {
+            ty = Math.sin(angle) * 9;
+            tx = Math.cos(angle * 2) * 3.5;
+            rot = Math.sin(angle) * 10;
+            scale = 1 + Math.sin(angle * 2) * 0.06;
+          } else if (anim === 'disco_ball_shine') {
+            ty = Math.sin(angle) * 6;
+            rot = p * 360;
+            scale = 1 + Math.sin(angle * 2) * 0.08;
+          } else if (anim === 'balloon_rise') {
+            ty = 35 - p * 85;
+            tx = Math.sin(angle * 2) * 8;
+            rot = Math.sin(angle * 2) * 7;
+            opacity = p < 0.1 ? p * 10 : p > 0.88 ? (1 - p) / 0.12 : 1;
+          } else if (anim === 'snow_fall') {
+            ty = -30 + p * 85;
+            tx = Math.sin(angle * 2) * 10;
+            rot = p * 360;
+            opacity = p < 0.1 ? p * 10 : p > 0.88 ? (1 - p) / 0.12 : 1;
+          } else if (anim === 'wing_glide' || anim === 'ghost_float') {
+            tx = Math.sin(angle) * 14;
+            ty = Math.cos(angle * 2) * 9;
+            rot = Math.sin(angle) * 8;
+          } else {
+            ty = Math.sin(angle) * 5;
+            scale = 1 + Math.sin(angle * 2) * 0.13;
+            rot = Math.sin(angle) * 8;
+            opacity = 0.82 + Math.sin(angle * 2) * 0.18;
+          }
+
+          el.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0) rotate(${rot.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+          el.style.opacity = opacity.toFixed(2);
+        });
+
+        // 3. Animate the floating Start button ([data-js-float-cta="1"])
+        const ctaEl = root.querySelector<HTMLElement>('[data-js-float-cta="1"]');
+        if (ctaEl) {
+          const bobY = Math.sin(now / 420) * 4.5;
+          ctaEl.style.transform = `translate3d(0, ${bobY.toFixed(2)}px, 0)`;
+        }
+      }
+
+      rafId = requestAnimationFrame(animateFrame);
+    };
+
+    rafId = requestAnimationFrame(animateFrame);
+    return () => cancelAnimationFrame(rafId);
+  }, [activeThemeId]);
+
+  /**
+   * Pure GPU-accelerated initial transform states for the 3 shuffling strips.
    */
   const getCardTransformStyle = (cardId: 'left' | 'center' | 'right'): React.CSSProperties => {
     const posLeft: React.CSSProperties = {
@@ -573,6 +712,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
         >
           {/* Strip 1: Left 2-cut Photostrip (IMG_3042 + IMG_3043 together in one strip) */}
           <div
+            ref={stripLeftRef}
             style={getCardTransformStyle('left')}
             className={`absolute left-1/2 top-2 w-26 h-52 flex flex-col p-2 strip-card-gpu select-none ${theme.stripCardClass}`}
           >
@@ -580,15 +720,21 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               <img
                 src={resolveStickerAssetUrl(theme.leftCornerStickerImage)}
                 alt="Left Strip Sticker"
-                className={`absolute -top-4 -left-4 w-10 h-10 object-contain z-20 pointer-events-none bg-transparent ${
-                  theme.leftCornerAnimClass || 'sticker-food-land'
-                }`}
+                data-js-sticker="1"
+                data-anim="food_land"
+                data-delay="0"
+                data-duration="3400"
+                style={{ animation: 'none' }}
+                className="absolute -top-4 -left-4 w-10 h-10 object-contain z-20 pointer-events-none bg-transparent"
               />
             ) : theme.leftCornerSticker ? (
               <span
-                className={`absolute -top-2.5 -left-2.5 text-base z-20 pointer-events-none ${
-                  theme.leftCornerAnimClass || 'sticker-twinkle-shine'
-                }`}
+                data-js-sticker="1"
+                data-anim="twinkle_shine"
+                data-delay="0"
+                data-duration="2800"
+                style={{ animation: 'none' }}
+                className="absolute -top-2.5 -left-2.5 text-base z-20 pointer-events-none"
               >
                 {theme.leftCornerSticker}
               </span>
@@ -637,6 +783,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
 
           {/* Strip 2: Center Front Polaroid Frame (IMG_3044) */}
           <div
+            ref={stripCenterRef}
             style={getCardTransformStyle('center')}
             className={`absolute left-1/2 top-2 w-30 h-44 flex flex-col p-2 strip-card-gpu select-none ${theme.polaroidCardClass}`}
           >
@@ -644,23 +791,29 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               <img
                 src={resolveStickerAssetUrl(theme.centerCornerBadgeImage)}
                 alt="Center Strip Sticker"
-                className={`absolute -top-5 -right-5 w-11 h-11 object-contain z-20 pointer-events-none bg-transparent ${
-                  theme.centerCornerAnimClass || 'sticker-food-land'
-                }`}
+                data-js-sticker="1"
+                data-anim="food_land"
+                data-delay="450"
+                data-duration="3600"
+                style={{ animation: 'none' }}
+                className="absolute -top-5 -right-5 w-11 h-11 object-contain z-20 pointer-events-none bg-transparent"
               />
             ) : theme.centerCornerBadge ? (
-              <div className="absolute -top-3 -right-3 z-20 pointer-events-none flex flex-col items-center">
+              <div
+                data-js-sticker="1"
+                data-anim="food_land"
+                data-delay="450"
+                data-duration="3200"
+                style={{ animation: 'none' }}
+                className="absolute -top-3 -right-3 z-20 pointer-events-none flex flex-col items-center"
+              >
                 {theme.id === 'birthday' && (
-                  <span className="text-[10px] -mb-1.5 sticker-candle-flicker">🔥</span>
+                  <span className="text-[10px] -mb-1.5">🔥</span>
                 )}
                 {theme.id === 'retro_disco' && (
-                  <span className="absolute -top-1 -right-1 text-[10px] sticker-disco-rays">✨</span>
+                  <span className="absolute -top-1 -right-1 text-[10px]">✨</span>
                 )}
-                <span
-                  className={`text-base ${
-                    theme.centerCornerAnimClass || 'sticker-twinkle-shine'
-                  }`}
-                >
+                <span className="text-base">
                   {theme.centerCornerBadge}
                 </span>
               </div>
@@ -693,6 +846,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
 
           {/* Strip 3: Right Receipt 2-cut Photostrip (IMG_3045 + IMG_3046 together in one strip) */}
           <div
+            ref={stripRightRef}
             style={getCardTransformStyle('right')}
             className={`absolute left-1/2 top-2 w-26 h-52 flex flex-col p-2 strip-card-gpu select-none ${theme.stripCardClass}`}
           >
@@ -700,15 +854,21 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               <img
                 src={resolveStickerAssetUrl(theme.rightCornerStickerImage)}
                 alt="Right Strip Sticker"
-                className={`absolute -top-4 -right-4 w-10 h-10 object-contain z-20 pointer-events-none bg-transparent ${
-                  theme.rightCornerAnimClass || 'sticker-food-land'
-                }`}
+                data-js-sticker="1"
+                data-anim="food_land"
+                data-delay="900"
+                data-duration="3500"
+                style={{ animation: 'none' }}
+                className="absolute -top-4 -right-4 w-10 h-10 object-contain z-20 pointer-events-none bg-transparent"
               />
             ) : theme.rightCornerSticker ? (
               <span
-                className={`absolute -top-2.5 -right-2.5 text-base z-20 pointer-events-none ${
-                  theme.rightCornerAnimClass || 'sticker-twinkle-shine'
-                }`}
+                data-js-sticker="1"
+                data-anim="twinkle_shine"
+                data-delay="900"
+                data-duration="3000"
+                style={{ animation: 'none' }}
+                className="absolute -top-2.5 -right-2.5 text-base z-20 pointer-events-none"
               >
                 {theme.rightCornerSticker}
               </span>

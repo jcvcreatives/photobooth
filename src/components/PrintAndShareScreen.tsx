@@ -29,6 +29,7 @@ import {
   thermalPrinterService,
   PrinterDiagnosticReport,
   PrinterErrorCategory,
+  PrinterDeviceStatus,
 } from '../services/thermalPrinter';
 import { analyticsService } from '../services/analytics';
 import { paymentService, LAYOUT_VOUCHER_META } from '../services/payment';
@@ -108,10 +109,15 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   const [countdownSeconds, setCountdownSeconds] = useState(60);
 
   // Printer Error State & Diagnostic Modal
+  const [livePrinterStatus, setLivePrinterStatus] = useState<PrinterDeviceStatus>(() =>
+    thermalPrinterService.getStatus()
+  );
   const [printerErrorReport, setPrinterErrorReport] = useState<PrinterDiagnosticReport | null>(null);
   const [showPrinterDiagnosticModal, setShowPrinterDiagnosticModal] = useState<boolean>(false);
   const [isCheckingConnection, setIsCheckingConnection] = useState<boolean>(false);
   const [diagnosticFeedback, setDiagnosticFeedback] = useState<string>('');
+  const [diagnosticReprintPin, setDiagnosticReprintPin] = useState<string>('');
+  const [diagnosticPinError, setDiagnosticPinError] = useState<string>('');
   const [diagnosticGuideTab, setDiagnosticGuideTab] = useState<'auto' | 'paper_jam' | 'connection'>('auto');
   const [staffCallNotified, setStaffCallNotified] = useState<boolean>(false);
   const [paperLevelPercent, setPaperLevelPercent] = useState<number>(() =>
@@ -208,6 +214,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
 
     const timer = triggerFeedAnimation(true);
     const unsub = thermalPrinterService.subscribe((status) => {
+      setLivePrinterStatus(status);
       setSilentBridgeReady(thermalPrinterService.isSilentBridgeActive());
       // Automatically detect live USB cable unplug, Bluetooth link drop, or hardware stall
       if (!status.isConnected || status.error) {
@@ -216,6 +223,8 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           status.errorCategory || 'disconnected',
           true
         );
+      } else {
+        setPrinterErrorReport((prev) => (prev?.category === 'disconnected' ? null : prev));
       }
     });
 
@@ -424,9 +433,18 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     setDiagnosticFeedback('✓ Paper roll reset to 100% & paper jam state cleared. Tap "Reprint Photo Now".');
   };
 
-  // User-friendly 1-Tap Reprint directly from the Printer Error Diagnostic Modal
+  // User-friendly Reprint directly from the Printer Error Diagnostic Modal (Requires 1234 password)
   const handleDiagnosticReprintNow = async () => {
     soundEffects.playTap();
+    const enteredPin = diagnosticReprintPin.trim();
+    const expectedPin = (config.passcodeAdminPin || '1234').trim();
+    if (enteredPin !== '1234' && enteredPin !== expectedPin) {
+      setShowPrinterDiagnosticModal(true);
+      setDiagnosticPinError('🔒 Enter password 1234 to reprint photo now');
+      return;
+    }
+    setDiagnosticPinError('');
+    setDiagnosticReprintPin('');
     setDiagnosticFeedback('Sending photo receipt to thermal printer...');
     setCountdownSeconds(60);
     setShowPrinterDiagnosticModal(false);
@@ -512,12 +530,13 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     }
   };
 
-  // Admin Reprint Override when printer runs out of paper or printout is bad
+  // Admin Reprint Override when printer runs out of paper or printout is bad (Accepts 1234 password)
   const handleAdminReprintSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const expectedPasscode = (config.passcodeAdminPin || '1234').trim();
-    if (adminReprintPasscode.trim() !== expectedPasscode) {
-      setAdminReprintError('Incorrect Admin Passcode');
+    const enteredPin = adminReprintPasscode.trim();
+    if (enteredPin !== '1234' && enteredPin !== expectedPasscode) {
+      setAdminReprintError('Incorrect Passcode — enter 1234 to reprint');
       return;
     }
 
@@ -640,6 +659,20 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           J
         </button>
 
+        {livePrinterStatus.isConnected && livePrinterStatus.connectionType !== 'virtual' && (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 text-[10px] font-mono font-bold tracking-wide mb-1 shadow-xs">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+            </span>
+            <span className="truncate max-w-[200px]">
+              {livePrinterStatus.connectionType === 'bluetooth'
+                ? `Bluetooth Connected • ${livePrinterStatus.deviceName}`
+                : `Printer Connected • ${livePrinterStatus.deviceName}`}
+            </span>
+          </div>
+        )}
+
         <h1 className="text-lg sm:text-xl font-bold tracking-tight text-zinc-950 leading-tight">
           {printerErrorReport ? 'Oops! Tiny printer hiccup, bestie 🫶' : 'Your photos are ready'}
         </h1>
@@ -697,29 +730,41 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             </span>
           </button>
 
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              disabled={isPrinting || isCheckingConnection}
-              onClick={() => {
-                soundEffects.playTap();
-                setDiagnosticFeedback('');
-                setShowPrinterDiagnosticModal(true);
-                handleCheckPrinterConnection();
-              }}
-              className="py-1.5 px-2.5 rounded-xl bg-white hover:bg-rose-100/70 border border-rose-300 text-rose-900 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingConnection ? 'animate-spin' : ''}`} />
-              <span>Check Connection</span>
-            </button>
+          <div
+            className={`grid gap-1.5 ${
+              !livePrinterStatus.isConnected || printerErrorReport.category === 'disconnected'
+                ? 'grid-cols-2'
+                : 'grid-cols-1'
+            }`}
+          >
+            {(!livePrinterStatus.isConnected || printerErrorReport.category === 'disconnected') && (
+              <button
+                type="button"
+                disabled={isPrinting || isCheckingConnection}
+                onClick={() => {
+                  soundEffects.playTap();
+                  setDiagnosticFeedback('');
+                  setShowPrinterDiagnosticModal(true);
+                  handleCheckPrinterConnection();
+                }}
+                className="py-1.5 px-2.5 rounded-xl bg-white hover:bg-rose-100/70 border border-rose-300 text-rose-900 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingConnection ? 'animate-spin' : ''}`} />
+                <span>Check Connection</span>
+              </button>
+            )}
             <button
               type="button"
               disabled={isPrinting}
-              onClick={handleDiagnosticReprintNow}
+              onClick={() => {
+                soundEffects.playTap();
+                setDiagnosticPinError('');
+                setShowPrinterDiagnosticModal(true);
+              }}
               className="py-1.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Reprint Now</span>
+              <span>Reprint Photo Now (PIN)</span>
             </button>
           </div>
         </div>
@@ -865,25 +910,38 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           </span>
         </button>
 
-        {/* Button 3: Printer Error / Paper Jam / Check Connection & Reprint Diagnostic Modal Trigger */}
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            disabled={isPrinting}
-            onClick={() => {
-              soundEffects.playTap();
-              setDiagnosticFeedback('');
-              setShowPrinterDiagnosticModal(true);
-            }}
-            className={`py-1.5 px-2.5 rounded-full border text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 ${
-              printerErrorReport
-                ? 'border-rose-400 bg-rose-100 hover:bg-rose-200 text-rose-950 font-bold'
-                : 'border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-800'
-            }`}
-          >
-            <Wrench className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
-            <span>{printerErrorReport ? 'Fix Printer Error' : 'Check Connection'}</span>
-          </button>
+        {/* Button 3: Check Connection (ONLY shown when printer is not connected) & No Receipt Came Out? Reprint */}
+        <div
+          className={`grid gap-1.5 ${
+            !livePrinterStatus.isConnected || Boolean(printerErrorReport)
+              ? 'grid-cols-2'
+              : 'grid-cols-1'
+          }`}
+        >
+          {(!livePrinterStatus.isConnected || Boolean(printerErrorReport)) && (
+            <button
+              type="button"
+              disabled={isPrinting}
+              onClick={() => {
+                soundEffects.playTap();
+                setDiagnosticFeedback('');
+                setDiagnosticPinError('');
+                setShowPrinterDiagnosticModal(true);
+              }}
+              className={`py-1.5 px-2.5 rounded-full border text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 ${
+                printerErrorReport || !livePrinterStatus.isConnected
+                  ? 'border-rose-400 bg-rose-100 hover:bg-rose-200 text-rose-950 font-bold'
+                  : 'border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-800'
+              }`}
+            >
+              <Wrench className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
+              <span>
+                {!livePrinterStatus.isConnected || printerErrorReport?.category === 'disconnected'
+                  ? 'Check Connection'
+                  : 'Fix Printer Error'}
+              </span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -895,10 +953,10 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
               setAdminReprintCopies(1);
               setShowAdminReprintModal(true);
             }}
-            className="py-1.5 px-2.5 rounded-full border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+            className="py-1.5 px-2.5 rounded-full border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11px] font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
           >
             <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span>Admin Reprint</span>
+            <span>🥺 No Receipt Came Out?</span>
           </button>
         </div>
 
@@ -1229,12 +1287,13 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 <Lock className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
+                  inputMode="numeric"
                   value={adminReprintPasscode}
                   onChange={(e) => {
                     setAdminReprintPasscode(e.target.value);
                     setAdminReprintError('');
                   }}
-                  placeholder="STAFF PIN TO REPRINT..."
+                  placeholder="ENTER 1234 PASSWORD TO REPRINT..."
                   autoComplete="off"
                   className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white text-center tracking-widest font-mono text-xs font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black transition"
                 />
@@ -1542,17 +1601,58 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 </div>
               )}
 
-              {/* Primary Action Buttons: 'Check Connection' & 'Reprint Photo Now' */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled={isCheckingConnection || isPrinting}
-                  onClick={handleCheckPrinterConnection}
-                  className="py-3 px-3 rounded-full border-2 border-zinc-900 bg-white hover:bg-zinc-100 active:scale-98 text-zinc-900 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-40"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isCheckingConnection ? 'animate-spin' : ''}`} />
-                  <span>{isCheckingConnection ? 'Checking...' : 'Check Connection'}</span>
-                </button>
+              {/* 1234 Password Input for Reprint Photo Now */}
+              <div className="mb-3 bg-white p-3 rounded-2xl border border-zinc-200 shadow-2xs">
+                <label className="block text-[10px] font-mono uppercase tracking-wider font-extrabold text-zinc-600 mb-1.5 text-center">
+                  🔒 Enter 1234 Password to Reprint Photo Now
+                </label>
+                <div className="relative">
+                  <Lock className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={diagnosticReprintPin}
+                    onChange={(e) => {
+                      setDiagnosticReprintPin(e.target.value);
+                      setDiagnosticPinError('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleDiagnosticReprintNow();
+                      }
+                    }}
+                    placeholder="ENTER 1234 PASSWORD..."
+                    autoComplete="off"
+                    className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white text-center tracking-widest font-mono text-xs font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black transition"
+                  />
+                </div>
+                {diagnosticPinError && (
+                  <p className="text-[11px] font-bold text-rose-600 text-center mt-1.5">
+                    {diagnosticPinError}
+                  </p>
+                )}
+              </div>
+
+              {/* Primary Action Buttons: 'Check Connection' (only if not connected) & 'Reprint Photo Now' */}
+              <div
+                className={`grid gap-2 ${
+                  !livePrinterStatus.isConnected || activeCategory === 'disconnected'
+                    ? 'grid-cols-2'
+                    : 'grid-cols-1'
+                }`}
+              >
+                {(!livePrinterStatus.isConnected || activeCategory === 'disconnected') && (
+                  <button
+                    type="button"
+                    disabled={isCheckingConnection || isPrinting}
+                    onClick={handleCheckPrinterConnection}
+                    className="py-3 px-3 rounded-full border-2 border-zinc-900 bg-white hover:bg-zinc-100 active:scale-98 text-zinc-900 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-40"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isCheckingConnection ? 'animate-spin' : ''}`} />
+                    <span>{isCheckingConnection ? 'Checking...' : 'Check Connection'}</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
