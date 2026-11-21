@@ -32,6 +32,37 @@ interface KioskNavBarProps {
 
 export function enterBrowserFullscreenApi(): void {
   try {
+    const doc = document as any;
+    const isFs = !!(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    );
+
+    if (!isFs && typeof document !== 'undefined') {
+      const el = (document.documentElement || document.body) as any;
+      if (el) {
+        if (typeof el.requestFullscreen === 'function') {
+          el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {
+            try {
+              el.requestFullscreen().catch(() => {});
+            } catch {
+              // Ignore if blocked by iframe/browser policy
+            }
+          });
+        } else if (typeof el.webkitRequestFullscreen === 'function') {
+          el.webkitRequestFullscreen();
+        } else if (typeof el.webkitEnterFullscreen === 'function') {
+          el.webkitEnterFullscreen();
+        } else if (typeof el.mozRequestFullScreen === 'function') {
+          el.mozRequestFullScreen();
+        } else if (typeof el.msRequestFullscreen === 'function') {
+          el.msRequestFullscreen();
+        }
+      }
+    }
+
     const nav = navigator as any;
     if (nav?.wakeLock && typeof nav.wakeLock.request === 'function') {
       nav.wakeLock.request('screen').catch(() => {});
@@ -72,6 +103,7 @@ export function exitBrowserFullscreenApi(): void {
 
 export function lockKioskFullscreen(hideMenu: boolean = true): void {
   safeStorageSet('jcv_fullscreen_locked', 'true');
+  enterBrowserFullscreenApi();
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('jcv_fullscreen_lock_changed', {
@@ -99,17 +131,29 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   onRequestAdmin,
 }) => {
   const [isMaximizedLocked, setIsMaximizedLocked] = useState<boolean>(() => {
+    if (typeof document !== 'undefined') {
+      const doc = document as any;
+      const activeFs = !!(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+      if (!activeFs) {
+        safeStorageSet('jcv_fullscreen_locked', 'false');
+        return false;
+      }
+    }
     return safeStorageGet('jcv_fullscreen_locked') === 'true';
   });
-  const [isTopMenuHidden, setIsTopMenuHidden] = useState<boolean>(() => {
-    return safeStorageGet('jcv_fullscreen_locked') === 'true';
-  });
+  const [isTopMenuHidden, setIsTopMenuHidden] = useState<boolean>(false);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [secretTapCount, setSecretTapCount] = useState(0);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
 
   const headerRef = useRef<HTMLElement | null>(null);
+  const wasNativeFsRef = useRef<boolean>(false);
 
   useEffect(() => {
     const handleExternalLockChange = (e: Event) => {
@@ -187,6 +231,18 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         doc.msFullscreenElement
       );
       setIsNativeFullscreen(activeFs);
+      if (wasNativeFsRef.current && !activeFs) {
+        // User pressed Esc or exited native browser fullscreen
+        safeStorageSet('jcv_fullscreen_locked', 'false');
+        setIsMaximizedLocked(false);
+        setIsTopMenuHidden(false);
+        window.dispatchEvent(
+          new CustomEvent('jcv_fullscreen_lock_changed', {
+            detail: { locked: false, hideMenu: false },
+          })
+        );
+      }
+      wasNativeFsRef.current = activeFs;
     };
     document.addEventListener('fullscreenchange', fsChange);
     document.addEventListener('webkitfullscreenchange', fsChange);
