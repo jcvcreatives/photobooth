@@ -2552,6 +2552,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+                {printerStatus.error && (
+                  <div className="p-3 rounded-lg bg-zinc-100 border border-zinc-300 text-xs text-zinc-800 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-zinc-900 shrink-0 mt-0.5" />
+                    <div className="leading-relaxed">{printerStatus.error}</div>
+                  </div>
+                )}
+
+                {!printerStatus.error && printerStatus.details && (
+                  <div className="text-[11px] font-mono text-zinc-500">
+                    {printerStatus.details}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <button
                     type="button"
@@ -2614,13 +2627,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }`}
                   >
                     <div>
-                      <div className="font-semibold text-xs mb-0.5">System OS Printer</div>
+                      <div className="font-semibold text-xs mb-0.5">Auto USB / Bluetooth Spooler</div>
                       <div className="text-[11px] opacity-70">
-                        Any installed Windows, Mac, Android, or AirPrint printer
+                        Automatic direct thermal print without browser pop-up
                       </div>
                     </div>
                     <div className="mt-2.5 text-[11px] font-medium flex items-center gap-1">
-                      <span>Use System Print</span>
+                      <span>Use Auto Spooler</span>
                       <ArrowRight className="w-3 h-3" />
                     </div>
                   </button>

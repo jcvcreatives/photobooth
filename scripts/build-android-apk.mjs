@@ -225,7 +225,18 @@ public class MainActivity extends Activity {
         );
 
         if (Build.VERSION.SDK_INT >= 23) {
-            if (checkSelfPermission("android.permission.CAMERA") != PackageManager.PERMISSION_GRANTED) {
+            if (Build.VERSION.SDK_INT >= 31) {
+                requestPermissions(
+                    new String[]{
+                        "android.permission.CAMERA",
+                        "android.permission.BLUETOOTH",
+                        "android.permission.BLUETOOTH_ADMIN",
+                        "android.permission.BLUETOOTH_CONNECT",
+                        "android.permission.BLUETOOTH_SCAN"
+                    },
+                    PERMISSION_REQUEST_CODE
+                );
+            } else if (checkSelfPermission("android.permission.CAMERA") != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(
                     new String[]{
                         "android.permission.CAMERA",
@@ -436,18 +447,41 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String connectBluetooth() {
             try {
+                if (Build.VERSION.SDK_INT >= 31) {
+                    if (checkSelfPermission("android.permission.BLUETOOTH_CONNECT") != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(
+                            new String[]{
+                                "android.permission.BLUETOOTH_CONNECT",
+                                "android.permission.BLUETOOTH_SCAN"
+                            },
+                            PERMISSION_REQUEST_CODE
+                        );
+                        return "ERR:Please tap Allow on the Bluetooth permission prompt, then tap Connect Bluetooth again";
+                    }
+                }
                 BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-                if (adapter == null || !adapter.isEnabled()) {
-                    return "ERR:Bluetooth is turned off on tablet";
+                if (adapter == null) {
+                    return "ERR:Bluetooth is not supported on this tablet";
+                }
+                if (!adapter.isEnabled()) {
+                    try {
+                        Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                        startActivity(enableBtIntent);
+                    } catch (Exception ignored) {}
+                    return "ERR:Bluetooth is turned off on tablet — please turn on Bluetooth";
                 }
                 Set<BluetoothDevice> bonded = adapter.getBondedDevices();
                 if (bonded == null || bonded.isEmpty()) {
-                    return "FALLBACK:No paired Bluetooth Classic devices";
+                    try {
+                        Intent settingsIntent = new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS);
+                        startActivity(settingsIntent);
+                    } catch (Exception ignored) {}
+                    return "FALLBACK:No paired Bluetooth printer found — opening Android Bluetooth Settings to pair VOZY G80";
                 }
                 BluetoothDevice chosen = null;
                 for (BluetoothDevice dev : bonded) {
                     String n = dev.getName() != null ? dev.getName().toLowerCase() : "";
-                    if (n.contains("print") || n.contains("pos") || n.contains("mtp") || n.contains("mpt") || n.contains("rpp") || n.contains("bt") || n.contains("xp") || n.contains("58") || n.contains("80")) {
+                    if (n.contains("vozy") || n.contains("g80") || n.contains("print") || n.contains("pos") || n.contains("mtp") || n.contains("mpt") || n.contains("rpp") || n.contains("bt") || n.contains("xp") || n.contains("58") || n.contains("80")) {
                         chosen = dev;
                         break;
                     }

@@ -73,14 +73,6 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Power Saver Mode (when enabled in Admin Dashboard):
-  // Automatically reduces screen brightness and disables non-essential animations whenever
-  // the device is running on battery (isCharging === false), regardless of the 35% warning threshold.
-  const isBatteryPowerSaverActive =
-    !showMobileShareModal &&
-    config.tabletEndurance?.powerSaverOnBattery !== false &&
-    powerStatus.isCharging === false;
-
   // Low-battery warning (< 35% and NOT plugged in): blink screen red and play warning sound.
   // Immediately stops all warnings as soon as charger is plugged in (isCharging === true).
   const isLowBatteryWarningActive =
@@ -338,7 +330,7 @@ export default function App() {
     <div
       className={`flex flex-col h-dvh min-h-screen w-full bg-[#faf8f5] text-zinc-900 overflow-hidden font-sans ${
         showMobileShareModal ? 'select-auto' : 'select-none'
-      } ${isBatteryPowerSaverActive ? 'power-saver-active' : ''}`}
+      }`}
     >
       {/* Kiosk Status & Hardware Bar */}
       <KioskNavBar

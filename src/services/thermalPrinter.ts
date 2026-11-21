@@ -685,7 +685,7 @@ class ThermalPrinterService {
       try {
         const res = window.AndroidPrinter.connectBluetooth();
         if (res && res.startsWith('OK:')) {
-          const devName = res.slice(3) || 'Bluetooth Thermal Printer';
+          const devName = res.slice(3) || 'VOZY G80 (Bluetooth)';
           this.nativeBluetoothActive = true;
           this.currentStatus = {
             isConnected: true,
@@ -694,9 +694,24 @@ class ThermalPrinterService {
             details: 'Connected via Native Android Bluetooth SPP (12h Keep-Alive)',
           };
           safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+          safeStorageSet('snapkiosk_printer_name', devName);
           this.notify();
           return true;
-        } else if (res && !res.includes('FALLBACK')) {
+        } else if (res && res.startsWith('FALLBACK:')) {
+          // If running inside Android APK WebView where navigator.bluetooth is not exposed,
+          // guide the operator to pair the printer once in Android Settings -> Bluetooth
+          if (typeof navigator === 'undefined' || !('bluetooth' in navigator) || !navigator.bluetooth) {
+            this.currentStatus = {
+              isConnected: false,
+              connectionType: 'bluetooth',
+              deviceName: 'No Paired Bluetooth Printer Found',
+              error:
+                'Please pair your printer (e.g. VOZY G80) once in Android Settings → Bluetooth (PIN 0000 or 1234), then tap "Connect Bluetooth" again.',
+            };
+            this.notify();
+            return false;
+          }
+        } else if (res) {
           this.currentStatus = {
             isConnected: false,
             connectionType: 'bluetooth',
@@ -712,12 +727,16 @@ class ThermalPrinterService {
     }
 
     if (typeof navigator === 'undefined' || !('bluetooth' in navigator) || !navigator.bluetooth) {
+      // Check if a USB OTG cable is actually plugged in on Android APK
+      if (typeof window !== 'undefined' && window.AndroidPrinter?.hasUsbPrinter?.()) {
+        return await this.connectUSB();
+      }
       this.currentStatus = {
         isConnected: false,
         connectionType: 'bluetooth',
-        deviceName: 'Bluetooth Not Available in Browser',
+        deviceName: 'Bluetooth Unavailable in This View',
         error:
-          'Web Bluetooth is not enabled here. Tip: Select "Universal USB / Wireless System Printer" to print to any paired Bluetooth or Wi-Fi printer via OS Print Service.',
+          'If using the Android APK, pair your printer in Android Settings → Bluetooth first. If running inside the AI Studio preview iframe, open the app URL in Chrome browser (top-right button) or use the installed Android .APK.',
       };
       this.notify();
       return false;
@@ -737,7 +756,7 @@ class ThermalPrinterService {
 
       if (!writeChar) {
         throw new Error(
-          'Could not find writable BLE characteristic. If this is a Bluetooth Classic printer, use "Universal System Printer" or the Android APK.'
+          'Could not find writable BLE characteristic. If this is a Bluetooth Classic printer, pair it in Android Settings → Bluetooth and use the Android APK.'
         );
       }
 
@@ -882,7 +901,7 @@ class ThermalPrinterService {
       try {
         const res = window.AndroidPrinter.connectUsb();
         if (res && res.startsWith('OK:')) {
-          const usbName = res.slice(3) || 'Android USB OTG Printer';
+          const usbName = res.slice(3) || 'VOZY G80 (USB OTG)';
           this.nativeUsbActive = true;
           this.currentStatus = {
             isConnected: true,
@@ -891,8 +910,18 @@ class ThermalPrinterService {
             details: 'Connected via Native Android USB OTG Host',
           };
           safeStorageSet('snapkiosk_printer_type', 'usb');
+          safeStorageSet('snapkiosk_printer_name', usbName);
           this.notify();
           return true;
+        } else if (res && res.startsWith('ERR:')) {
+          this.currentStatus = {
+            isConnected: false,
+            connectionType: 'usb',
+            deviceName: 'No USB Printer Detected on OTG Cord',
+            error: `${res.replace(/^ERR:/, '')}. Check that your USB OTG adapter is firmly plugged into the tablet and the printer is powered ON.`,
+          };
+          this.notify();
+          return false;
         }
       } catch {
         // Fall through to WebUSB
@@ -940,13 +969,20 @@ class ThermalPrinterService {
       }
     }
 
-    // C. If WebUSB is not available in this browser, try Web Serial (USB COM port) or enable Universal USB System Printer
+    // C. If WebUSB is not available in this browser, try Web Serial (USB COM port)
     if (typeof navigator !== 'undefined' && 'serial' in navigator) {
       return await this.connectSerial(this.serialBaudRate);
     }
 
-    this.useSystemPrinter();
-    return true;
+    this.currentStatus = {
+      isConnected: false,
+      connectionType: 'usb',
+      deviceName: 'Direct USB Unavailable in This View',
+      error:
+        'Direct WebUSB is not available in this view. Open the app directly in Chrome or install the Android .APK for direct USB OTG & Bluetooth printing.',
+    };
+    this.notify();
+    return false;
   }
 
   // 6. Connect via USB-Serial Cord (Web Serial API for CH340, CP210x, PL2303, FTDI USB printers)
@@ -1174,9 +1210,10 @@ class ThermalPrinterService {
   }
 
   /**
-   * Prints any canvas silently without EVER opening the browser's native window.print() dialog popup.
-   * Checks Native Android PrintManager, already-authorized WebUSB / WebSerial hardware, and the
-   * Local Silent Print Bridge (http://127.0.0.1:19100), then completes silently with exact copy count.
+   * Prints any canvas silently without EVER opening the browser's native window.print() dialog popup
+   * or the Android "Select a printer / Letter 1/2 2/2" PrintManager dialog.
+   * Checks Native Android USB OTG & Bluetooth SPP, already-authorized WebUSB / WebSerial hardware,
+   * and the Local Silent Print Bridge (http://127.0.0.1:19100).
    */
   public async printViaSystemDriver(
     sourceCanvas: HTMLCanvasElement,
@@ -1203,40 +1240,50 @@ class ThermalPrinterService {
       }
     }
 
-    // 1. If running inside the Android APK with Native PrintManager or USB bridge
-    if (typeof window !== 'undefined' && window.AndroidPrinter) {
-      if ((escposBytes || commandBands) && window.AndroidPrinter.printUsbBase64) {
+    // 1. If running inside the Android APK with Native USB OTG or Bluetooth SPP bridge
+    // (NEVER call window.AndroidPrinter.printSystemImage because that opens Android's "Select a printer / Letter 1/2 2/2" screen!)
+    if (typeof window !== 'undefined' && window.AndroidPrinter && (escposBytes || commandBands)) {
+      const fullStream =
+        escposBytes || (commandBands ? this.concatUint8Arrays(commandBands) : new Uint8Array(0));
+      const androidChunks = this.sliceBufferChunks(fullStream, 8192);
+
+      // 1A. Try Native Android USB OTG first
+      if (window.AndroidPrinter.printUsbBase64) {
         try {
-          const fullStream =
-            escposBytes || (commandBands ? this.concatUint8Arrays(commandBands) : new Uint8Array(0));
-          const usbChunks = this.sliceBufferChunks(fullStream, 8192);
           for (let c = 0; c < totalCopies; c++) {
             onProgress?.(
               50 + Math.round((c / totalCopies) * 45),
               totalCopies > 1 ? `Printing copy ${c + 1} of ${totalCopies}...` : 'Printing continuously via USB...'
             );
-            for (let b = 0; b < usbChunks.length; b++) {
-              const res = window.AndroidPrinter.printUsbBase64(uint8ToBase64(usbChunks[b]));
-              if (!res || !res.startsWith('OK')) throw new Error('USB transfer not ready');
+            for (let b = 0; b < androidChunks.length; b++) {
+              const res = window.AndroidPrinter.printUsbBase64(uint8ToBase64(androidChunks[b]));
+              if (!res || !res.startsWith('OK')) throw new Error(res || 'USB transfer not ready');
             }
             if (c < totalCopies - 1) await new Promise((r) => setTimeout(r, 700));
           }
           onProgress?.(100, `Printed ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'}!`);
           return { success: true };
         } catch {
-          // Fall through
+          // Fall through to Native Android Bluetooth SPP
         }
       }
-      if (window.AndroidPrinter.printSystemImage) {
+
+      // 1B. Try Native Android Bluetooth SPP if USB OTG wasn't plugged in
+      if (window.AndroidPrinter.printBluetoothBase64) {
         try {
-          const res = window.AndroidPrinter.printSystemImage(
-            imgDataUrl,
-            `JCVcreatives_Photostrip_${totalCopies}x`
-          );
-          if (res && res.startsWith('OK')) {
-            onProgress?.(100, 'Sent to Android Print Spooler!');
-            return { success: true };
+          for (let c = 0; c < totalCopies; c++) {
+            onProgress?.(
+              50 + Math.round((c / totalCopies) * 45),
+              totalCopies > 1 ? `Printing copy ${c + 1} of ${totalCopies}...` : 'Printing continuously via Bluetooth...'
+            );
+            for (let b = 0; b < androidChunks.length; b++) {
+              const res = window.AndroidPrinter.printBluetoothBase64(uint8ToBase64(androidChunks[b]));
+              if (!res || !res.startsWith('OK')) throw new Error(res || 'Bluetooth transfer not ready');
+            }
+            if (c < totalCopies - 1) await new Promise((r) => setTimeout(r, 700));
           }
+          onProgress?.(100, `Printed ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'}!`);
+          return { success: true };
         } catch {
           // Fall through
         }
@@ -2087,8 +2134,14 @@ class ThermalPrinterService {
     // 2. USB Cord Flow (Native Android USB Host OR WebUSB) — Continuous 16KB Bulk Transfers with 0ms Delay
     if (mode === 'usb') {
       // A. Native Android USB OTG Host
-      if (this.nativeUsbActive && typeof window !== 'undefined' && window.AndroidPrinter?.printUsbBase64) {
+      if (typeof window !== 'undefined' && window.AndroidPrinter?.printUsbBase64) {
         try {
+          if (!this.nativeUsbActive && window.AndroidPrinter.connectUsb) {
+            const connRes = window.AndroidPrinter.connectUsb();
+            if (connRes && connRes.startsWith('OK:')) {
+              this.nativeUsbActive = true;
+            }
+          }
           for (let c = 0; c < copies; c++) {
             const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
             onProgress?.(60, `Streaming continuously to USB OTG printer${copyLabel}...`);
@@ -2096,7 +2149,7 @@ class ThermalPrinterService {
               const b64 = uint8ToBase64(androidChunks[p]);
               const res = window.AndroidPrinter.printUsbBase64(b64);
               if (!res || !res.startsWith('OK')) {
-                throw new Error(res || 'Android USB transfer failed');
+                throw new Error((res || 'Android USB transfer failed').replace(/^ERR:/, ''));
               }
             }
             soundEffects.playPaperCut();
@@ -2108,11 +2161,14 @@ class ThermalPrinterService {
           return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          return {
-            success: false,
-            previewDataUrl: hdPreviewUrl,
-            error: `USB OTG print failed: ${msg}`,
-          };
+          // If WebUSB is not available (Android APK WebView), return the specific USB OTG message
+          if (typeof navigator === 'undefined' || !('usb' in navigator) || !navigator.usb) {
+            return {
+              success: false,
+              previewDataUrl: hdPreviewUrl,
+              error: `USB OTG: ${msg}`,
+            };
+          }
         }
       }
 
@@ -2158,6 +2214,12 @@ class ThermalPrinterService {
           };
         }
       }
+
+      return {
+        success: false,
+        previewDataUrl: hdPreviewUrl,
+        error: 'No USB printer connected. Tap "Pair USB" in Admin → Printer to connect your USB cable.',
+      };
     }
 
     // 3. USB-Serial Cord Flow (Web Serial API) — Continuous Stream with 0ms Delay
@@ -2198,11 +2260,16 @@ class ThermalPrinterService {
       this.isPrintingBusy = true;
       try {
         if (
-          this.nativeBluetoothActive &&
           typeof window !== 'undefined' &&
           window.AndroidPrinter?.printBluetoothBase64
         ) {
           try {
+            if (!this.nativeBluetoothActive && window.AndroidPrinter.connectBluetooth) {
+              const connRes = window.AndroidPrinter.connectBluetooth();
+              if (connRes && connRes.startsWith('OK:')) {
+                this.nativeBluetoothActive = true;
+              }
+            }
             for (let c = 0; c < copies; c++) {
               const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
               onProgress?.(60, `Transmitting continuously via Bluetooth SPP${copyLabel}...`);
@@ -2210,7 +2277,7 @@ class ThermalPrinterService {
                 const b64 = uint8ToBase64(androidChunks[p]);
                 const res = window.AndroidPrinter.printBluetoothBase64(b64);
                 if (!res || !res.startsWith('OK')) {
-                  throw new Error(res || 'Bluetooth SPP print failed');
+                  throw new Error((res || 'Bluetooth SPP print failed').replace(/^(ERR:|FALLBACK:)/, ''));
                 }
               }
               soundEffects.playPaperCut();
@@ -2222,11 +2289,13 @@ class ThermalPrinterService {
             return { success: true, previewDataUrl: hdPreviewUrl };
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            return {
-              success: false,
-              previewDataUrl: hdPreviewUrl,
-              error: `Bluetooth print failed: ${msg}`,
-            };
+            if (typeof navigator === 'undefined' || !('bluetooth' in navigator) || !navigator.bluetooth) {
+              return {
+                success: false,
+                previewDataUrl: hdPreviewUrl,
+                error: `Bluetooth: ${msg}`,
+              };
+            }
           }
         }
 
@@ -2269,6 +2338,12 @@ class ThermalPrinterService {
             };
           }
         }
+
+        return {
+          success: false,
+          previewDataUrl: hdPreviewUrl,
+          error: 'No Bluetooth printer connected. Tap "Scan Bluetooth" in Admin → Printer to connect.',
+        };
       } finally {
         this.isPrintingBusy = false;
       }
