@@ -8,11 +8,31 @@ import { soundEffects } from './soundEffects';
 import { safeStorageGet, safeStorageSet } from './storage';
 import { prependCustomHeaderToCanvas } from './frameTemplates';
 
+export type PrinterErrorCategory =
+  | 'none'
+  | 'disconnected'
+  | 'paper_jam'
+  | 'paper_out'
+  | 'transfer_stalled';
+
+export interface PrinterDiagnosticReport {
+  healthy: boolean;
+  category: PrinterErrorCategory;
+  title: string;
+  message: string;
+  connectionType: PrinterConnectionType;
+  deviceName: string;
+  paperRemainingPercent: number;
+  checklist: string[];
+  timestamp: number;
+}
+
 export interface PrinterDeviceStatus {
   isConnected: boolean;
   connectionType: PrinterConnectionType;
   deviceName: string;
   error?: string;
+  errorCategory?: PrinterErrorCategory;
   details?: string;
 }
 
@@ -255,10 +275,12 @@ class ThermalPrinterService {
           this.usbInterfaceNumber = null;
           this.usbEndpointNumber = null;
           this.currentStatus = {
-            isConnected: true,
+            isConnected: false,
             connectionType: 'usb',
             deviceName: rememberedName,
-            details: 'Remembered USB printer — auto-reconnects when tablet wakes or cable is ready',
+            errorCategory: 'disconnected',
+            error: 'USB printer cable disconnected. Reconnect the USB / OTG cable and tap Check Connection.',
+            details: 'Remembered USB printer — auto-reconnects when cable is plugged back in',
           };
           this.notify();
         }
@@ -618,7 +640,18 @@ class ThermalPrinterService {
 
       // Only attempt immediate reconnect if tablet screen is currently unlocked/visible
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        await this.trySilentBluetoothReconnect(device);
+        const reconnected = await this.trySilentBluetoothReconnect(device);
+        if (!reconnected) {
+          this.currentStatus = {
+            isConnected: false,
+            connectionType: 'bluetooth',
+            deviceName: rememberedName,
+            errorCategory: 'disconnected',
+            error: `Bluetooth link to ${rememberedName} dropped. Ensure the printer is powered ON and within range, then tap Check Connection.`,
+            details: 'Disconnected — awaiting reconnection',
+          };
+          this.notify();
+        }
       }
     });
 
@@ -2051,6 +2084,282 @@ class ThermalPrinterService {
     return outCanvas;
   }
 
+  public classifyPrinterError(rawMessage?: string, paperRemainingPercent: number = 100): {
+    category: PrinterErrorCategory;
+    title: string;
+    message: string;
+    checklist: string[];
+  } {
+    const lower = (rawMessage || '').toLowerCase();
+
+    if (
+      paperRemainingPercent <= 0 ||
+      lower.includes('out of paper') ||
+      lower.includes('paper out') ||
+      lower.includes('no paper') ||
+      lower.includes('paper roll empty')
+    ) {
+      return {
+        category: 'paper_out',
+        title: 'Out of Thermal Paper',
+        message:
+          rawMessage ||
+          'The thermal paper roll appears to be empty. Load a fresh 58mm/80mm thermal paper roll and tap Reprint.',
+        checklist: [
+          'Open the printer paper cover latch and remove the empty core.',
+          'Drop in a fresh thermal paper roll with the glossy thermal side facing the print head.',
+          'Pull a small leader tip past the cutter edge and close the cover firmly until it clicks.',
+          'Tap "Mark Paper Reloaded" and then tap "Reprint Photo Now".',
+        ],
+      };
+    }
+
+    if (
+      lower.includes('jam') ||
+      lower.includes('stall') ||
+      lower.includes('cover open') ||
+      lower.includes('buffer full') ||
+      lower.includes('timed out') ||
+      lower.includes('timeout') ||
+      lower.includes('cutter') ||
+      lower.includes('overheat')
+    ) {
+      return {
+        category: 'paper_jam',
+        title: 'Paper Jam or Feed Stall Detected',
+        message:
+          rawMessage ||
+          'The printer mechanism stalled while feeding paper. Check for a creased paper jam or unlatched cover.',
+        checklist: [
+          'Press the printer cover release lever to open the thermal paper compartment.',
+          'Gently clear any jammed, creased, or torn thermal paper from the roller and auto-cutter blade.',
+          'Ensure the paper roll feeds straight and close the cover latch until both sides click shut.',
+          'Tap "Check Connection" to verify readiness, then tap "Reprint Photo Now".',
+        ],
+      };
+    }
+
+    return {
+      category: 'disconnected',
+      title: 'Printer Disconnected',
+      message:
+        rawMessage ||
+        'Communication with the thermal printer was interrupted. Check the power switch and USB or Bluetooth connection.',
+      checklist: [
+        'Verify the thermal printer is powered ON (green/blue power LED lit, no flashing red error LED).',
+        'For USB Cord: check that the USB / OTG cable is firmly seated in both the tablet and printer.',
+        'For Bluetooth: ensure Bluetooth is ON and the printer (e.g. VOZY G80 / Xprinter) is paired.',
+        'Tap "Check Connection" below to auto-reconnect, then tap "Reprint Photo Now".',
+      ],
+    };
+  }
+
+  private withTransferTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    timeoutReason: string
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(timeoutReason));
+      }, timeoutMs);
+      promise
+        .then((val) => {
+          clearTimeout(timer);
+          resolve(val);
+        })
+        .catch((err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+    });
+  }
+
+  private recordFailureStatus(errorMsg: string, paperRemainingPercent: number = 100): PrinterErrorCategory {
+    const classified = this.classifyPrinterError(errorMsg, paperRemainingPercent);
+    this.currentStatus = {
+      ...this.currentStatus,
+      isConnected: classified.category === 'paper_jam' || classified.category === 'paper_out',
+      error: classified.message,
+      errorCategory: classified.category,
+    };
+    this.notify();
+    return classified.category;
+  }
+
+  public clearPrinterError(): void {
+    if (this.currentStatus.error || this.currentStatus.errorCategory) {
+      this.currentStatus = {
+        ...this.currentStatus,
+        isConnected: true,
+        error: undefined,
+        errorCategory: 'none',
+      };
+      this.notify();
+    }
+  }
+
+  /**
+   * Actively tests the live printer link (USB, Bluetooth, Serial, Network, or System Bridge)
+   * and returns a structured diagnostic report for the PrintAndShareScreen diagnostic modal.
+   */
+  public async runDiagnosticCheck(
+    paperRemainingPercent: number = 100
+  ): Promise<PrinterDiagnosticReport> {
+    const mode = this.currentStatus.connectionType;
+    const deviceName = this.currentStatus.deviceName || 'Thermal Printer';
+
+    // 1. Check paper roll telemetry exhaustion first
+    if (paperRemainingPercent <= 0) {
+      const info = this.classifyPrinterError(
+        'Thermal paper roll level is at 0%. Reload paper roll and reset paper counter.',
+        0
+      );
+      return {
+        healthy: false,
+        category: 'paper_out',
+        title: info.title,
+        message: info.message,
+        connectionType: mode,
+        deviceName,
+        paperRemainingPercent,
+        checklist: info.checklist,
+        timestamp: Date.now(),
+      };
+    }
+
+    // 2. Probe and attempt automatic wake/reconnection per transport type
+    let reconnected = false;
+    if (mode === 'bluetooth') {
+      reconnected = await this.reconnectRememberedBluetooth();
+      if (!reconnected && !this.nativeBluetoothActive && !this.bluetoothCharacteristic) {
+        const info = this.classifyPrinterError(
+          this.currentStatus.error ||
+            `Could not reach ${deviceName} over Bluetooth. Check printer power or tap Re-Pair Bluetooth.`,
+          paperRemainingPercent
+        );
+        this.currentStatus = {
+          ...this.currentStatus,
+          isConnected: false,
+          error: info.message,
+          errorCategory: 'disconnected',
+        };
+        this.notify();
+        return {
+          healthy: false,
+          category: 'disconnected',
+          title: info.title,
+          message: info.message,
+          connectionType: mode,
+          deviceName,
+          paperRemainingPercent,
+          checklist: info.checklist,
+          timestamp: Date.now(),
+        };
+      }
+    } else if (mode === 'usb') {
+      reconnected = await this.reconnectRememberedUsb();
+      if (!reconnected && !this.nativeUsbActive && (!this.usbDevice || this.usbEndpointNumber === null)) {
+        const info = this.classifyPrinterError(
+          this.currentStatus.error ||
+            `No active USB connection to ${deviceName}. Check the USB / OTG cable or tap Re-Pair USB.`,
+          paperRemainingPercent
+        );
+        this.currentStatus = {
+          ...this.currentStatus,
+          isConnected: false,
+          error: info.message,
+          errorCategory: 'disconnected',
+        };
+        this.notify();
+        return {
+          healthy: false,
+          category: 'disconnected',
+          title: info.title,
+          message: info.message,
+          connectionType: mode,
+          deviceName,
+          paperRemainingPercent,
+          checklist: info.checklist,
+          timestamp: Date.now(),
+        };
+      }
+    } else if (mode === 'serial') {
+      reconnected = await this.reconnectRememberedSerial();
+      if (!reconnected && (!this.serialPort || !this.serialPort.writable)) {
+        const info = this.classifyPrinterError(
+          this.currentStatus.error || 'USB-Serial port is not open or cable was unplugged.',
+          paperRemainingPercent
+        );
+        return {
+          healthy: false,
+          category: 'disconnected',
+          title: info.title,
+          message: info.message,
+          connectionType: mode,
+          deviceName,
+          paperRemainingPercent,
+          checklist: info.checklist,
+          timestamp: Date.now(),
+        };
+      }
+    } else if (mode === 'network') {
+      const ip = this.networkIp;
+      const port = this.networkPort || 9100;
+      try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 2200);
+        await fetch(`http://${ip}:${port}/`, {
+          method: 'GET',
+          mode: 'no-cors',
+          signal: controller.signal,
+        });
+        clearTimeout(t);
+        reconnected = true;
+      } catch {
+        const info = this.classifyPrinterError(
+          `Network printer at ${ip}:${port} did not respond. Verify Wi-Fi connection and printer IP.`,
+          paperRemainingPercent
+        );
+        return {
+          healthy: false,
+          category: 'disconnected',
+          title: info.title,
+          message: info.message,
+          connectionType: mode,
+          deviceName,
+          paperRemainingPercent,
+          checklist: info.checklist,
+          timestamp: Date.now(),
+        };
+      }
+    } else if (mode === 'system') {
+      await this.probeSilentBridge();
+      reconnected = true;
+    } else {
+      // Virtual mode
+      reconnected = true;
+    }
+
+    // Connection verified healthy — clear any lingering error
+    this.clearPrinterError();
+    return {
+      healthy: true,
+      category: 'none',
+      title: 'Printer Connected & Ready',
+      message: `${this.currentStatus.deviceName} is online and ready to print.`,
+      connectionType: this.currentStatus.connectionType,
+      deviceName: this.currentStatus.deviceName,
+      paperRemainingPercent,
+      checklist: [
+        'Connection link verified active.',
+        'Thermal paper roll status ready.',
+        'Tap "Reprint Photo Now" to print your photo receipt.',
+      ],
+      timestamp: Date.now(),
+    };
+  }
+
   /**
    * Executes the print job across USB Cord, USB-Serial, Wireless Bluetooth, Wireless Network IP, Universal System Driver, or Virtual Simulator.
    * Streams the entire photostrip in a single continuous non-stop motion with zero mid-print pauses.
@@ -2059,7 +2368,12 @@ class ThermalPrinterService {
     canvas: HTMLCanvasElement,
     config: ThermalPrinterConfig,
     onProgress?: (percent: number, statusText: string) => void
-  ): Promise<{ success: boolean; previewDataUrl: string; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    previewDataUrl: string;
+    error?: string;
+    errorCategory?: PrinterErrorCategory;
+  }> {
     soundEffects.playPrintingMotor();
 
     const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
@@ -2123,11 +2437,20 @@ class ThermalPrinterService {
         escposBytes,
         commandBands
       );
-      soundEffects.playPaperCut();
+      if (sysRes.success) {
+        this.clearPrinterError();
+        soundEffects.playPaperCut();
+        return {
+          success: true,
+          previewDataUrl: hdPreviewUrl,
+        };
+      }
+      const errCat = this.recordFailureStatus(sysRes.error || 'System print spooler error.');
       return {
-        success: sysRes.success,
+        success: false,
         previewDataUrl: hdPreviewUrl,
         error: sysRes.error,
+        errorCategory: errCat,
       };
     }
 
@@ -2157,16 +2480,19 @@ class ThermalPrinterService {
               await new Promise((r) => setTimeout(r, 700));
             }
           }
+          this.clearPrinterError();
           onProgress?.(100, 'USB Print complete!');
           return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           // If WebUSB is not available (Android APK WebView), return the specific USB OTG message
           if (typeof navigator === 'undefined' || !('usb' in navigator) || !navigator.usb) {
+            const errCat = this.recordFailureStatus(`USB OTG: ${msg}`);
             return {
               success: false,
               previewDataUrl: hdPreviewUrl,
               error: `USB OTG: ${msg}`,
+              errorCategory: errCat,
             };
           }
         }
@@ -2185,16 +2511,24 @@ class ThermalPrinterService {
             onProgress?.(60, `Streaming continuously to USB printer${copyLabel}...`);
             for (let p = 0; p < usbBulkChunks.length; p++) {
               try {
-                await this.usbDevice.transferOut(
-                  this.usbEndpointNumber,
-                  usbBulkChunks[p] as unknown as BufferSource
+                await this.withTransferTimeout(
+                  this.usbDevice.transferOut(
+                    this.usbEndpointNumber,
+                    usbBulkChunks[p] as unknown as BufferSource
+                  ),
+                  4500,
+                  'Printer hardware buffer stalled mid-feed (possible paper jam, cover open, or out of paper).'
                 );
               } catch {
                 // Re-claim USB interface once if tablet lock suspended the endpoint
                 await this.openAndClaimUsbDevice(this.usbDevice);
-                await this.usbDevice.transferOut(
-                  this.usbEndpointNumber!,
-                  usbBulkChunks[p] as unknown as BufferSource
+                await this.withTransferTimeout(
+                  this.usbDevice.transferOut(
+                    this.usbEndpointNumber!,
+                    usbBulkChunks[p] as unknown as BufferSource
+                  ),
+                  4500,
+                  'Printer hardware buffer stalled mid-feed (possible paper jam, cover open, or out of paper).'
                 );
               }
             }
@@ -2203,22 +2537,29 @@ class ThermalPrinterService {
               await new Promise((r) => setTimeout(r, 700));
             }
           }
+          this.clearPrinterError();
           onProgress?.(100, 'Print complete!');
           return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
+          const errCat = this.recordFailureStatus(`USB print failed: ${msg}`);
           return {
             success: false,
             previewDataUrl: hdPreviewUrl,
             error: `USB print failed: ${msg}`,
+            errorCategory: errCat,
           };
         }
       }
 
+      const usbMissingMsg =
+        'No USB printer connected. Check the USB / OTG cable or tap "Check Connection" to reconnect.';
+      const errCat = this.recordFailureStatus(usbMissingMsg);
       return {
         success: false,
         previewDataUrl: hdPreviewUrl,
-        error: 'No USB printer connected. Tap "Pair USB" in Admin → Printer to connect your USB cable.',
+        error: usbMissingMsg,
+        errorCategory: errCat,
       };
     }
 
@@ -2234,7 +2575,11 @@ class ThermalPrinterService {
             const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
             onProgress?.(60, `Writing continuously to Serial USB${copyLabel}...`);
             for (let p = 0; p < usbBulkChunks.length; p++) {
-              await writer.write(usbBulkChunks[p]);
+              await this.withTransferTimeout(
+                writer.write(usbBulkChunks[p]),
+                4500,
+                'Serial printer buffer stalled mid-feed (possible paper jam or cover open).'
+              );
             }
             soundEffects.playPaperCut();
             if (c < copies - 1) {
@@ -2242,17 +2587,28 @@ class ThermalPrinterService {
             }
           }
           writer.releaseLock();
+          this.clearPrinterError();
           onProgress?.(100, 'Print complete!');
           return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
+          const errCat = this.recordFailureStatus(`USB-Serial print failed: ${msg}`);
           return {
             success: false,
             previewDataUrl: hdPreviewUrl,
             error: `USB-Serial print failed: ${msg}`,
+            errorCategory: errCat,
           };
         }
       }
+      const serialMissingMsg = 'USB-Serial printer port is disconnected. Check the USB cable and tap Check Connection.';
+      const errCat = this.recordFailureStatus(serialMissingMsg);
+      return {
+        success: false,
+        previewDataUrl: hdPreviewUrl,
+        error: serialMissingMsg,
+        errorCategory: errCat,
+      };
     }
 
     // 4. Wireless Bluetooth Flow (Native Android Classic SPP OR Web Bluetooth BLE) — Continuous Stream with 0ms Delay
@@ -2285,15 +2641,18 @@ class ThermalPrinterService {
                 await new Promise((r) => setTimeout(r, 800));
               }
             }
+            this.clearPrinterError();
             onProgress?.(100, 'Bluetooth Print complete!');
             return { success: true, previewDataUrl: hdPreviewUrl };
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             if (typeof navigator === 'undefined' || !('bluetooth' in navigator) || !navigator.bluetooth) {
+              const errCat = this.recordFailureStatus(`Bluetooth: ${msg}`);
               return {
                 success: false,
                 previewDataUrl: hdPreviewUrl,
                 error: `Bluetooth: ${msg}`,
+                errorCategory: errCat,
               };
             }
           }
@@ -2313,36 +2672,51 @@ class ThermalPrinterService {
               const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
               onProgress?.(60, `Transmitting continuously via Bluetooth${copyLabel}...`);
               try {
-                await this.writeBleChunkSafe(this.bluetoothCharacteristic!, escposBytes);
+                await this.withTransferTimeout(
+                  this.writeBleChunkSafe(this.bluetoothCharacteristic!, escposBytes),
+                  14000,
+                  'Bluetooth printer stream stalled mid-feed (possible paper jam, cover open, or printer powered off).'
+                );
               } catch {
                 // Reconnect once if GATT dropped during wake transition and retry
                 await this.reconnectRememberedBluetooth();
                 if (!this.bluetoothCharacteristic) {
-                  throw new Error('Printer still waking up — tap Print again');
+                  throw new Error('Printer disconnected or still waking up — check power/paper and tap Reprint');
                 }
-                await this.writeBleChunkSafe(this.bluetoothCharacteristic, escposBytes);
+                await this.withTransferTimeout(
+                  this.writeBleChunkSafe(this.bluetoothCharacteristic, escposBytes),
+                  14000,
+                  'Bluetooth printer stream stalled mid-feed (possible paper jam, cover open, or printer powered off).'
+                );
               }
               soundEffects.playPaperCut();
               if (c < copies - 1) {
                 await new Promise((r) => setTimeout(r, 800));
               }
             }
+            this.clearPrinterError();
             onProgress?.(100, 'Print complete!');
             return { success: true, previewDataUrl: hdPreviewUrl };
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
+            const errCat = this.recordFailureStatus(`Bluetooth print failed: ${msg}`);
             return {
               success: false,
               previewDataUrl: hdPreviewUrl,
               error: `Bluetooth print failed: ${msg}`,
+              errorCategory: errCat,
             };
           }
         }
 
+        const btMissingMsg =
+          'No Bluetooth printer connected. Power ON the printer and tap "Check Connection" to connect.';
+        const errCat = this.recordFailureStatus(btMissingMsg);
         return {
           success: false,
           previewDataUrl: hdPreviewUrl,
-          error: 'No Bluetooth printer connected. Tap "Scan Bluetooth" in Admin → Printer to connect.',
+          error: btMissingMsg,
+          errorCategory: errCat,
         };
       } finally {
         this.isPrintingBusy = false;
@@ -2374,14 +2748,17 @@ class ThermalPrinterService {
               await new Promise((r) => setTimeout(r, 850));
             }
           }
+          this.clearPrinterError();
           onProgress?.(100, 'Wireless Network Print complete!');
           return { success: true, previewDataUrl: hdPreviewUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
+          const errCat = this.recordFailureStatus(`Network print (${ip}:${port}) failed: ${msg}`);
           return {
             success: false,
             previewDataUrl: hdPreviewUrl,
             error: `Network print (${ip}:${port}) failed: ${msg}`,
+            errorCategory: errCat,
           };
         }
       }
@@ -2409,14 +2786,18 @@ class ThermalPrinterService {
             await new Promise((r) => setTimeout(r, 850));
           }
         }
+        this.clearPrinterError();
         onProgress?.(100, 'Wireless Print sent!');
         return { success: true, previewDataUrl: hdPreviewUrl };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
+        const netErrMsg = `Could not reach wireless printer at ${ip}:${port} (${msg}). Ensure printer is on the same Wi-Fi network.`;
+        const errCat = this.recordFailureStatus(netErrMsg);
         return {
           success: false,
           previewDataUrl: hdPreviewUrl,
-          error: `Could not reach wireless printer at ${ip}:${port} (${msg}). Ensure printer is on the same Wi-Fi network.`,
+          error: netErrMsg,
+          errorCategory: errCat,
         };
       }
     }

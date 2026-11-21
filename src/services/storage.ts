@@ -243,16 +243,28 @@ export class StorageService {
   }
 
   public async getAllCaptures(): Promise<PhotostripResult[]> {
+    const sortNewestFirst = (list: PhotostripResult[]) =>
+      [...list].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     const db = await this.dbPromise;
-    if (!db) return Array.from(this.memCaptures.values()).reverse();
+    if (!db) return sortNewestFirst(Array.from(this.memCaptures.values()));
     return new Promise((resolve) => {
       try {
         const tx = db.transaction('captures', 'readonly');
         const req = tx.objectStore('captures').getAll();
-        req.onsuccess = () => resolve((req.result || []).reverse());
-        req.onerror = () => resolve(Array.from(this.memCaptures.values()).reverse());
+        req.onsuccess = () => {
+          const dbList = (req.result || []) as PhotostripResult[];
+          const merged = new Map<string, PhotostripResult>();
+          for (const item of dbList) {
+            if (item?.id) merged.set(item.id, item);
+          }
+          for (const [id, item] of this.memCaptures.entries()) {
+            merged.set(id, item);
+          }
+          resolve(sortNewestFirst(Array.from(merged.values())));
+        };
+        req.onerror = () => resolve(sortNewestFirst(Array.from(this.memCaptures.values())));
       } catch {
-        resolve(Array.from(this.memCaptures.values()).reverse());
+        resolve(sortNewestFirst(Array.from(this.memCaptures.values())));
       }
     });
   }

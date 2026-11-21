@@ -183,6 +183,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Test Print & Universal USB/Wireless Printer settings
   const [isTestPrinting, setIsTestPrinting] = useState(false);
   const [testPrintFeedback, setTestPrintFeedback] = useState<string | null>(null);
+
+  // Admin Customer Photo Reprint state (for Out of Paper / Bad Printout recovery)
+  const [reprintingCaptureId, setReprintingCaptureId] = useState<string | null>(null);
+  const [reprintFeedback, setReprintFeedback] = useState<{ id: string; ok: boolean; msg: string } | null>(null);
+  const [reprintCopiesMap, setReprintCopiesMap] = useState<Record<string, number>>({});
   const [printerIpInput, setPrinterIpInput] = useState<string>(
     () => thermalPrinterService.getNetworkSettings().ip
   );
@@ -987,6 +992,75 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     onUpdateConfig(updated);
   };
 
+  // Reprint any saved customer photostrip (when printer ran out of paper or printout was bad)
+  const handleReprintCapture = async (cap: PhotostripResult, overrideCopies?: number) => {
+    if (!cap?.compositeDataUrl || reprintingCaptureId) return;
+    soundEffects.playTap();
+    const copiesToPrint = Math.max(1, Math.min(5, overrideCopies ?? reprintCopiesMap[cap.id] ?? 1));
+    setReprintingCaptureId(cap.id);
+    setReprintFeedback({
+      id: cap.id,
+      ok: true,
+      msg: `Sending ${copiesToPrint} ${copiesToPrint === 1 ? 'copy' : 'copies'} to printer...`,
+    });
+
+    try {
+      const reprintCanvas = await new Promise<HTMLCanvasElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = img.naturalWidth || img.width || 600;
+          c.height = img.naturalHeight || img.height || 1600;
+          const ctx = c.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Could not initialize reprint canvas'));
+            return;
+          }
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          resolve(c);
+        };
+        img.onerror = () => reject(new Error('Failed to load saved customer photo'));
+        img.src = cap.compositeDataUrl;
+      });
+
+      const res = await thermalPrinterService.print(
+        reprintCanvas,
+        {
+          ...localConfig.thermalPrinter,
+          printCopies: copiesToPrint,
+        },
+        (_pct, status) => {
+          setReprintFeedback({ id: cap.id, ok: true, msg: status });
+        }
+      );
+
+      if (res.success) {
+        soundEffects.playSuccessChime();
+        setReprintFeedback({
+          id: cap.id,
+          ok: true,
+          msg: `Reprinted ${copiesToPrint} ${copiesToPrint === 1 ? 'copy' : 'copies'} ✓`,
+        });
+      } else {
+        setReprintFeedback({
+          id: cap.id,
+          ok: false,
+          msg: res.error || 'Print failed — check printer paper & connection',
+        });
+      }
+    } catch (err) {
+      setReprintFeedback({
+        id: cap.id,
+        ok: false,
+        msg: (err as Error)?.message || 'Could not reprint photo',
+      });
+    } finally {
+      setReprintingCaptureId(null);
+    }
+  };
+
   // Test Print Hardware Alignment & Darkness Calibration Slip
   const handleTestPrint = async () => {
     soundEffects.playTap();
@@ -1179,11 +1253,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <div className="flex items-center gap-1.5">
             <a
-              href="./JCVcreatives-Photobooth.apk"
+              href="./downloads/JCVcreatives-Photobooth.apk?v=2.7.0"
               download="JCVcreatives-Photobooth.apk"
               data-no-fullscreen-enforce="true"
               onClick={() => soundEffects.playTap()}
-              title="Download Android 7+ Offline APK"
+              title="Download v1+v2 Signed Android 7–14+ Offline APK"
               className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
@@ -2697,6 +2771,124 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Out of Paper / Bad Printout — Quick Reprint Customer Photos Card */}
+              <div className="p-4 bg-white border border-zinc-200 rounded-xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Printer className="w-4 h-4 text-zinc-800" />
+                      <h3 className="text-sm font-bold text-zinc-900">
+                        Out of Paper / Bad Printout — Reprint Customer Photos
+                      </h3>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800">
+                        {captures.length} SAVED
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      If the printer ran out of paper or a receipt printed poorly, reload paper and tap <strong>Reprint Photo</strong> on any recent customer session below.
+                    </p>
+                  </div>
+                  {captures.length > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        setActiveTab('gallery');
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-xs font-semibold transition shrink-0 cursor-pointer"
+                    >
+                      View All ({captures.length})
+                    </button>
+                  )}
+                </div>
+
+                {captures.length === 0 ? (
+                  <div className="py-6 text-center text-zinc-400 text-xs bg-zinc-50 rounded-lg border border-dashed border-zinc-200">
+                    No customer photo sessions recorded yet. Completed sessions will appear here automatically for instant reprinting.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+                    {captures.slice(0, 6).map((cap, idx) => {
+                      const selectedCopies = reprintCopiesMap[cap.id] || 1;
+                      const isThisReprinting = reprintingCaptureId === cap.id;
+                      const fb = reprintFeedback?.id === cap.id ? reprintFeedback : null;
+                      return (
+                        <div
+                          key={cap.id}
+                          className={`rounded-xl overflow-hidden border flex flex-col justify-between bg-zinc-50 ${
+                            idx === 0 ? 'border-zinc-900 ring-1 ring-zinc-900/10' : 'border-zinc-200'
+                          }`}
+                        >
+                          <div className="relative bg-white p-1.5 flex items-center justify-center">
+                            {idx === 0 && (
+                              <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-zinc-900 text-white text-[9px] font-mono font-bold uppercase">
+                                Latest
+                              </span>
+                            )}
+                            <img
+                              src={cap.compositeDataUrl}
+                              alt="Customer Photostrip"
+                              className="w-full h-36 object-contain"
+                            />
+                          </div>
+
+                          <div className="p-2 border-t border-zinc-200 space-y-1.5 bg-zinc-50">
+                            <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+                              <span>{new Date(cap.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                              <div className="flex items-center gap-0.5">
+                                {[1, 2].map((n) => (
+                                  <button
+                                    key={n}
+                                    type="button"
+                                    onClick={() => {
+                                      soundEffects.playTap();
+                                      setReprintCopiesMap((prev) => ({ ...prev, [cap.id]: n }));
+                                    }}
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border cursor-pointer ${
+                                      selectedCopies === n
+                                        ? 'bg-zinc-900 text-white border-zinc-900'
+                                        : 'bg-white text-zinc-600 border-zinc-200'
+                                    }`}
+                                  >
+                                    {n}x
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {fb && (
+                              <div
+                                className={`text-[10px] font-medium px-1.5 py-1 rounded text-center leading-tight ${
+                                  fb.ok
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                }`}
+                              >
+                                {fb.msg}
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              disabled={reprintingCaptureId !== null}
+                              onClick={() => handleReprintCapture(cap, selectedCopies)}
+                              className="w-full py-1.5 px-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-white text-[11px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
+                            >
+                              <Printer className="w-3 h-3 shrink-0" />
+                              <span>
+                                {isThisReprinting
+                                  ? 'Reprinting...'
+                                  : `Reprint (${selectedCopies}x)`}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -2711,18 +2903,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <h3 className="text-sm font-bold text-zinc-900">
                       Android Offline App (.APK)
                     </h3>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-zinc-700">
-                      ANDROID 7.0+
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700">
+                      V1 + V2 SIGNED (ANDROID 7–14+)
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    Download the standalone offline Android installer (<span className="font-mono text-zinc-700">JCVcreatives-Photobooth.apk</span>) with native USB OTG &amp; Bluetooth thermal printing.
+                    Download the v1+v2 cryptographically signed offline Android installer (<span className="font-mono text-zinc-700">JCVcreatives-Photobooth.apk</span>) with native USB OTG &amp; Bluetooth thermal printing.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
                   <a
-                    href="./JCVcreatives-Photobooth.apk"
+                    href="./downloads/JCVcreatives-Photobooth.apk?v=2.7.0"
                     download="JCVcreatives-Photobooth.apk"
                     data-no-fullscreen-enforce="true"
                     onClick={() => soundEffects.playTap()}
@@ -3451,27 +3643,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             );
           })()}
 
-          {/* TAB: Photos / Capture Archive */}
+          {/* TAB: Photos / Capture Archive & Reprint Queue */}
           {activeTab === 'gallery' && (
-            <div className="p-4 bg-white border border-zinc-200 rounded-xl">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-3">
-                Local Capture History ({captures.length} saved sessions)
-              </h4>
+            <div className="p-4 bg-white border border-zinc-200 rounded-xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-bold text-zinc-900">
+                    Customer Photo Archive &amp; Reprint Queue ({captures.length} saved sessions)
+                  </h4>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Select copy count (1x, 2x, 3x) and tap <strong>Reprint Photo</strong> on any session if the printer ran out of paper or produced a bad printout.
+                  </p>
+                </div>
+              </div>
+
               {captures.length === 0 ? (
                 <div className="py-8 text-center text-zinc-400 text-xs">No captures saved yet.</div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
-                  {captures.map((cap) => (
-                    <div
-                      key={cap.id}
-                      className="rounded-lg overflow-hidden border border-zinc-200 bg-zinc-50 flex flex-col justify-between"
-                    >
-                      <img src={cap.compositeDataUrl} alt="Photostrip" className="w-full h-36 object-contain p-1" />
-                      <div className="p-1.5 border-t border-zinc-200 text-[10px] font-mono text-zinc-500 text-center truncate">
-                        {new Date(cap.createdAt).toLocaleTimeString()}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                  {captures.map((cap, idx) => {
+                    const selectedCopies = reprintCopiesMap[cap.id] || 1;
+                    const isThisReprinting = reprintingCaptureId === cap.id;
+                    const fb = reprintFeedback?.id === cap.id ? reprintFeedback : null;
+                    return (
+                      <div
+                        key={cap.id}
+                        className={`rounded-xl overflow-hidden border bg-zinc-50 flex flex-col justify-between ${
+                          idx === 0 ? 'border-zinc-900 ring-1 ring-zinc-900/10' : 'border-zinc-200'
+                        }`}
+                      >
+                        <div className="relative bg-white p-2 flex items-center justify-center">
+                          {idx === 0 && (
+                            <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-zinc-900 text-white text-[9px] font-mono font-bold uppercase">
+                              Latest
+                            </span>
+                          )}
+                          <img
+                            src={cap.compositeDataUrl}
+                            alt="Photostrip"
+                            className="w-full h-44 object-contain"
+                          />
+                        </div>
+
+                        <div className="p-2.5 border-t border-zinc-200 space-y-2 bg-zinc-50">
+                          <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+                            <span>{new Date(cap.createdAt).toLocaleTimeString()}</span>
+                            <div className="flex items-center gap-1">
+                              {[1, 2, 3].map((n) => (
+                                <button
+                                  key={n}
+                                  type="button"
+                                  onClick={() => {
+                                    soundEffects.playTap();
+                                    setReprintCopiesMap((prev) => ({ ...prev, [cap.id]: n }));
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold border cursor-pointer ${
+                                    selectedCopies === n
+                                      ? 'bg-zinc-900 text-white border-zinc-900'
+                                      : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-100'
+                                  }`}
+                                >
+                                  {n}x
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {fb && (
+                            <div
+                              className={`text-[10px] font-medium px-2 py-1 rounded text-center leading-tight ${
+                                fb.ok
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}
+                            >
+                              {fb.msg}
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={reprintingCaptureId !== null}
+                            onClick={() => handleReprintCapture(cap, selectedCopies)}
+                            className="w-full py-2 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5 shrink-0" />
+                            <span>
+                              {isThisReprinting
+                                ? 'Reprinting...'
+                                : `Reprint Photo (${selectedCopies}x)`}
+                            </span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

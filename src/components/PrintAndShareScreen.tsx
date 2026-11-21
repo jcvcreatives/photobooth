@@ -16,9 +16,21 @@ import {
   Share2,
   WifiOff,
   ChevronDown,
+  AlertTriangle,
+  Lock,
+  RefreshCw,
+  CheckCircle2,
+  Usb,
+  Bluetooth,
+  Wrench,
 } from 'lucide-react';
 import { PhotostripResult, ThermalPrinterConfig, RemoteKioskConfig } from '../types';
-import { thermalPrinterService } from '../services/thermalPrinter';
+import {
+  thermalPrinterService,
+  PrinterDiagnosticReport,
+  PrinterErrorCategory,
+} from '../services/thermalPrinter';
+import { analyticsService } from '../services/analytics';
 import { paymentService, LAYOUT_VOUCHER_META } from '../services/payment';
 import { soundEffects } from '../services/soundEffects';
 import {
@@ -80,6 +92,10 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   const [anotherCopyError, setAnotherCopyError] = useState('');
   const [anotherCopySuccess, setAnotherCopySuccess] = useState('');
   const [isRedeemingCopyVoucher, setIsRedeemingCopyVoucher] = useState(false);
+  const [showAdminReprintModal, setShowAdminReprintModal] = useState(false);
+  const [adminReprintPasscode, setAdminReprintPasscode] = useState('');
+  const [adminReprintError, setAdminReprintError] = useState('');
+  const [adminReprintCopies, setAdminReprintCopies] = useState<number>(1);
   const [activeCanvas, setActiveCanvas] = useState<HTMLCanvasElement>(canvas);
   const [isPrinting, setIsPrinting] = useState(false);
   const [, setPrintedSuccessfully] = useState(false);
@@ -91,6 +107,29 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   const [thermalPreviewUrl, setThermalPreviewUrl] = useState<string>(result.thermalRasterDataUrl || '');
   const [countdownSeconds, setCountdownSeconds] = useState(60);
 
+  // Printer Error State & Diagnostic Modal
+  const [printerErrorReport, setPrinterErrorReport] = useState<PrinterDiagnosticReport | null>(null);
+  const [showPrinterDiagnosticModal, setShowPrinterDiagnosticModal] = useState<boolean>(false);
+  const [isCheckingConnection, setIsCheckingConnection] = useState<boolean>(false);
+  const [diagnosticFeedback, setDiagnosticFeedback] = useState<string>('');
+  const [diagnosticGuideTab, setDiagnosticGuideTab] = useState<'auto' | 'paper_jam' | 'connection'>('auto');
+  const [staffCallNotified, setStaffCallNotified] = useState<boolean>(false);
+  const [paperLevelPercent, setPaperLevelPercent] = useState<number>(() =>
+    analyticsService.getTelemetry().paperRemainingPercent ?? 100
+  );
+
+  const handleCallGobbleHausStaff = () => {
+    soundEffects.playSuccessChime();
+    setTimeout(() => {
+      soundEffects.playCountdownBeep(true);
+    }, 260);
+    setStaffCallNotified(true);
+    setCountdownSeconds(60);
+    setDiagnosticFeedback(
+      '👋 Gobble Haus crew chime sounded! Wave over any staff member at the counter — we gotchu bestie! ✨'
+    );
+  };
+
   // Dispenser animation
   const [feedAnimationKey, setFeedAnimationKey] = useState<number>(0);
   const [isFeeding, setIsFeeding] = useState<boolean>(true);
@@ -99,9 +138,48 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     thermalPrinterService.isSilentBridgeActive()
   );
   const hasAutoPrintedRef = React.useRef<boolean>(false);
-  const hasAutoSavedPhotoRef = React.useRef<boolean>(false);
 
   const confettiCleanupRef = React.useRef<(() => void) | null>(null);
+
+  const triggerPrinterErrorState = (
+    rawErrorMsg?: string,
+    overrideCategory?: PrinterErrorCategory,
+    autoOpenModal: boolean = true
+  ) => {
+    const currentPaper = analyticsService.getTelemetry().paperRemainingPercent ?? 100;
+    setPaperLevelPercent(currentPaper);
+    const status = thermalPrinterService.getStatus();
+    const classified = thermalPrinterService.classifyPrinterError(
+      rawErrorMsg || status.error,
+      overrideCategory === 'paper_out' ? 0 : currentPaper
+    );
+    const finalCategory: PrinterErrorCategory =
+      overrideCategory && overrideCategory !== 'none' ? overrideCategory : classified.category;
+    const report: PrinterDiagnosticReport = {
+      healthy: false,
+      category: finalCategory,
+      title:
+        finalCategory === 'paper_jam'
+          ? 'Paper Jam or Feed Stall Detected'
+          : finalCategory === 'paper_out'
+          ? 'Out of Thermal Paper'
+          : 'Printer Disconnected',
+      message:
+        rawErrorMsg ||
+        status.error ||
+        classified.message,
+      connectionType: status.connectionType,
+      deviceName: status.deviceName || 'Thermal Printer',
+      paperRemainingPercent: currentPaper,
+      checklist: classified.checklist,
+      timestamp: Date.now(),
+    };
+    setIsFeeding(false);
+    setPrinterErrorReport(report);
+    if (autoOpenModal) {
+      setShowPrinterDiagnosticModal(true);
+    }
+  };
 
   const triggerFunConfetti = () => {
     try {
@@ -125,25 +203,29 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   };
 
   useEffect(() => {
+    const currentPaper = analyticsService.getTelemetry().paperRemainingPercent ?? 100;
+    setPaperLevelPercent(currentPaper);
+
     const timer = triggerFeedAnimation(true);
-    const unsub = thermalPrinterService.subscribe(() => {
+    const unsub = thermalPrinterService.subscribe((status) => {
       setSilentBridgeReady(thermalPrinterService.isSilentBridgeActive());
+      // Automatically detect live USB cable unplug, Bluetooth link drop, or hardware stall
+      if (!status.isConnected || status.error) {
+        triggerPrinterErrorState(
+          status.error || `${status.deviceName} disconnected during session.`,
+          status.errorCategory || 'disconnected',
+          true
+        );
+      }
     });
 
-    // Automatically save the photo taken directly to the device
-    if (!hasAutoSavedPhotoRef.current && result.compositeDataUrl) {
-      hasAutoSavedPhotoRef.current = true;
-      try {
-        const a = document.createElement('a');
-        a.href = result.compositeDataUrl;
-        a.download = `Photobooth-${result.id || Date.now()}.jpg`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } catch {
-        // Ignore if blocked by restricted WebView
-      }
+    // Check if paper roll telemetry is already depleted (0%)
+    if (currentPaper <= 0) {
+      triggerPrinterErrorState(
+        'Thermal paper roll is empty (0% remaining). Load a fresh thermal paper roll and tap Reprint.',
+        'paper_out',
+        true
+      );
     }
 
     // Automatically print 1 copy (1 Voucher = 1 Print Copy) to connected printer on session completion
@@ -163,14 +245,25 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           setIsPrinting(false);
           if (res.success) {
             setPrintedSuccessfully(true);
+            if (currentPaper > 0) {
+              setPrinterErrorReport(null);
+            }
             if (res.previewDataUrl) {
               setThermalPreviewUrl(res.previewDataUrl);
             }
             setSilentBridgeReady(thermalPrinterService.isSilentBridgeActive());
+          } else {
+            triggerPrinterErrorState(
+              res.error || 'Printer could not complete the print job. Check connection or paper roll.',
+              res.errorCategory,
+              true
+            );
           }
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           setIsPrinting(false);
+          const msg = err instanceof Error ? err.message : 'Printer communication error.';
+          triggerPrinterErrorState(msg, undefined, true);
         });
     }
 
@@ -235,8 +328,18 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     }
   };
 
-  // Auto return countdown
+  // Auto return countdown (paused while any reprint, printer error diagnostic, or QR modal is open)
   useEffect(() => {
+    if (
+      showPrinterDiagnosticModal ||
+      showAdminReprintModal ||
+      showPrintAnotherCopyModal ||
+      showQrModal ||
+      showPrintPreview ||
+      Boolean(printerErrorReport)
+    ) {
+      return;
+    }
     if (countdownSeconds <= 0) {
       onDone();
       return;
@@ -247,7 +350,91 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [countdownSeconds, onDone]);
+  }, [
+    countdownSeconds,
+    onDone,
+    showPrinterDiagnosticModal,
+    showAdminReprintModal,
+    showPrintAnotherCopyModal,
+    showQrModal,
+    showPrintPreview,
+    printerErrorReport,
+  ]);
+
+  // Run Live Connection & Paper Diagnostics inside the Diagnostic Modal
+  const handleCheckPrinterConnection = async () => {
+    soundEffects.playTap();
+    setIsCheckingConnection(true);
+    setDiagnosticFeedback('Checking printer link & paper sensor status...');
+    setCountdownSeconds(60);
+
+    const currentPaper = analyticsService.getTelemetry().paperRemainingPercent ?? 100;
+    setPaperLevelPercent(currentPaper);
+    const report = await thermalPrinterService.runDiagnosticCheck(currentPaper);
+    setIsCheckingConnection(false);
+
+    if (report.healthy) {
+      setPrinterErrorReport(null);
+      setDiagnosticFeedback(`✓ Connected to ${report.deviceName}! Ready to reprint.`);
+      soundEffects.playSuccessChime();
+    } else {
+      setPrinterErrorReport(report);
+      setDiagnosticFeedback(`⚠ ${report.title}: ${report.message}`);
+    }
+  };
+
+  // 1-Tap Direct Re-Pair USB or Bluetooth from inside the Diagnostic Modal
+  const handleQuickPairHardware = async (mode: 'usb' | 'bluetooth') => {
+    soundEffects.playTap();
+    setIsCheckingConnection(true);
+    setDiagnosticFeedback(
+      mode === 'bluetooth'
+        ? 'Scanning & connecting Bluetooth thermal printer...'
+        : 'Connecting to USB / OTG thermal printer...'
+    );
+    setCountdownSeconds(60);
+
+    const ok =
+      mode === 'bluetooth'
+        ? await thermalPrinterService.connectBluetooth()
+        : await thermalPrinterService.connectUSB();
+    setIsCheckingConnection(false);
+
+    const status = thermalPrinterService.getStatus();
+    if (ok && status.isConnected) {
+      setPrinterErrorReport(null);
+      setDiagnosticFeedback(`✓ Connected to ${status.deviceName}! Tap "Reprint Photo Now".`);
+      soundEffects.playSuccessChime();
+    } else {
+      triggerPrinterErrorState(
+        status.error || `Could not connect via ${mode.toUpperCase()}. Verify power and cable/pairing.`,
+        'disconnected',
+        true
+      );
+      setDiagnosticFeedback(`⚠ ${status.error || 'Connection unsuccessful.'}`);
+    }
+  };
+
+  // Mark paper roll reloaded / jam cleared (resets paper telemetry to 100%)
+  const handleMarkPaperReloadedAndJamCleared = async () => {
+    soundEffects.playTap();
+    await analyticsService.resetPaperRoll();
+    setPaperLevelPercent(100);
+    thermalPrinterService.clearPrinterError();
+    setDiagnosticFeedback('✓ Paper roll reset to 100% & paper jam state cleared. Tap "Reprint Photo Now".');
+  };
+
+  // User-friendly 1-Tap Reprint directly from the Printer Error Diagnostic Modal
+  const handleDiagnosticReprintNow = async () => {
+    soundEffects.playTap();
+    setDiagnosticFeedback('Sending photo receipt to thermal printer...');
+    setCountdownSeconds(60);
+    setShowPrinterDiagnosticModal(false);
+    await executePrintJob(activeCanvas, {
+      ...config.thermalPrinter,
+      printCopies: 1,
+    });
+  };
 
   // Execute print job (1 Voucher = 1 Print Copy, 100% silent)
   const executePrintJob = async (
@@ -275,10 +462,18 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     setIsPrinting(false);
     if (printResult.success) {
       setPrintedSuccessfully(true);
+      setPrinterErrorReport(null);
+      setDiagnosticFeedback('');
       if (printResult.previewDataUrl) {
         setThermalPreviewUrl(printResult.previewDataUrl);
       }
       soundEffects.playSuccessChime();
+    } else {
+      triggerPrinterErrorState(
+        printResult.error || 'Print failed — check paper jam or printer connection.',
+        printResult.errorCategory,
+        true
+      );
     }
   };
 
@@ -314,6 +509,47 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       }, 900);
     } else {
       setAnotherCopyError(res.message);
+    }
+  };
+
+  // Admin Reprint Override when printer runs out of paper or printout is bad
+  const handleAdminReprintSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const expectedPasscode = (config.passcodeAdminPin || '1234').trim();
+    if (adminReprintPasscode.trim() !== expectedPasscode) {
+      setAdminReprintError('Incorrect Admin Passcode');
+      return;
+    }
+
+    soundEffects.playTap();
+    const copiesToPrint = Math.max(1, Math.min(5, adminReprintCopies || 1));
+    setShowAdminReprintModal(false);
+    setAdminReprintPasscode('');
+    setAdminReprintError('');
+    setCountdownSeconds(60);
+
+    soundEffects.playTap();
+    setIsPrinting(true);
+    triggerFeedAnimation(true);
+
+    const printResult = await thermalPrinterService.print(
+      activeCanvas,
+      {
+        ...config.thermalPrinter,
+        printCopies: copiesToPrint,
+      },
+      (_pct, status) => {
+        setPrintStatusText(status);
+      }
+    );
+
+    setIsPrinting(false);
+    if (printResult.success) {
+      setPrintedSuccessfully(true);
+      if (printResult.previewDataUrl) {
+        setThermalPreviewUrl(printResult.previewDataUrl);
+      }
+      soundEffects.playSuccessChime();
     }
   };
 
@@ -405,16 +641,89 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
         </button>
 
         <h1 className="text-lg sm:text-xl font-bold tracking-tight text-zinc-950 leading-tight">
-          Your photos are ready
+          {printerErrorReport ? 'Oops! Tiny printer hiccup, bestie 🫶' : 'Your photos are ready'}
         </h1>
         <p className="text-[11px] sm:text-xs text-zinc-500">
-          {isPrinting && printStatusText
+          {printerErrorReport
+            ? 'No stress — your snaps are 100% safe! Wave over our Gobble Haus crew ✨'
+            : isPrinting && printStatusText
             ? printStatusText
             : isFeeding
             ? `Printing ${activeCopiesCount} ${activeCopiesCount === 1 ? 'copy' : 'copies'} below...`
             : 'Collect & tear your photo receipt from the printer below'}
         </p>
       </div>
+
+      {/* Automatic Gen Z Friendly Printer Error State Alert Card */}
+      {printerErrorReport && (
+        <div className="w-full max-w-xs bg-gradient-to-br from-rose-50 via-amber-50/70 to-orange-50 border-2 border-rose-300 rounded-2xl p-3 shadow-sm flex flex-col gap-2 animate-fadeIn shrink-0">
+          <div className="flex items-start gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 mt-0.5 text-sm shadow-2xs">
+              🥡
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9.5px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-600 text-white">
+                  ✨ Vibe Check • Printer Pause
+                </span>
+                <span className="text-[11px] font-extrabold text-rose-950 truncate">
+                  {printerErrorReport.title}
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-800 font-medium leading-snug mt-1">
+                We ran into a little printer problem! 🥺 <strong>Your iconic snaps are 100% saved.</strong> Wave over our friendly <strong>Gobble Haus staff</strong> for a quick assist &amp; free reprint! 🍗🍦
+              </p>
+            </div>
+          </div>
+
+          {/* 1-Tap Call Gobble Haus Crew Chime Button */}
+          <button
+            type="button"
+            onClick={() => {
+              handleCallGobbleHausStaff();
+              setShowPrinterDiagnosticModal(true);
+            }}
+            className={`w-full py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition ${
+              staffCallNotified
+                ? 'bg-amber-400 text-zinc-950 border border-amber-500 animate-pulse'
+                : 'bg-zinc-950 hover:bg-zinc-800 text-white'
+            }`}
+          >
+            <span>{staffCallNotified ? '👋' : '🔔'}</span>
+            <span>
+              {staffCallNotified
+                ? 'Gobble Haus Crew Pinged! Wave us over ✨'
+                : 'Call Gobble Haus Staff for Assist 🫶'}
+            </span>
+          </button>
+
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              disabled={isPrinting || isCheckingConnection}
+              onClick={() => {
+                soundEffects.playTap();
+                setDiagnosticFeedback('');
+                setShowPrinterDiagnosticModal(true);
+                handleCheckPrinterConnection();
+              }}
+              className="py-1.5 px-2.5 rounded-xl bg-white hover:bg-rose-100/70 border border-rose-300 text-rose-900 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingConnection ? 'animate-spin' : ''}`} />
+              <span>Check Connection</span>
+            </button>
+            <button
+              type="button"
+              disabled={isPrinting}
+              onClick={handleDiagnosticReprintNow}
+              className="py-1.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Reprint Now</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Thermal Output Dispenser */}
       <div className="my-auto w-full flex flex-col items-center py-1 shrink-0">
@@ -556,6 +865,43 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           </span>
         </button>
 
+        {/* Button 3: Printer Error / Paper Jam / Check Connection & Reprint Diagnostic Modal Trigger */}
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            disabled={isPrinting}
+            onClick={() => {
+              soundEffects.playTap();
+              setDiagnosticFeedback('');
+              setShowPrinterDiagnosticModal(true);
+            }}
+            className={`py-1.5 px-2.5 rounded-full border text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 ${
+              printerErrorReport
+                ? 'border-rose-400 bg-rose-100 hover:bg-rose-200 text-rose-950 font-bold'
+                : 'border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-800'
+            }`}
+          >
+            <Wrench className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
+            <span>{printerErrorReport ? 'Fix Printer Error' : 'Check Connection'}</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isPrinting}
+            onClick={() => {
+              soundEffects.playTap();
+              setAdminReprintPasscode('');
+              setAdminReprintError('');
+              setAdminReprintCopies(1);
+              setShowAdminReprintModal(true);
+            }}
+            className="py-1.5 px-2.5 rounded-full border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span>Admin Reprint</span>
+          </button>
+        </div>
+
         {/* Button 5: Ready? Let's snap! */}
         <button
           onClick={() => {
@@ -570,7 +916,13 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
 
         {/* Starting over countdown timer */}
         <div className="text-center text-[10px] text-zinc-400">
-          Starting over in {countdownSeconds}s
+          {showPrinterDiagnosticModal ||
+          showAdminReprintModal ||
+          showPrintAnotherCopyModal ||
+          showQrModal ||
+          Boolean(printerErrorReport)
+            ? 'Timer paused while modal or printer alert is open'
+            : `Starting over in ${countdownSeconds}s`}
         </div>
 
         {/* 1-Click Auto-Print Setup link if using OS System Driver without Silent Bridge yet */}
@@ -794,6 +1146,416 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Out of Paper / Bad Printout — Admin Reprint Override Modal */}
+      {showAdminReprintModal && (
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-[#faf8f5] rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-zinc-200 flex flex-col items-center text-center">
+            <div className="w-full flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAdminReprintModal(false)}
+                className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-base mb-3 shadow-sm">
+              <Printer className="w-5 h-5" />
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 border border-amber-200 text-[10px] uppercase font-mono tracking-widest text-amber-800 mb-2">
+              <span>Paper Recovery • No Voucher Needed</span>
+            </div>
+
+            <h3 className="text-lg font-extrabold text-zinc-950 mb-1">
+              Admin Photo Reprint
+            </h3>
+            <p className="text-xs text-zinc-500 mb-3 leading-relaxed">
+              Reload the thermal paper roll or clear any paper jam, then enter the <strong>Admin Passcode</strong> below to reprint this customer&apos;s photo immediately.
+            </p>
+
+            <form
+              onSubmit={handleAdminReprintSubmit}
+              className="w-full space-y-3 bg-white p-4 rounded-2xl border border-zinc-200 shadow-xs"
+            >
+              <div className="flex items-center justify-between gap-2 text-xs font-semibold text-zinc-700">
+                <span>Copies to Reprint:</span>
+                <div className="flex items-center gap-1.5">
+                  {[1, 2, 3].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        setAdminReprintCopies(num);
+                      }}
+                      className={`px-3 py-1 rounded-lg font-mono text-xs font-bold border transition cursor-pointer ${
+                        adminReprintCopies === num
+                          ? 'bg-zinc-900 text-white border-zinc-900'
+                          : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                      }`}
+                    >
+                      {num}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="relative">
+                <Lock className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={adminReprintPasscode}
+                  onChange={(e) => {
+                    setAdminReprintPasscode(e.target.value);
+                    setAdminReprintError('');
+                  }}
+                  placeholder="ENTER ADMIN PASSCODE..."
+                  autoFocus
+                  autoComplete="off"
+                  className="w-full pl-9 pr-4 py-3 rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white text-center tracking-widest font-mono text-sm font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black transition"
+                />
+              </div>
+
+              {adminReprintError && (
+                <p className="text-xs font-medium text-rose-500">{adminReprintError}</p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-3 rounded-full bg-black hover:bg-zinc-800 active:scale-98 text-white font-semibold text-xs sm:text-sm transition cursor-pointer shadow-sm flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                <span>
+                  Reprint {adminReprintCopies} {adminReprintCopies === 1 ? 'Copy' : 'Copies'} Now
+                </span>
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={() => setShowAdminReprintModal(false)}
+              className="mt-4 text-xs text-zinc-500 hover:text-zinc-900 font-medium cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* User-Friendly 'Printer Error' — 'Reprint' & 'Check Connection' Diagnostic Modal */}
+      {showPrinterDiagnosticModal && (() => {
+        const liveStatus = thermalPrinterService.getStatus();
+        const activeCategory: PrinterErrorCategory =
+          diagnosticGuideTab === 'paper_jam'
+            ? 'paper_jam'
+            : diagnosticGuideTab === 'connection'
+            ? 'disconnected'
+            : printerErrorReport?.category ||
+              (paperLevelPercent <= 0
+                ? 'paper_out'
+                : !liveStatus.isConnected || liveStatus.error
+                ? liveStatus.errorCategory || 'disconnected'
+                : 'none');
+
+        const activeInfo =
+          activeCategory === 'paper_jam'
+            ? thermalPrinterService.classifyPrinterError('paper jam stall', paperLevelPercent)
+            : activeCategory === 'paper_out'
+            ? thermalPrinterService.classifyPrinterError('out of paper', 0)
+            : activeCategory === 'disconnected'
+            ? thermalPrinterService.classifyPrinterError(
+                printerErrorReport?.message || liveStatus.error || 'Printer disconnected',
+                paperLevelPercent
+              )
+            : {
+                category: 'none' as PrinterErrorCategory,
+                title: 'Printer Connected & Ready',
+                message: `${liveStatus.deviceName} is connected. If your printout had a paper jam or didn't feed cleanly, clear the roller and tap Reprint below.`,
+                checklist: [
+                  'Ensure thermal paper is loaded straight with the glossy side facing the print head.',
+                  'Close the printer top cover firmly until both sides click shut.',
+                  'Tap "Check Connection" to verify link health or tap "Reprint Photo Now".',
+                ],
+              };
+
+        const isErrorActive = Boolean(printerErrorReport) || !liveStatus.isConnected || paperLevelPercent <= 0;
+
+        return (
+          <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn">
+            <div
+              data-kiosk-scrollable="true"
+              data-admin-scrollable="true"
+              style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+              className="bg-[#faf8f5] rounded-3xl p-4 sm:p-5 max-w-md w-full max-h-[92dvh] overflow-y-auto shadow-2xl border border-zinc-200 flex flex-col text-left"
+            >
+              {/* Top Modal Bar */}
+              <div className="w-full flex items-center justify-between mb-2">
+                <div
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] uppercase font-mono font-extrabold tracking-wider border ${
+                    isErrorActive
+                      ? 'bg-rose-100 border-rose-300 text-rose-800'
+                      : 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                  }`}
+                >
+                  {isErrorActive ? (
+                    <>
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>
+                        {activeCategory === 'paper_jam'
+                          ? 'Paper Jam Detected'
+                          : activeCategory === 'paper_out'
+                          ? 'Paper Empty'
+                          : 'Printer Error'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Printer Diagnostics Ready</span>
+                    </>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrinterDiagnosticModal(false)}
+                  className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Friendly Gen Z Customer Reassurance & Call Gobble Haus Crew Card */}
+              <div className="bg-gradient-to-br from-amber-50 via-orange-50/80 to-rose-50 border-2 border-amber-300 rounded-2xl p-3.5 mb-3 shadow-xs">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-zinc-950 text-white flex items-center justify-center text-lg shrink-0 shadow-xs">
+                    🫶
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-200/90 text-amber-950 text-[9.5px] font-mono font-extrabold uppercase tracking-wider mb-1">
+                      <span>✨ Don&apos;t Panic Bestie • Snaps 100% Saved</span>
+                    </div>
+                    <h3 className="text-sm sm:text-base font-black text-zinc-950 leading-tight">
+                      Oops! We ran into a tiny printer hiccup 🥺
+                    </h3>
+                    <p className="text-[11.5px] text-zinc-700 mt-1 leading-relaxed">
+                      Our thermal printer needs a quick TLC moment ({activeInfo.title.toLowerCase()}). Wave over any friendly <strong>Gobble Haus staff member</strong> and we&apos;ll fix it &amp; reprint your strip right away! 🍗🍦
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCallGobbleHausStaff}
+                  className={`mt-2.5 w-full py-2.5 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition ${
+                    staffCallNotified
+                      ? 'bg-amber-400 text-zinc-950 border-2 border-zinc-900'
+                      : 'bg-zinc-950 hover:bg-zinc-800 text-white'
+                  }`}
+                >
+                  <span className="text-sm">{staffCallNotified ? '👋' : '🔔'}</span>
+                  <span>
+                    {staffCallNotified
+                      ? 'Crew Chime Sounded! Wave Over Gobble Haus Staff ✨'
+                      : 'Ping Gobble Haus Staff for Quick Assist (Chime) 🥡'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Technical Detected Issue Summary for Staff / Quick Check */}
+              <div className="flex items-center justify-between gap-2 mb-1.5 px-0.5">
+                <span className="text-[11px] font-extrabold text-zinc-900 uppercase tracking-wide font-mono">
+                  👨‍🍳 Gobble Haus Staff Quick Fix &amp; Reprint
+                </span>
+                <span className="text-[10px] font-semibold text-zinc-500">
+                  {activeInfo.title}
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-600 mb-2.5 leading-snug">
+                {printerErrorReport?.message || activeInfo.message}
+              </p>
+
+              {/* Live Hardware & Paper Roll Status Grid */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="bg-white rounded-2xl p-2.5 border border-zinc-200 shadow-2xs">
+                  <div className="text-[10px] font-mono uppercase text-zinc-400 font-bold">
+                    Printer Connection
+                  </div>
+                  <div className="text-xs font-extrabold text-zinc-900 truncate mt-0.5">
+                    {liveStatus.deviceName || 'Thermal Printer'}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        liveStatus.isConnected && !printerErrorReport
+                          ? 'bg-emerald-500'
+                          : 'bg-rose-500 animate-pulse'
+                      }`}
+                    />
+                    <span
+                      className={`text-[10.5px] font-bold ${
+                        liveStatus.isConnected && !printerErrorReport
+                          ? 'text-emerald-700'
+                          : 'text-rose-700'
+                      }`}
+                    >
+                      {liveStatus.isConnected && !printerErrorReport
+                        ? `Connected (${liveStatus.connectionType.toUpperCase()})`
+                        : `Check ${liveStatus.connectionType.toUpperCase()} Link`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl p-2.5 border border-zinc-200 shadow-2xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-zinc-400 font-bold">
+                      Paper Roll Sensor
+                    </span>
+                    <span
+                      className={`text-[10.5px] font-mono font-extrabold ${
+                        paperLevelPercent <= 15 ? 'text-rose-600' : 'text-zinc-800'
+                      }`}
+                    >
+                      {paperLevelPercent}%
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-zinc-100 rounded-full overflow-hidden my-1">
+                    <div
+                      style={{ width: `${Math.max(4, Math.min(100, paperLevelPercent))}%` }}
+                      className={`h-full rounded-full transition-all ${
+                        paperLevelPercent <= 15
+                          ? 'bg-rose-500'
+                          : paperLevelPercent <= 35
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      }`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleMarkPaperReloadedAndJamCleared}
+                    className="text-[10px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg py-0.5 px-2 text-center cursor-pointer transition"
+                  >
+                    ✓ Paper Reloaded / Jam Cleared
+                  </button>
+                </div>
+              </div>
+
+              {/* Diagnostic Guide Switcher (Auto Detected / Paper Jam Steps / Connection Steps) */}
+              <div className="flex items-center gap-1 bg-zinc-200/70 p-1 rounded-xl text-[11px] font-bold mb-2">
+                {(
+                  [
+                    { id: 'auto', label: 'Detected Issue' },
+                    { id: 'paper_jam', label: 'Paper Jam Fix' },
+                    { id: 'connection', label: 'USB / Bluetooth Fix' },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      soundEffects.playTap();
+                      setDiagnosticGuideTab(tab.id);
+                    }}
+                    className={`flex-1 py-1 px-2 rounded-lg text-center transition cursor-pointer ${
+                      diagnosticGuideTab === tab.id
+                        ? 'bg-white text-zinc-950 shadow-2xs'
+                        : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Step-by-Step Recovery Checklist */}
+              <div className="bg-white rounded-2xl p-3 border border-zinc-200 shadow-2xs space-y-1.5 mb-3">
+                <div className="text-[10.5px] font-mono uppercase tracking-wider font-extrabold text-zinc-500">
+                  Quick Recovery Steps
+                </div>
+                {activeInfo.checklist.map((step, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-xs text-zinc-700 leading-snug">
+                    <span className="w-4 h-4 rounded-full bg-zinc-900 text-white text-[10px] font-mono font-bold flex items-center justify-center shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <span>{step}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Quick Hardware Re-Pairing Buttons (USB Cord & Bluetooth) */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <button
+                  type="button"
+                  disabled={isCheckingConnection || isPrinting}
+                  onClick={() => handleQuickPairHardware('bluetooth')}
+                  className="py-2 px-2.5 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-800 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 transition"
+                >
+                  <Bluetooth className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                  <span>Reconnect Bluetooth</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isCheckingConnection || isPrinting}
+                  onClick={() => handleQuickPairHardware('usb')}
+                  className="py-2 px-2.5 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-800 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 transition"
+                >
+                  <Usb className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Reconnect USB Cord</span>
+                </button>
+              </div>
+
+              {/* Live Diagnostic Status Message */}
+              {diagnosticFeedback && (
+                <div
+                  className={`mb-3 px-3 py-2 rounded-xl border text-xs font-semibold ${
+                    diagnosticFeedback.startsWith('✓')
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-900'
+                  }`}
+                >
+                  {diagnosticFeedback}
+                </div>
+              )}
+
+              {/* Primary Action Buttons: 'Check Connection' & 'Reprint Photo Now' */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={isCheckingConnection || isPrinting}
+                  onClick={handleCheckPrinterConnection}
+                  className="py-3 px-3 rounded-full border-2 border-zinc-900 bg-white hover:bg-zinc-100 active:scale-98 text-zinc-900 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-40"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isCheckingConnection ? 'animate-spin' : ''}`} />
+                  <span>{isCheckingConnection ? 'Checking...' : 'Check Connection'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isPrinting || isCheckingConnection}
+                  onClick={handleDiagnosticReprintNow}
+                  className="py-3 px-3 rounded-full bg-black hover:bg-zinc-800 active:scale-98 text-white font-bold text-xs transition cursor-pointer shadow-md flex items-center justify-center gap-1.5 disabled:opacity-40"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>{isPrinting ? 'Reprinting...' : 'Reprint Photo Now'}</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPrinterDiagnosticModal(false)}
+                className="mt-3 text-center text-xs text-zinc-500 hover:text-zinc-900 font-medium cursor-pointer"
+              >
+                Close Diagnostic Window
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

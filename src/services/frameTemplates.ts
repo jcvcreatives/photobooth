@@ -23,6 +23,19 @@ export const THEME_GROUPS: ThemeGroup[] = [
  */
 export const THERMAL_FRAME_THEMES: FrameTheme[] = [
   {
+    id: 'gobble_old_mac',
+    name: 'Gobble Haus Mac',
+    category: 'gobble',
+    background: '#ffffff',
+    borderStyle: 'old_apple_mac',
+    textColor: '#000000',
+    accentColor: '#000000',
+    headerText: 'GOBBLE MAC 128K • SYSTEM 1.0',
+    footerText: 'HELLO, BUSOG! • INASAL & FLOAT OS',
+    dateVisible: true,
+    cornerIcon: '🖥️',
+  },
+  {
     id: 'gobble_old_phone',
     name: 'Gobble Haus Phone',
     category: 'gobble',
@@ -146,6 +159,19 @@ export const THERMAL_FRAME_THEMES: FrameTheme[] = [
  * Matching 6 themes with vibrant colors for phone QR & GIF downloads.
  */
 export const DIGITAL_COLOR_THEMES: FrameTheme[] = [
+  {
+    id: 'gobble_old_mac',
+    name: 'Gobble Haus Mac',
+    category: 'gobble',
+    background: '#f5f0e1',
+    borderStyle: 'old_apple_mac',
+    textColor: '#1c1917',
+    accentColor: '#44403c',
+    headerText: 'GOBBLE MAC 128K • SYSTEM 1.0',
+    footerText: 'HELLO, BUSOG! • INASAL & FLOAT OS',
+    dateVisible: true,
+    cornerIcon: '🖥️',
+  },
   {
     id: 'gobble_old_phone',
     name: 'Gobble Haus Phone',
@@ -673,9 +699,441 @@ function drawGobbleFrameTopAndBottomArt(
   };
 
   // =========================================================================
+  // 0A. OLD APPLE MACINTOSH COMPUTER THEME ('old_apple_mac' / 'gobble_old_mac')
+  // =========================================================================
+  if (styleId === 'old_apple_mac' || theme.id === 'gobble_old_mac') {
+    const macTopY = 20 * s;
+    const macBottomY = canvasHeight - 16 * s;
+    const innerPad = 14 * s;
+    const innerLeftX = leftX + innerPad;
+    const innerRightX = rightX - innerPad;
+    const innerW = contentW - innerPad * 2;
+
+    // Helper: Draw Iconic Bitten Retro Apple Silhouette
+    const drawRetroBittenApple = (cx: number, cy: number, r: number, filled: boolean = true) => {
+      ctx.save();
+      ctx.beginPath();
+      // Left & right lobes of the apple
+      ctx.moveTo(cx, cy - r * 0.55);
+      ctx.bezierCurveTo(cx - r * 0.55, cy - r * 0.95, cx - r * 1.15, cy - r * 0.35, cx - r * 0.95, cy + r * 0.3);
+      ctx.bezierCurveTo(cx - r * 0.8, cy + r * 0.85, cx - r * 0.35, cy + r * 1.05, cx - r * 0.08, cy + r * 0.82);
+      ctx.bezierCurveTo(cx + r * 0.08, cy + r * 0.82, cx + r * 0.35, cy + r * 1.05, cx + r * 0.72, cy + r * 0.72);
+      // Right side with bite indentation
+      ctx.bezierCurveTo(cx + r * 0.92, cy + r * 0.5, cx + r * 0.95, cy + r * 0.35, cx + r * 0.82, cy + r * 0.25);
+      ctx.arc(cx + r * 0.98, cy - r * 0.05, r * 0.36, Math.PI * 0.68, -Math.PI * 0.68, true);
+      ctx.bezierCurveTo(cx + r * 0.82, cy - r * 0.78, cx + r * 0.42, cy - r * 0.92, cx, cy - r * 0.55);
+      ctx.closePath();
+      if (filled) ctx.fill();
+      else ctx.stroke();
+
+      // Top leaf
+      ctx.beginPath();
+      ctx.moveTo(cx + r * 0.02, cy - r * 0.65);
+      ctx.quadraticCurveTo(cx + r * 0.05, cy - r * 1.15, cx + r * 0.48, cy - r * 1.18);
+      ctx.quadraticCurveTo(cx + r * 0.42, cy - r * 0.72, cx + r * 0.02, cy - r * 0.65);
+      ctx.closePath();
+      if (filled) ctx.fill();
+      else ctx.stroke();
+      ctx.restore();
+    };
+
+    // 1. Outer 1984 Macintosh 128K All-in-One Computer Chassis
+    ctx.lineWidth = 4 * s;
+    ctx.strokeStyle = ink;
+    drawRoundedRectPath(leftX, macTopY, contentW, macBottomY - macTopY, 24 * s);
+    ctx.stroke();
+
+    // Inner recessed front-bezel seam line
+    ctx.lineWidth = 1.6 * s;
+    drawRoundedRectPath(
+      leftX + 5 * s,
+      macTopY + 5 * s,
+      contentW - 10 * s,
+      macBottomY - macTopY - 10 * s,
+      20 * s
+    );
+    ctx.stroke();
+
+    // Top Cooling Vent Slots on Upper Bezel
+    ctx.lineWidth = 2.2 * s;
+    for (let v = -5; v <= 5; v++) {
+      const vx = centerX + v * 20 * s;
+      ctx.beginPath();
+      ctx.moveTo(vx, macTopY + 11 * s);
+      ctx.lineTo(vx, macTopY + 19 * s);
+      ctx.stroke();
+    }
+
+    // 2. Classic 1984 Macintosh System 1.0 Desktop Menu Bar
+    const menuBarY = macTopY + 25 * s;
+    const menuBarH = 26 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fafaf9';
+    drawRoundedRectPath(innerLeftX, menuBarY, innerW, menuBarH, 6 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    // Bitten Apple icon on far left of Menu Bar
+    ctx.fillStyle = ink;
+    drawRetroBittenApple(innerLeftX + 15 * s, menuBarY + 14 * s, 6.5 * s, true);
+
+    // Classic Mac OS Menu Items: File  Edit  View  Inasal  Float  Gobble
+    ctx.textAlign = 'left';
+    fillFittedText(
+      'File   Edit   Inasal   Float   Gobble',
+      innerLeftX + 30 * s,
+      menuBarY + 17.5 * s,
+      innerW - 140 * s,
+      11.5 * s,
+      '900',
+      'monospace'
+    );
+
+    ctx.textAlign = 'right';
+    fillFittedText(
+      'GOBBLE OS 1.0',
+      innerRightX - 8 * s,
+      menuBarY + 17.5 * s,
+      105 * s,
+      10.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // 3. Classic Mac Window Title Bar with Horizontal Pinstripes & Close Box
+    const winTitleY = menuBarY + menuBarH + 7 * s;
+    const winTitleH = 30 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#e7e5e4';
+    ctx.fillRect(innerLeftX, winTitleY, innerW, winTitleH);
+    ctx.strokeRect(innerLeftX, winTitleY, innerW, winTitleH);
+
+    // Horizontal Macintosh Title Bar Pinstripes
+    ctx.lineWidth = 1.4 * s;
+    for (let py = winTitleY + 5 * s; py <= winTitleY + winTitleH - 5 * s; py += 4 * s) {
+      ctx.beginPath();
+      ctx.moveTo(innerLeftX + 6 * s, py);
+      ctx.lineTo(innerRightX - 6 * s, py);
+      ctx.stroke();
+    }
+
+    // Left Window Close Box [□]
+    ctx.lineWidth = 2 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fafaf9';
+    ctx.fillRect(innerLeftX + 10 * s, winTitleY + 7 * s, 16 * s, 16 * s);
+    ctx.strokeRect(innerLeftX + 10 * s, winTitleY + 7 * s, 16 * s, 16 * s);
+
+    // Right Window Zoom Box
+    ctx.fillRect(innerRightX - 26 * s, winTitleY + 7 * s, 16 * s, 16 * s);
+    ctx.strokeRect(innerRightX - 26 * s, winTitleY + 7 * s, 16 * s, 16 * s);
+    ctx.strokeRect(innerRightX - 26 * s, winTitleY + 7 * s, 10 * s, 10 * s);
+
+    // Centered White Backdrop Pill for Window Title Text over the pinstripes
+    const titleBoxW = 284 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fafaf9';
+    ctx.fillRect(centerX - titleBoxW / 2, winTitleY + 3 * s, titleBoxW, winTitleH - 6 * s);
+    ctx.strokeRect(centerX - titleBoxW / 2, winTitleY + 3 * s, titleBoxW, winTitleH - 6 * s);
+
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      'GOBBLE HAUS MACINTOSH 128K',
+      centerX,
+      winTitleY + 20 * s,
+      titleBoxW - 14 * s,
+      14.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // 4. Continuous Recessed CRT Monitor Bezel (wraps Finder info header, photo slots, and bottom CRT status bar)
+    const crtTopY = headerZoneHeight - 66 * s;
+    const crtBottomY = bottomStartY + 30 * s;
+    ctx.lineWidth = 3.2 * s;
+    ctx.strokeStyle = ink;
+    drawRoundedRectPath(
+      innerLeftX - 4 * s,
+      crtTopY,
+      innerW + 8 * s,
+      crtBottomY - crtTopY,
+      14 * s
+    );
+    ctx.stroke();
+
+    // Finder Info Header Strip inside CRT Monitor (above photos)
+    const finderY = crtTopY + 18 * s;
+    ctx.textAlign = 'left';
+    fillFittedText(
+      '📁 Gobble_Haus_Booth.app',
+      innerLeftX + 6 * s,
+      finderY,
+      195 * s,
+      11 * s,
+      '900',
+      'monospace'
+    );
+    ctx.textAlign = 'center';
+    fillFittedText(
+      'hello, busog!',
+      centerX + 20 * s,
+      finderY,
+      120 * s,
+      12 * s,
+      '900',
+      'serif'
+    );
+    ctx.textAlign = 'right';
+    fillFittedText(
+      '128K RAM OK',
+      innerRightX - 6 * s,
+      finderY,
+      100 * s,
+      11 * s,
+      '900',
+      'monospace'
+    );
+
+    // Sub-window status bar immediately above photo
+    const subWinH = 26 * s;
+    const subWinY = headerZoneHeight - subWinH - 10 * s;
+    ctx.lineWidth = 2 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fef3c7';
+    ctx.fillRect(innerLeftX, subWinY, innerW, subWinH);
+    ctx.strokeRect(innerLeftX, subWinY, innerW, subWinH);
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      `★  CHICKEN INASAL • ICE CREAM FLOAT • ${dateStr.toUpperCase()}  ★`,
+      centerX,
+      subWinY + 17.5 * s,
+      innerW - 14 * s,
+      10.8 * s,
+      '900',
+      'monospace'
+    );
+
+    // 5. Bottom CRT Screen Scrollbar / Finder Status Bar (inside CRT bezel, right below photo)
+    const crtStatusY = bottomStartY + 21 * s;
+    ctx.textAlign = 'left';
+    fillFittedText('◄ 100% BUSOG', innerLeftX + 6 * s, crtStatusY, 120 * s, 11 * s, '900', 'monospace');
+    ctx.textAlign = 'center';
+    fillFittedText('SYSTEM: GOBBLE HAUS OS', centerX, crtStatusY, 190 * s, 11 * s, '900', 'monospace');
+    ctx.textAlign = 'right';
+    fillFittedText('0 CRUMBS LEFT ►', innerRightX - 6 * s, crtStatusY, 130 * s, 11 * s, '900', 'monospace');
+
+    // 6. Front Lower Macintosh Faceplate: Rainbow Apple/Gobble Badge (Left) + 3.5" Floppy Disk Drive Slot (Right)
+    const faceY = bottomStartY + 40 * s;
+    const badgeW = 165 * s;
+    const badgeH = 44 * s;
+
+    // Left Recessed Brand Badge Box with Bitten Apple Logo + "Gobble Haus Macintosh"
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fafaf9';
+    drawRoundedRectPath(innerLeftX, faceY, badgeW, badgeH, 8 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    // Bitten Apple inside a square emblem plate
+    ctx.lineWidth = 2 * s;
+    ctx.strokeRect(innerLeftX + 8 * s, faceY + 7 * s, 30 * s, 30 * s);
+    ctx.fillStyle = isThermalMode ? ink : '#dc2626';
+    drawRetroBittenApple(innerLeftX + 23 * s, faceY + 23 * s, 9.5 * s, true);
+
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'left';
+    fillFittedText(
+      'Gobble Haus',
+      innerLeftX + 44 * s,
+      faceY + 20 * s,
+      badgeW - 50 * s,
+      14.5 * s,
+      '900',
+      'serif'
+    );
+    fillFittedText(
+      'MACINTOSH • EST 2026',
+      innerLeftX + 44 * s,
+      faceY + 35 * s,
+      badgeW - 50 * s,
+      9.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // Right 3.5" Floppy Disk Drive Housing & Slot
+    const driveX = innerLeftX + badgeW + 12 * s;
+    const driveW = innerW - badgeW - 12 * s;
+    ctx.lineWidth = 2.5 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#e7e5e4';
+    drawRoundedRectPath(driveX, faceY, driveW, badgeH, 8 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    // Horizontal Floppy Disk Insertion Slot with Center Notch
+    const slotX = driveX + 14 * s;
+    const slotY = faceY + 12 * s;
+    const slotW = driveW - 62 * s;
+    const slotH = 9 * s;
+    ctx.fillStyle = ink;
+    ctx.fillRect(slotX, slotY, slotW, slotH);
+    // Center disk grab cutout
+    ctx.fillRect(slotX + slotW / 2 - 16 * s, slotY - 3 * s, 32 * s, slotH + 6 * s);
+
+    // Physical Floppy Eject Button on Right of Slot
+    const ejectX = slotX + slotW + 10 * s;
+    ctx.lineWidth = 2 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#d6d3d1';
+    ctx.fillRect(ejectX, slotY - 2 * s, 26 * s, 13 * s);
+    ctx.strokeRect(ejectX, slotY - 2 * s, 26 * s, 13 * s);
+
+    // Drive Label & Activity LED
+    ctx.fillStyle = isThermalMode ? ink : '#ea580c';
+    ctx.beginPath();
+    ctx.arc(slotX + 6 * s, faceY + 34 * s, 3.5 * s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'left';
+    fillFittedText(
+      '3.5" FLOPPY • INASAL_OS.DSK',
+      slotX + 15 * s,
+      faceY + 37 * s,
+      driveW - 30 * s,
+      9.5 * s,
+      '900',
+      'monospace'
+    );
+
+    // 7. Bottom Mechanical Macintosh Keyboard & Classic 1-Button Mouse Deck
+    const kbTopY = faceY + badgeH + 10 * s;
+    const kbH = 74 * s;
+    const mouseW = 68 * s;
+    const kbW = innerW - mouseW - 12 * s;
+
+    // Mechanical Keyboard Chassis (Left)
+    ctx.lineWidth = 2.8 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#e7e5e4';
+    drawRoundedRectPath(innerLeftX, kbTopY, kbW, kbH, 10 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    // Row 1 Keys: [] [G][O][B][B][L][E] [H][A][U][S]
+    const row1Keys = ['', 'G', 'O', 'B', 'B', 'L', 'E', 'H', 'A', 'U', 'S'];
+    const r1Gap = 3.5 * s;
+    const r1PadX = 8 * s;
+    const r1KeyW = (kbW - r1PadX * 2 - r1Gap * (row1Keys.length - 1)) / row1Keys.length;
+    const r1KeyH = 20 * s;
+    const r1Y = kbTopY + 8 * s;
+
+    row1Keys.forEach((kChar, idx) => {
+      const kx = innerLeftX + r1PadX + idx * (r1KeyW + r1Gap);
+      ctx.lineWidth = 1.8 * s;
+      ctx.fillStyle = isThermalMode ? '#ffffff' : '#fafaf9';
+      drawRoundedRectPath(kx, r1Y, r1KeyW, r1KeyH, 4 * s);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = ink;
+      ctx.textAlign = 'center';
+      fillFittedText(kChar, kx + r1KeyW / 2, r1Y + 14.5 * s, r1KeyW - 2 * s, 11 * s, '900', 'monospace');
+    });
+
+    // Row 2 Keys: [⌘ CMD] [   INASAL & FLOAT SPACEBAR   ] [RETURN ⏎]
+    const r2Y = r1Y + r1KeyH + 5 * s;
+    const r2KeyH = 20 * s;
+    const cmdW = 68 * s;
+    const retW = 78 * s;
+    const spaceW = kbW - r1PadX * 2 - cmdW - retW - r1Gap * 2;
+
+    // ⌘ CMD Key
+    ctx.lineWidth = 1.8 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fafaf9';
+    drawRoundedRectPath(innerLeftX + r1PadX, r2Y, cmdW, r2KeyH, 4 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    fillFittedText('⌘ CMD', innerLeftX + r1PadX + cmdW / 2, r2Y + 14 * s, cmdW - 8 * s, 10 * s, '900', 'monospace');
+
+    // Spacebar Key
+    const spaceX = innerLeftX + r1PadX + cmdW + r1Gap;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fef3c7';
+    drawRoundedRectPath(spaceX, r2Y, spaceW, r2KeyH, 4 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    fillFittedText(
+      'CHICKEN INASAL & FLOAT',
+      spaceX + spaceW / 2,
+      r2Y + 14 * s,
+      spaceW - 10 * s,
+      10 * s,
+      '900',
+      'monospace'
+    );
+
+    // RETURN Key
+    const retX = spaceX + spaceW + r1Gap;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fafaf9';
+    drawRoundedRectPath(retX, r2Y, retW, r2KeyH, 4 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    fillFittedText('RETURN ⏎', retX + retW / 2, r2Y + 14 * s, retW - 8 * s, 10 * s, '900', 'monospace');
+
+    // Keyboard Front Lip Label
+    fillFittedText(
+      'GOBBLE HAUS MECHANICAL KEYBOARD • THINK BUSOG™',
+      innerLeftX + kbW / 2,
+      kbTopY + kbH - 7 * s,
+      kbW - 16 * s,
+      9 * s,
+      '900',
+      'monospace'
+    );
+
+    // Classic 1-Button Blocky Macintosh Mouse (Right)
+    const mouseX = innerLeftX + kbW + 12 * s;
+    ctx.lineWidth = 2.8 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#fafaf9';
+    drawRoundedRectPath(mouseX, kbTopY + 8 * s, mouseW, kbH - 8 * s, 12 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    // Mouse Cord curving up to the computer
+    ctx.lineWidth = 2.2 * s;
+    ctx.beginPath();
+    ctx.moveTo(mouseX + mouseW / 2, kbTopY + 8 * s);
+    ctx.quadraticCurveTo(mouseX + mouseW / 2 - 8 * s, kbTopY + 1 * s, mouseX + mouseW / 2, kbTopY - 6 * s);
+    ctx.stroke();
+
+    // Single Wide Rectangular Mouse Click Button
+    ctx.lineWidth = 2 * s;
+    ctx.fillStyle = isThermalMode ? '#ffffff' : '#d6d3d1';
+    drawRoundedRectPath(mouseX + 10 * s, kbTopY + 16 * s, mouseW - 20 * s, 18 * s, 4 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText('CLICK', mouseX + mouseW / 2, kbTopY + 29 * s, mouseW - 24 * s, 9 * s, '900', 'monospace');
+    fillFittedText(' MOUSE', mouseX + mouseW / 2, kbTopY + 56 * s, mouseW - 10 * s, 9.5 * s, '900', 'monospace');
+
+    // 8. Bottom Computer Base Serial Stamp
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    fillFittedText(
+      '●  GOBBLE HAUS COMPUTER INC. • MODEL M1984 • HELLO, BUSOG!  ●',
+      centerX,
+      macBottomY - 6 * s,
+      innerW - 12 * s,
+      9.2 * s,
+      '900',
+      'monospace'
+    );
+  }
+
+  // =========================================================================
   // 0. OLD PHONE THEME — GOBBLE HAUS PHONE ('old_phone' / 'gobble_old_phone')
   // =========================================================================
-  if (styleId === 'old_phone' || theme.id === 'gobble_old_phone') {
+  else if (styleId === 'old_phone' || theme.id === 'gobble_old_phone') {
     const phoneTopY = 24 * s;
     const phoneBottomY = canvasHeight - 16 * s;
     const innerPad = 14 * s;
@@ -2244,13 +2702,16 @@ export async function renderPhotostripCanvas(options: {
   const s = canvasWidth / 600;
   const isPokemonCard =
     theme.borderStyle === 'pokemon_card' || theme.id === 'gobble_pokemon_card';
+  const isOldAppleMac =
+    theme.borderStyle === 'old_apple_mac' || theme.id === 'gobble_old_mac';
   const isOldPhone =
     theme.borderStyle === 'old_phone' || theme.id === 'gobble_old_phone';
   const isArcadeBoy =
     theme.borderStyle === 'arcade_boy' || theme.id === 'gobble_arcade_boy';
   const isWantedPoster =
     theme.borderStyle === 'wanted_poster' || theme.id === 'gobble_wanted_poster';
-  const hasEnclosedOuterCard = isPokemonCard || isOldPhone || isArcadeBoy || isWantedPoster;
+  const hasEnclosedOuterCard =
+    isPokemonCard || isOldAppleMac || isOldPhone || isArcadeBoy || isWantedPoster;
   const innerPhotoInset = hasEnclosedOuterCard ? Math.round(14 * s) : 0;
 
   const drawPhotoFrameBorder = (x: number, y: number, w: number, h: number, lineW: number) => {

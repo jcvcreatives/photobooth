@@ -11,7 +11,6 @@ import {
   Download,
   Lock,
   ChevronUp,
-  ChevronDown,
 } from 'lucide-react';
 import { ScreenState, KioskTelemetry, RemoteKioskConfig } from '../types';
 import { soundEffects } from '../services/soundEffects';
@@ -151,8 +150,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   const [secretTapCount, setSecretTapCount] = useState(0);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
-  const isAndroidWebView =
-    typeof window !== 'undefined' && Boolean((window as unknown as { AndroidPrinter?: unknown }).AndroidPrinter);
 
   const headerRef = useRef<HTMLElement | null>(null);
   const wasNativeFsRef = useRef<boolean>(false);
@@ -291,22 +288,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
 
   return (
     <>
-      {/* Subtle Top-Right Reveal Pill when Maximized & Top Menu Hidden */}
-      {isMaximizedLocked && isTopMenuHidden && (
-        <button
-          type="button"
-          onClick={() => {
-            soundEffects.playTap();
-            setIsTopMenuHidden(false);
-          }}
-          title="Show Top Bar"
-          className="fixed top-2 right-2 z-50 px-2.5 py-1 rounded-full bg-white/80 hover:bg-white border border-zinc-200 text-zinc-600 hover:text-zinc-900 shadow-xs backdrop-blur-xs flex items-center gap-1 text-[10px] font-medium cursor-pointer transition"
-        >
-          <ChevronDown className="w-3 h-3" />
-          <span>Menu</span>
-        </button>
-      )}
-
       {/* Top Menu Header */}
       {(!isMaximizedLocked || !isTopMenuHidden) && (
         <header
@@ -330,22 +311,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
             </button>
           </div>
 
-          {/* Right Controls: Download .APK + Install App + Hide Bar (when maximized) + Maximize Toggle + Optional Admin */}
+          {/* Right Controls: Install App + Hide Bar (when maximized) + Maximize Toggle + Optional Admin */}
           <div className="flex items-center gap-1.5">
-            {!isAndroidWebView && (
-              <a
-                href="./JCVcreatives-Photobooth.apk"
-                download="JCVcreatives-Photobooth.apk"
-                data-no-fullscreen-enforce="true"
-                onClick={() => soundEffects.playTap()}
-                title="Download Offline Android 7+ APK (JCVcreatives-Photobooth.apk)"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-medium transition cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download .APK</span>
-              </a>
-            )}
-
             {!isInstalled && deferredPrompt && (
               <button
                 onClick={handleInstallApp}

@@ -236,6 +236,30 @@ function android7CompatPlugin(): Plugin {
   };
 }
 
+function apkPackageHeaderPlugin(): Plugin {
+  const attachMiddleware = (middlewares: any) => {
+    middlewares.use((req: any, res: any, next: any) => {
+      const urlPath = (req.url || '').split('?')[0];
+      if (urlPath.endsWith('.apk')) {
+        res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+        res.setHeader('Content-Disposition', 'attachment; filename="JCVcreatives-Photobooth.apk"');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+      }
+      next();
+    });
+  };
+  return {
+    name: 'apk-package-header-plugin',
+    configureServer(server) {
+      attachMiddleware(server.middlewares);
+    },
+    configurePreviewServer(server) {
+      attachMiddleware(server.middlewares);
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
     base: './',
@@ -252,6 +276,7 @@ export default defineConfig(() => {
     plugins: [
       react(),
       tailwindcss(),
+      apkPackageHeaderPlugin(),
       android7CompatPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
@@ -305,14 +330,17 @@ export default defineConfig(() => {
           clientsClaim: true,
           skipWaiting: true,
           navigateFallback: 'index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackDenylist: [/^\/api\//, /\.apk(\?.*)?$/i, /^\/downloads\//],
           runtimeCaching: [
             {
               // 1. App Navigation & HTML Routes — NetworkFirst with 3s timeout fallback to cached shell
-              urlPattern: ({ request }) => request.mode === 'navigate',
+              urlPattern: ({ request, url }) =>
+                request.mode === 'navigate' &&
+                !url.pathname.toLowerCase().endsWith('.apk') &&
+                !url.pathname.startsWith('/downloads/'),
               handler: 'NetworkFirst',
               options: {
-                cacheName: 'jcv-pages-navigation-cache-v6',
+                cacheName: 'jcv-pages-navigation-cache-v7',
                 networkTimeoutSeconds: 3,
                 expiration: {
                   maxEntries: 25,
@@ -331,7 +359,7 @@ export default defineConfig(() => {
                 request.destination === 'worker',
               handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'jcv-static-assets-cache-v6',
+                cacheName: 'jcv-static-assets-cache-v7',
                 expiration: {
                   maxEntries: 120,
                   maxAgeSeconds: 60 * 60 * 24 * 60, // 60 days
@@ -346,7 +374,7 @@ export default defineConfig(() => {
               urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'jcv-images-cache-v6',
+                cacheName: 'jcv-images-cache-v7',
                 expiration: {
                   maxEntries: 250,
                   maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year

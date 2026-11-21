@@ -1024,8 +1024,13 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               </div>
             </div>
           ) : (
-            /* 3x3 Template Grid (All 9 Gobble Haus frames) */
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto content-start p-0.5">
+            /* Gobble Haus Frame Template Grid (All 10 frames) */
+            <div
+              data-kiosk-scrollable="true"
+              data-admin-scrollable="true"
+              style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+              className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto overscroll-contain content-start p-0.5"
+            >
               {displayedThemes.map((t) => {
                 const isSelected = thermalTheme.id === t.id || digitalTheme.id === t.id;
 

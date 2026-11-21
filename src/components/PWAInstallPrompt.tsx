@@ -134,16 +134,6 @@ export const PWAInstallPrompt: React.FC = () => {
             <div className="text-xs font-semibold text-zinc-100 tracking-tight">Install Offline App</div>
             <div className="text-[10px] text-zinc-400">Run fullscreen &amp; 100% offline without internet</div>
           </div>
-          <a
-            href="./JCVcreatives-Photobooth.apk"
-            download="JCVcreatives-Photobooth.apk"
-            data-no-fullscreen-enforce="true"
-            onClick={() => soundEffects.playTap()}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-semibold text-zinc-100 shadow-xs transition active:scale-95 cursor-pointer shrink-0"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>.APK</span>
-          </a>
           {deferredPrompt ? (
             <button
               onClick={handleInstallClick}
