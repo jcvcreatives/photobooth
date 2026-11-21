@@ -519,6 +519,7 @@ function buildClassesDex() {
   const T_USBCONN = addType('Landroid/hardware/usb/UsbDeviceConnection;');
   const T_BTADAPT = addType('Landroid/bluetooth/BluetoothAdapter;');
   const T_BTDEV = addType('Landroid/bluetooth/BluetoothDevice;');
+  const T_BTCLASS = addType('Landroid/bluetooth/BluetoothClass;');
   const T_BTSOCK = addType('Landroid/bluetooth/BluetoothSocket;');
   const T_UUID = addType('Ljava/util/UUID;');
   const T_HASHMAP = addType('Ljava/util/HashMap;');
@@ -540,12 +541,15 @@ function buildClassesDex() {
   const S_PERM_BT_ADM = addStr('android.permission.BLUETOOTH_ADMIN');
   const S_PERM_BT_CON = addStr('android.permission.BLUETOOTH_CONNECT');
   const S_PERM_BT_SCN = addStr('android.permission.BLUETOOTH_SCAN');
+  const S_PERM_LOC_FINE = addStr('android.permission.ACCESS_FINE_LOCATION');
+  const S_PERM_LOC_COARSE = addStr('android.permission.ACCESS_COARSE_LOCATION');
   const S_JS_NAME = addStr('AndroidPrinter');
   const S_INDEX_URL = addStr('file:///android_asset/www/index.html');
   const S_USB_SVC = addStr('usb');
   const S_ACT_USB_PERM = addStr('com.jcvcreatives.photobooth.USB_PERMISSION');
   const S_ERR_NO_USB = addStr('ERR:No USB printer detected on OTG cord');
   const S_OK_USB = addStr('OK:USB Thermal Printer');
+  const S_OK_PREFIX = addStr('OK:');
   const S_ERR_USB_PERM = addStr('ERR:Please tap Allow on the USB permission prompt and print again');
   const S_ERR_USB_EP = addStr('ERR:No writable USB endpoint found on printer');
   const S_OK = addStr('OK');
@@ -556,7 +560,7 @@ function buildClassesDex() {
   const S_FB_NO_BT = addStr('FALLBACK:No paired Bluetooth printer found — opening Android Bluetooth Settings to pair VOZY G80');
   const S_OK_BT = addStr('OK:VOZY G80 Bluetooth Printer');
   const S_SPP_UUID = addStr('00001101-0000-1000-8000-00805F9B34FB');
-  const S_ERR_GEN = addStr('ERR:Printer connection failed');
+  const S_ERR_GEN = addStr('ERR:Printer connection failed — ensure printer is powered ON and paired');
 
   // Fields
   const F_SDK_INT = addField(T_BUILD_VER, 'SDK_INT', T_INT);
@@ -564,6 +568,7 @@ function buildClassesDex() {
   const F_BR_ACT = addField(T_BRIDGE, 'activity', T_ACT);
   const F_BR_USB = addField(T_BRIDGE, 'selectedUsbDevice', T_USBDEV);
   const F_BR_BT = addField(T_BRIDGE, 'selectedBtDevice', T_BTDEV);
+  const F_BR_BTSOCK = addField(T_BRIDGE, 'btSocket', T_BTSOCK);
 
   // Methods
   const M_OBJ_INIT = addMethod(T_OBJ, '<init>', T_VOID, []);
@@ -610,14 +615,18 @@ function buildClassesDex() {
   const M_MAIN_ONBACK = addMethod(T_MAIN, 'onBackPressed', T_VOID, []);
 
   // Printer Bridge & Android APIs
+  const M_STR_CONCAT = addMethod(T_STR, 'concat', T_STR, [T_STR]);
   const M_INTENT_INIT = addMethod(T_INTENT, '<init>', T_VOID, [T_STR]);
   const M_PINTENT_BCAST = addMethod(T_PINTENT, 'getBroadcast', T_PINTENT, [T_CTX, T_INT, T_INTENT, T_INT]);
   const M_USBMGR_DEVS = addMethod(T_USBMGR, 'getDeviceList', T_HASHMAP, []);
   const M_USBMGR_HAS_PERM = addMethod(T_USBMGR, 'hasPermission', T_BOOL, [T_USBDEV]);
   const M_USBMGR_REQ_PERM = addMethod(T_USBMGR, 'requestPermission', T_VOID, [T_USBDEV, T_PINTENT]);
   const M_USBMGR_OPEN = addMethod(T_USBMGR, 'openDevice', T_USBCONN, [T_USBDEV]);
+  const M_USBDEV_INTF_CNT = addMethod(T_USBDEV, 'getInterfaceCount', T_INT, []);
   const M_USBDEV_GET_INTF = addMethod(T_USBDEV, 'getInterface', T_USBINTF, [T_INT]);
+  const M_USBINTF_EP_CNT = addMethod(T_USBINTF, 'getEndpointCount', T_INT, []);
   const M_USBINTF_GET_EP = addMethod(T_USBINTF, 'getEndpoint', T_USBEP, [T_INT]);
+  const M_USBEP_GET_DIR = addMethod(T_USBEP, 'getDirection', T_INT, []);
   const M_USBCONN_CLAIM = addMethod(T_USBCONN, 'claimInterface', T_BOOL, [T_USBINTF, T_BOOL]);
   const M_USBCONN_BULK = addMethod(T_USBCONN, 'bulkTransfer', T_INT, [T_USBEP, T_BYTE_ARR, T_INT, T_INT]);
   const M_USBCONN_CLOSE = addMethod(T_USBCONN, 'close', T_VOID, []);
@@ -627,12 +636,19 @@ function buildClassesDex() {
   const M_COLL_ITER = addMethod(T_COLL, 'iterator', T_ITER, []);
   const M_SET_EMPTY = addMethod(T_SET, 'isEmpty', T_BOOL, []);
   const M_SET_ITER = addMethod(T_SET, 'iterator', T_ITER, []);
+  const M_ITER_HAS_NEXT = addMethod(T_ITER, 'hasNext', T_BOOL, []);
   const M_ITER_NEXT = addMethod(T_ITER, 'next', T_OBJ, []);
 
   const M_BT_DEFAULT = addMethod(T_BTADAPT, 'getDefaultAdapter', T_BTADAPT, []);
   const M_BT_ENABLED = addMethod(T_BTADAPT, 'isEnabled', T_BOOL, []);
+  const M_BT_CANCEL_DISC = addMethod(T_BTADAPT, 'cancelDiscovery', T_BOOL, []);
   const M_BT_BONDED = addMethod(T_BTADAPT, 'getBondedDevices', T_SET, []);
+  const M_BTDEV_GET_NAME = addMethod(T_BTDEV, 'getName', T_STR, []);
+  const M_BTDEV_GET_CLASS = addMethod(T_BTDEV, 'getBluetoothClass', T_BTCLASS, []);
+  const M_BTCLASS_MAJOR = addMethod(T_BTCLASS, 'getMajorDeviceClass', T_INT, []);
   const M_BTDEV_RFCOMM = addMethod(T_BTDEV, 'createRfcommSocketToServiceRecord', T_BTSOCK, [T_UUID]);
+  const M_BTDEV_INSECURE_RFCOMM = addMethod(T_BTDEV, 'createInsecureRfcommSocketToServiceRecord', T_BTSOCK, [T_UUID]);
+  const M_BTSOCK_IS_CONN = addMethod(T_BTSOCK, 'isConnected', T_BOOL, []);
   const M_BTSOCK_CONN = addMethod(T_BTSOCK, 'connect', T_VOID, []);
   const M_BTSOCK_OUT = addMethod(T_BTSOCK, 'getOutputStream', T_OUTSTREAM, []);
   const M_BTSOCK_CLOSE = addMethod(T_BTSOCK, 'close', T_VOID, []);
@@ -714,6 +730,17 @@ function buildClassesDex() {
   const opIgetObj = (vA, vObj, fKey) => [0x0054 | ((vA & 0xf) << 8) | ((vObj & 0xf) << 12), fieldIdx.get(fKey)];
   const opIputObj = (vA, vObj, fKey) => [0x005b | ((vA & 0xf) << 8) | ((vObj & 0xf) << 12), fieldIdx.get(fKey)];
   const opSgetInt = (vA, fKey) => [0x0060 | ((vA & 0xff) << 8), fieldIdx.get(fKey)];
+  const opAddIntLit8 = (vA, vB, lit8) => [0x00d8 | ((vA & 0xff) << 8), (vB & 0xff) | ((lit8 & 0xff) << 8)];
+  const opIfEq = (vA, vB, targetLabel) => ({
+    type: 'branch22',
+    op: 0x0032 | ((vA & 0xf) << 8) | ((vB & 0xf) << 12),
+    targetLabel,
+  });
+  const opIfGe = (vA, vB, targetLabel) => ({
+    type: 'branch22',
+    op: 0x0035 | ((vA & 0xf) << 8) | ((vB & 0xf) << 12),
+    targetLabel,
+  });
   const opIfEqz = (vA, targetLabel) => ({ type: 'branch21', op: 0x0038 | ((vA & 0xff) << 8), targetLabel });
   const opIfNez = (vA, targetLabel) => ({ type: 'branch21', op: 0x0039 | ((vA & 0xff) << 8), targetLabel });
   const opIfLt = (vA, vB, targetLabel) => ({
@@ -721,6 +748,7 @@ function buildClassesDex() {
     op: 0x0034 | ((vA & 0xf) << 8) | ((vB & 0xf) << 12),
     targetLabel,
   });
+  const opGoto = (targetLabel) => ({ type: 'goto16', op: 0x0029, targetLabel });
   const label = (name) => ({ type: 'label', name });
 
   function resolveWords(items) {
@@ -731,7 +759,7 @@ function buildClassesDex() {
         wordOffset += 1;
       } else if (item && item.type === 'label') {
         labelOffsets.set(item.name, wordOffset);
-      } else if (item && (item.type === 'branch21' || item.type === 'branch22')) {
+      } else if (item && (item.type === 'branch21' || item.type === 'branch22' || item.type === 'goto16')) {
         wordOffset += 2;
       }
     }
@@ -742,7 +770,7 @@ function buildClassesDex() {
       if (typeof item === 'number') {
         words.push(item & 0xffff);
         curWord += 1;
-      } else if (item && (item.type === 'branch21' || item.type === 'branch22')) {
+      } else if (item && (item.type === 'branch21' || item.type === 'branch22' || item.type === 'goto16')) {
         const target = labelOffsets.get(item.targetLabel);
         if (target === undefined) {
           throw new Error(`Unresolved Dalvik branch label: ${item.targetLabel}`);
@@ -844,11 +872,11 @@ function buildClassesDex() {
     ...opMoveResultObj(0),
     ...opConst16(1, 0x0480), // FLAG_FULLSCREEN | FLAG_KEEP_SCREEN_ON
     ...opInvokeVirtual(M_WIN_SET_FLAGS, [0, 1, 1]),
-    // Check SDK_INT >= 31 for Android 12+ Bluetooth + Camera permissions
+    // Check SDK_INT >= 23 for Android 6–14+ Camera + Bluetooth + Location permissions
     ...opSgetInt(0, F_SDK_INT),
-    ...opConst16(1, 31),
+    ...opConst16(1, 23),
     opIfLt(0, 1, 'init_webview'),
-    ...opConst4(1, 5),
+    ...opConst4(1, 7),
     ...opNewArray(2, 1, T_STR_ARR),
     ...opConst4(3, 0),
     ...opConstStr(4, S_PERM_CAM),
@@ -864,6 +892,12 @@ function buildClassesDex() {
     ...opAputObj(4, 2, 3),
     ...opConst4(3, 4),
     ...opConstStr(4, S_PERM_BT_SCN),
+    ...opAputObj(4, 2, 3),
+    ...opConst4(3, 5),
+    ...opConstStr(4, S_PERM_LOC_FINE),
+    ...opAputObj(4, 2, 3),
+    ...opConst4(3, 6),
+    ...opConstStr(4, S_PERM_LOC_COARSE),
     ...opAputObj(4, 2, 3),
     ...opConst16(3, 1001),
     ...opInvokeVirtual(M_ACT_REQ_PERMS, [6, 2, 3]),
@@ -950,6 +984,8 @@ function buildClassesDex() {
   });
 
   // connectUsb()Ljava/lang/String;: v5 = this
+  // Safe PendingIntent flags for Android 7–14+: uses FLAG_MUTABLE (33554432) only on SDK_INT >= 31, else 0.
+  // Returns "OK:USB Thermal Printer" ONLY when permission is granted; if permission was just requested, returns "ERR:Please tap Allow on the USB permission prompt and tap Connect USB again".
   const codeBrConnUsb = makeCodeItem(6, 1, 4, [], {
     tryItems: [
       ...opIgetObj(0, 5, F_BR_ACT),
@@ -979,13 +1015,20 @@ function buildClassesDex() {
       ...opNewInstance(2, T_INTENT),
       ...opConstStr(3, S_ACT_USB_PERM),
       ...opInvokeDirect(M_INTENT_INIT, [2, 3]),
+      ...opSgetInt(3, F_SDK_INT),
+      ...opConst16(4, 31),
+      ...opConst4(1, 0),
+      opIfLt(3, 4, 'pintent_ready'),
+      ...opConst32(1, 33554432), // FLAG_MUTABLE on Android 12+
+      label('pintent_ready'),
       ...opIgetObj(3, 5, F_BR_ACT),
       ...opConst4(4, 0),
-      ...opConst32(1, 33554432), // FLAG_MUTABLE
       ...opInvokeStatic(M_PINTENT_BCAST, [3, 4, 2, 1]),
       ...opMoveResultObj(2),
       ...opIgetObj(1, 5, F_BR_USB),
       ...opInvokeVirtual(M_USBMGR_REQ_PERM, [0, 1, 2]),
+      ...opConstStr(0, S_ERR_USB_PERM),
+      ...opReturnObj(0),
       label('usb_perm_ok'),
       ...opConstStr(0, S_OK_USB),
       ...opReturnObj(0),
@@ -993,15 +1036,17 @@ function buildClassesDex() {
     catchItems: [...opMoveException(0), ...opConstStr(0, S_ERR_NO_USB), ...opReturnObj(0)],
   });
 
-  // printUsbBase64(String)String: v7 = this, v8 = base64Data
-  const codeBrPrtUsb = makeCodeItem(9, 2, 5, [], {
+  // printUsbBase64(String)String: v9 = this, v10 = base64Data
+  // Scans ALL interfaces and ALL endpoints on the USB device to find the true USB_DIR_OUT (0) bulk endpoint!
+  // Also automatically triggers UsbManager.requestPermission if not yet granted.
+  const codeBrPrtUsb = makeCodeItem(11, 2, 5, [], {
     tryItems: [
-      ...opIgetObj(0, 7, F_BR_ACT),
+      ...opIgetObj(0, 9, F_BR_ACT),
       ...opConstStr(1, S_USB_SVC),
       ...opInvokeVirtual(M_ACT_GET_SYS, [0, 1]),
       ...opMoveResultObj(0),
       ...opCheckCast(0, T_USBMGR),
-      ...opIgetObj(1, 7, F_BR_USB),
+      ...opIgetObj(1, 9, F_BR_USB),
       opIfNez(1, 'usb_dev_ready'),
       ...opInvokeVirtual(M_USBMGR_DEVS, [0]),
       ...opMoveResultObj(1),
@@ -1018,37 +1063,85 @@ function buildClassesDex() {
       ...opInvokeInterface(M_ITER_NEXT, [1]),
       ...opMoveResultObj(1),
       ...opCheckCast(1, T_USBDEV),
-      ...opIputObj(1, 7, F_BR_USB),
+      ...opIputObj(1, 9, F_BR_USB),
       label('usb_dev_ready'),
       ...opInvokeVirtual(M_USBMGR_HAS_PERM, [0, 1]),
       ...opMoveResult(2),
-      opIfNez(2, 'usb_print_now'),
+      opIfNez(2, 'usb_scan_interfaces'),
+      // Request permission automatically when user taps Print
+      ...opNewInstance(2, T_INTENT),
+      ...opConstStr(3, S_ACT_USB_PERM),
+      ...opInvokeDirect(M_INTENT_INIT, [2, 3]),
+      ...opSgetInt(3, F_SDK_INT),
+      ...opConst16(4, 31),
+      ...opConst4(5, 0),
+      opIfLt(3, 4, 'prt_pintent_ready'),
+      ...opConst32(5, 33554432),
+      label('prt_pintent_ready'),
+      ...opIgetObj(3, 9, F_BR_ACT),
+      ...opConst4(4, 0),
+      ...opInvokeStatic(M_PINTENT_BCAST, [3, 4, 2, 5]),
+      ...opMoveResultObj(2),
+      ...opInvokeVirtual(M_USBMGR_REQ_PERM, [0, 1, 2]),
       ...opConstStr(2, S_ERR_USB_PERM),
       ...opReturnObj(2),
-      label('usb_print_now'),
-      ...opConst4(2, 0),
-      ...opInvokeVirtual(M_USBDEV_GET_INTF, [1, 2]),
-      ...opMoveResultObj(3),
-      ...opInvokeVirtual(M_USBINTF_GET_EP, [3, 2]),
-      ...opMoveResultObj(4),
+      label('usb_scan_interfaces'),
+      // Loop over all interfaces to find an endpoint with getDirection() == 0 (USB_DIR_OUT)
+      ...opInvokeVirtual(M_USBDEV_INTF_CNT, [1]),
+      ...opMoveResult(5), // v5 = intfCount
+      ...opConst4(6, 0), // v6 = intfIdx
+      label('intf_loop'),
+      opIfGe(6, 5, 'no_out_ep'),
+      ...opInvokeVirtual(M_USBDEV_GET_INTF, [1, 6]),
+      ...opMoveResultObj(3), // v3 = UsbInterface
+      ...opInvokeVirtual(M_USBINTF_EP_CNT, [3]),
+      ...opMoveResult(7), // v7 = epCount
+      ...opConst4(8, 0), // v8 = epIdx
+      label('ep_loop'),
+      opIfGe(8, 7, 'next_intf'),
+      ...opInvokeVirtual(M_USBINTF_GET_EP, [3, 8]),
+      ...opMoveResultObj(4), // v4 = UsbEndpoint
+      ...opInvokeVirtual(M_USBEP_GET_DIR, [4]),
+      ...opMoveResult(2), // v2 = direction (0 == USB_DIR_OUT)
+      opIfEqz(2, 'found_out_ep'),
+      ...opAddIntLit8(8, 8, 1),
+      opGoto('ep_loop'),
+      label('next_intf'),
+      ...opAddIntLit8(6, 6, 1),
+      opGoto('intf_loop'),
+      label('no_out_ep'),
+      ...opConstStr(0, S_ERR_USB_EP),
+      ...opReturnObj(0),
+      label('found_out_ep'),
+      // v3 = matching UsbInterface, v4 = matching OUT UsbEndpoint
       ...opInvokeVirtual(M_USBMGR_OPEN, [0, 1]),
       ...opMoveResultObj(0),
+      opIfNez(0, 'usb_conn_opened'),
+      ...opConstStr(0, S_ERR_USB_EP),
+      ...opReturnObj(0),
+      label('usb_conn_opened'),
       ...opConst4(1, 1),
       ...opInvokeVirtual(M_USBCONN_CLAIM, [0, 3, 1]),
-      ...opInvokeStatic(M_B64_DEC, [8, 2]),
+      ...opConst4(2, 0),
+      ...opInvokeStatic(M_B64_DEC, [10, 2]),
       ...opMoveResultObj(1),
       ...opArrayLength(2, 1),
-      ...opConst16(3, 5000),
+      ...opConst16(3, 6000),
       ...opInvokeVirtual(M_USBCONN_BULK, [0, 4, 1, 2, 3]),
+      ...opMoveResult(5),
       ...opInvokeVirtual(M_USBCONN_CLOSE, [0]),
+      ...opConst4(6, 0),
+      opIfLt(5, 6, 'no_out_ep'),
       ...opConstStr(0, S_OK),
       ...opReturnObj(0),
     ],
     catchItems: [...opMoveException(0), ...opConstStr(0, S_ERR_USB_EP), ...opReturnObj(0)],
   });
 
-  // connectBluetooth()String: v4 = this
-  const codeBrConnBt = makeCodeItem(5, 1, 2, [], {
+  // connectBluetooth()String: v6 = this
+  // Iterates through ALL bonded Bluetooth devices, preferring any IMAGING (0x0600 = 1536) or UNCATEGORIZED (0x1F00 = 7936) printer device,
+  // and returns "OK:" + device.getName() so the operator sees the exact paired printer name.
+  const codeBrConnBt = makeCodeItem(7, 1, 2, [], {
     tryItems: [
       ...opInvokeStatic(M_BT_DEFAULT, []),
       ...opMoveResultObj(0),
@@ -1062,7 +1155,7 @@ function buildClassesDex() {
       ...opNewInstance(1, T_INTENT),
       ...opConstStr(2, S_ACT_BT_EN),
       ...opInvokeDirect(M_INTENT_INIT, [1, 2]),
-      ...opIgetObj(2, 4, F_BR_ACT),
+      ...opIgetObj(2, 6, F_BR_ACT),
       ...opInvokeVirtual(M_ACT_START_ACT, [2, 1]),
       ...opConstStr(1, S_ERR_BT_OFF),
       ...opReturnObj(1),
@@ -1075,53 +1168,116 @@ function buildClassesDex() {
       ...opNewInstance(1, T_INTENT),
       ...opConstStr(2, S_ACT_BT_SET),
       ...opInvokeDirect(M_INTENT_INIT, [1, 2]),
-      ...opIgetObj(2, 4, F_BR_ACT),
+      ...opIgetObj(2, 6, F_BR_ACT),
       ...opInvokeVirtual(M_ACT_START_ACT, [2, 1]),
       ...opConstStr(1, S_FB_NO_BT),
       ...opReturnObj(1),
       label('bt_has_bonded'),
       ...opInvokeInterface(M_SET_ITER, [0]),
-      ...opMoveResultObj(0),
+      ...opMoveResultObj(0), // v0 = Iterator
+      ...opConst4(1, 0), // v1 = bestDevice
+      label('bt_iter_loop'),
+      ...opInvokeInterface(M_ITER_HAS_NEXT, [0]),
+      ...opMoveResult(2),
+      opIfEqz(2, 'bt_iter_done'),
       ...opInvokeInterface(M_ITER_NEXT, [0]),
+      ...opMoveResultObj(2),
+      ...opCheckCast(2, T_BTDEV), // v2 = candidate BluetoothDevice
+      opIfNez(1, 'bt_check_class'),
+      // Save first bonded device as fallback in v1
+      ...opInvokeVirtual(M_BTDEV_GET_CLASS, [2]),
+      ...opMoveResultObj(3),
+      ...opIputObj(2, 6, F_BR_BT),
+      ...opIgetObj(1, 6, F_BR_BT),
+      label('bt_check_class'),
+      ...opInvokeVirtual(M_BTDEV_GET_CLASS, [2]),
+      ...opMoveResultObj(3),
+      opIfEqz(3, 'bt_iter_loop'),
+      ...opInvokeVirtual(M_BTCLASS_MAJOR, [3]),
+      ...opMoveResult(3),
+      // Major Class 0x0600 (1536) = IMAGING (Printers)
+      ...opConst16(4, 1536),
+      opIfEq(3, 4, 'bt_found_printer'),
+      // Major Class 0x1F00 (7936) = UNCATEGORIZED (many ESC/POS SPP thermal printers)
+      ...opConst16(4, 7936),
+      opIfEq(3, 4, 'bt_found_printer'),
+      opGoto('bt_iter_loop'),
+      label('bt_found_printer'),
+      ...opIputObj(2, 6, F_BR_BT),
+      ...opIgetObj(1, 6, F_BR_BT),
+      label('bt_iter_done'),
+      ...opIgetObj(0, 6, F_BR_BT),
+      opIfNez(0, 'bt_format_name'),
+      ...opConstStr(0, S_FB_NO_BT),
+      ...opReturnObj(0),
+      label('bt_format_name'),
+      ...opInvokeVirtual(M_BTDEV_GET_NAME, [0]),
+      ...opMoveResultObj(1),
+      opIfEqz(1, 'bt_default_name'),
+      ...opConstStr(2, S_OK_PREFIX),
+      ...opInvokeVirtual(M_STR_CONCAT, [2, 1]),
       ...opMoveResultObj(0),
-      ...opCheckCast(0, T_BTDEV),
-      ...opIputObj(0, 4, F_BR_BT),
+      ...opReturnObj(0),
+      label('bt_default_name'),
       ...opConstStr(0, S_OK_BT),
       ...opReturnObj(0),
     ],
     catchItems: [...opMoveException(0), ...opConstStr(0, S_FB_NO_BT), ...opReturnObj(0)],
   });
 
-  // printBluetoothBase64(String)String: v4 = this, v5 = base64Data
-  const codeBrPrtBt = makeCodeItem(6, 2, 2, [], {
+  // printBluetoothBase64(String)String: v5 = this, v6 = base64Data
+  // Keeps the BluetoothSocket open across chunks in F_BR_BTSOCK so multi-chunk raster strips stream continuously
+  // without dropping or resetting the printer between 8KB chunks. Also calls cancelDiscovery() and falls back
+  // to createInsecureRfcommSocketToServiceRecord if needed.
+  const codeBrPrtBt = makeCodeItem(7, 2, 2, [], {
     tryItems: [
-      ...opIgetObj(0, 4, F_BR_BT),
+      ...opIgetObj(0, 5, F_BR_BT),
       opIfNez(0, 'bt_dev_ready'),
-      ...opInvokeVirtual(M_BR_CONN_BT, [4]),
-      ...opIgetObj(0, 4, F_BR_BT),
+      ...opInvokeVirtual(M_BR_CONN_BT, [5]),
+      ...opIgetObj(0, 5, F_BR_BT),
       opIfNez(0, 'bt_dev_ready'),
       ...opConstStr(0, S_FB_NO_BT),
       ...opReturnObj(0),
       label('bt_dev_ready'),
       ...opConst4(1, 0),
-      ...opInvokeStatic(M_B64_DEC, [5, 1]),
-      ...opMoveResultObj(1),
-      ...opConstStr(2, S_SPP_UUID),
-      ...opInvokeStatic(M_UUID_FROM, [2]),
+      ...opInvokeStatic(M_B64_DEC, [6, 1]),
+      ...opMoveResultObj(1), // v1 = byte[]
+      // Check if we already have an active connected BluetoothSocket
+      ...opIgetObj(2, 5, F_BR_BTSOCK),
+      opIfEqz(2, 'bt_open_new_sock'),
+      ...opInvokeVirtual(M_BTSOCK_IS_CONN, [2]),
+      ...opMoveResult(3),
+      opIfNez(3, 'bt_write_stream'),
+      label('bt_open_new_sock'),
+      // Cancel discovery before connecting RFCOMM socket for stability
+      ...opInvokeStatic(M_BT_DEFAULT, []),
+      ...opMoveResultObj(3),
+      opIfEqz(3, 'bt_create_sock'),
+      ...opInvokeVirtual(M_BT_CANCEL_DISC, [3]),
+      label('bt_create_sock'),
+      ...opConstStr(3, S_SPP_UUID),
+      ...opInvokeStatic(M_UUID_FROM, [3]),
+      ...opMoveResultObj(3),
+      ...opInvokeVirtual(M_BTDEV_INSECURE_RFCOMM, [0, 3]),
       ...opMoveResultObj(2),
-      ...opInvokeVirtual(M_BTDEV_RFCOMM, [0, 2]),
-      ...opMoveResultObj(0),
-      ...opInvokeVirtual(M_BTSOCK_CONN, [0]),
-      ...opInvokeVirtual(M_BTSOCK_OUT, [0]),
-      ...opMoveResultObj(2),
-      ...opInvokeVirtual(M_OUT_WRITE, [2, 1]),
-      ...opInvokeVirtual(M_OUT_FLUSH, [2]),
-      ...opInvokeVirtual(M_OUT_CLOSE, [2]),
-      ...opInvokeVirtual(M_BTSOCK_CLOSE, [0]),
+      ...opInvokeVirtual(M_BTSOCK_CONN, [2]),
+      ...opIputObj(2, 5, F_BR_BTSOCK),
+      label('bt_write_stream'),
+      ...opInvokeVirtual(M_BTSOCK_OUT, [2]),
+      ...opMoveResultObj(3),
+      ...opInvokeVirtual(M_OUT_WRITE, [3, 1]),
+      ...opInvokeVirtual(M_OUT_FLUSH, [3]),
       ...opConstStr(0, S_OK),
       ...opReturnObj(0),
     ],
-    catchItems: [...opMoveException(0), ...opConstStr(0, S_ERR_GEN), ...opReturnObj(0)],
+    catchItems: [
+      ...opMoveException(0),
+      // Reset cached socket on error so next attempt reconnects cleanly
+      ...opConst4(1, 0),
+      ...opIputObj(1, 5, F_BR_BTSOCK),
+      ...opConstStr(0, S_ERR_GEN),
+      ...opReturnObj(0),
+    ],
   });
 
   // printTcpBase64(String, int, String)String: v4 = this, v5 = ip, v6 = port, v7 = base64Data
@@ -1160,6 +1316,7 @@ function buildClassesDex() {
       instanceFields: [
         { fKey: F_BR_ACT, flags: 0x0002 },
         { fKey: F_BR_BT, flags: 0x0002 },
+        { fKey: F_BR_BTSOCK, flags: 0x0002 },
         { fKey: F_BR_USB, flags: 0x0002 },
       ],
       directMethods: [{ mKey: M_BR_INIT, flags: 0x10001, code: codeBrInit }],

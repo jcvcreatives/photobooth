@@ -1147,10 +1147,10 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
         </div>
       )}
 
-      {/* Out of Paper / Bad Printout — Admin Reprint Override Modal */}
+      {/* No Receipt Came Out? / Bad Printout — Gen Z Friendly Gobble Haus Staff Assist & Reprint Modal */}
       {showAdminReprintModal && (
         <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-[#faf8f5] rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-zinc-200 flex flex-col items-center text-center">
+          <div className="bg-[#faf8f5] rounded-3xl p-5 sm:p-6 max-w-sm w-full shadow-2xl border border-zinc-200 flex flex-col items-center text-center">
             <div className="w-full flex justify-end">
               <button
                 type="button"
@@ -1161,25 +1161,47 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
               </button>
             </div>
 
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-base mb-3 shadow-sm">
-              <Printer className="w-5 h-5" />
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center font-bold text-xl mb-2.5 shadow-sm">
+              🥺
             </div>
 
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 border border-amber-200 text-[10px] uppercase font-mono tracking-widest text-amber-800 mb-2">
-              <span>Paper Recovery • No Voucher Needed</span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 border border-amber-200 text-[10px] uppercase font-mono font-extrabold tracking-widest text-amber-900 mb-2">
+              <span>✨ Snaps 100% Safe • Free Reprint</span>
             </div>
 
-            <h3 className="text-lg font-extrabold text-zinc-950 mb-1">
-              Admin Photo Reprint
+            <h3 className="text-lg font-black text-zinc-950 mb-1 leading-tight">
+              No Receipt Came Out, Bestie? 🥺
             </h3>
-            <p className="text-xs text-zinc-500 mb-3 leading-relaxed">
-              Reload the thermal paper roll or clear any paper jam, then enter the <strong>Admin Passcode</strong> below to reprint this customer&apos;s photo immediately.
+            <p className="text-xs text-zinc-600 mb-3 leading-relaxed">
+              Did the printer run out of paper or ghost your strip? <strong>Don&apos;t stress — your iconic photos are saved!</strong> Tap below to chime our friendly <strong>Gobble Haus crew</strong> so we can reload the paper &amp; reprint your strip for free! 🍗🍦
             </p>
+
+            {/* 1-Tap Gen Z Friendly Call Gobble Haus Staff Chime Button */}
+            <button
+              type="button"
+              onClick={handleCallGobbleHausStaff}
+              className={`w-full py-2.5 px-3.5 rounded-2xl font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition mb-3 ${
+                staffCallNotified
+                  ? 'bg-amber-400 text-zinc-950 border-2 border-zinc-900 animate-pulse'
+                  : 'bg-zinc-950 hover:bg-zinc-800 text-white'
+              }`}
+            >
+              <span className="text-sm">{staffCallNotified ? '👋' : '🔔'}</span>
+              <span>
+                {staffCallNotified
+                  ? 'Gobble Haus Crew Pinged! Wave us over, bestie ✨'
+                  : 'Ping Gobble Haus Crew for Assist (Chime) 🫶'}
+              </span>
+            </button>
 
             <form
               onSubmit={handleAdminReprintSubmit}
-              className="w-full space-y-3 bg-white p-4 rounded-2xl border border-zinc-200 shadow-xs"
+              className="w-full space-y-3 bg-white p-4 rounded-2xl border border-zinc-200 shadow-xs text-left"
             >
+              <div className="text-[10.5px] font-mono uppercase tracking-wider font-extrabold text-zinc-500 text-center">
+                👨‍🍳 Gobble Haus Crew Quick Reprint
+              </div>
+
               <div className="flex items-center justify-between gap-2 text-xs font-semibold text-zinc-700">
                 <span>Copies to Reprint:</span>
                 <div className="flex items-center gap-1.5">
@@ -1207,21 +1229,19 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 <Lock className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
-                  inputMode="numeric"
                   value={adminReprintPasscode}
                   onChange={(e) => {
                     setAdminReprintPasscode(e.target.value);
                     setAdminReprintError('');
                   }}
-                  placeholder="ENTER ADMIN PASSCODE..."
-                  autoFocus
+                  placeholder="STAFF PIN TO REPRINT..."
                   autoComplete="off"
-                  className="w-full pl-9 pr-4 py-3 rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white text-center tracking-widest font-mono text-sm font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black transition"
+                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white text-center tracking-widest font-mono text-xs font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black transition"
                 />
               </div>
 
               {adminReprintError && (
-                <p className="text-xs font-medium text-rose-500">{adminReprintError}</p>
+                <p className="text-xs font-medium text-rose-500 text-center">{adminReprintError}</p>
               )}
 
               <button
@@ -1230,7 +1250,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
               >
                 <Printer className="w-4 h-4" />
                 <span>
-                  Reprint {adminReprintCopies} {adminReprintCopies === 1 ? 'Copy' : 'Copies'} Now
+                  Reprint {adminReprintCopies} {adminReprintCopies === 1 ? 'Copy' : 'Copies'} Now ✨
                 </span>
               </button>
             </form>
@@ -1238,9 +1258,9 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             <button
               type="button"
               onClick={() => setShowAdminReprintModal(false)}
-              className="mt-4 text-xs text-zinc-500 hover:text-zinc-900 font-medium cursor-pointer"
+              className="mt-3.5 text-xs text-zinc-500 hover:text-zinc-900 font-medium cursor-pointer"
             >
-              Cancel
+              Close
             </button>
           </div>
         </div>
@@ -1309,13 +1329,13 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                           ? 'Paper Jam Detected'
                           : activeCategory === 'paper_out'
                           ? 'Paper Empty'
-                          : 'Printer Error'}
+                          : 'Printer Pause'}
                       </span>
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Printer Diagnostics Ready</span>
+                      <span>Printer Connected &amp; Ready</span>
                     </>
                   )}
                 </div>
@@ -1340,10 +1360,10 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                       <span>✨ Don&apos;t Panic Bestie • Snaps 100% Saved</span>
                     </div>
                     <h3 className="text-sm sm:text-base font-black text-zinc-950 leading-tight">
-                      Oops! We ran into a tiny printer hiccup 🥺
+                      No receipt came out or printer paused? 🥺
                     </h3>
                     <p className="text-[11.5px] text-zinc-700 mt-1 leading-relaxed">
-                      Our thermal printer needs a quick TLC moment ({activeInfo.title.toLowerCase()}). Wave over any friendly <strong>Gobble Haus staff member</strong> and we&apos;ll fix it &amp; reprint your strip right away! 🍗🍦
+                      Our thermal printer just needs a quick vibe check ({activeInfo.title.toLowerCase()}). Tap the button below to chime our friendly <strong>Gobble Haus crew</strong> — we&apos;ll hop right over and print your strip fresh! 🍗🍦
                     </p>
                   </div>
                 </div>
@@ -1360,8 +1380,8 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                   <span className="text-sm">{staffCallNotified ? '👋' : '🔔'}</span>
                   <span>
                     {staffCallNotified
-                      ? 'Crew Chime Sounded! Wave Over Gobble Haus Staff ✨'
-                      : 'Ping Gobble Haus Staff for Quick Assist (Chime) 🥡'}
+                      ? 'Gobble Haus Crew Pinged! Wave us over, bestie ✨'
+                      : 'Ping Gobble Haus Crew for Quick Assist (Chime) 🫶'}
                   </span>
                 </button>
               </div>

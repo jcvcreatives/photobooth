@@ -1989,6 +1989,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <span>Active</span>
                         </span>
                       )}
+                      {printerStatus.isConnected && printerStatus.connectionType === 'bluetooth' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold">
+                          <span className="relative flex h-2 w-2 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          </span>
+                          <span>Connected: {printerStatus.deviceName}</span>
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-zinc-500">
                       80mm Print Width (576 dots/line) • Continuous Printing • Automatic Paper Cut
@@ -2056,17 +2065,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       await thermalPrinterService.connectBluetooth();
                     }}
                     className={`p-3 rounded-lg border text-left transition cursor-pointer flex items-center justify-between ${
-                      (localConfig.thermalPrinter.printerModel || 'vozy_g80') === 'vozy_g80' &&
-                      printerStatus.connectionType === 'bluetooth' &&
-                      printerStatus.isConnected
-                        ? 'bg-zinc-900 border-zinc-900 text-white'
+                      printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                        ? 'bg-emerald-950 border-emerald-700 text-white'
                         : 'bg-zinc-50 border-zinc-200 hover:border-zinc-400 text-zinc-900'
                     }`}
                   >
                     <div>
-                      <div className="font-semibold text-xs">1. Connect Bluetooth</div>
-                      <div className="text-[11px] opacity-70 mt-0.5">
-                        Wireless VOZY G80
+                      <div className="font-semibold text-xs flex items-center gap-1.5">
+                        {printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected && (
+                          <span className="relative flex h-2.5 w-2.5 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
+                          </span>
+                        )}
+                        <span>
+                          {printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                            ? '1. Bluetooth Connected'
+                            : '1. Connect Bluetooth'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] opacity-80 mt-0.5">
+                        {printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                          ? printerStatus.deviceName
+                          : 'Wireless VOZY G80'}
                       </div>
                     </div>
                     <ArrowRight className="w-3.5 h-3.5 shrink-0" />
@@ -3041,12 +3062,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        printerStatus.isConnected ? 'bg-zinc-900' : 'bg-zinc-300'
-                      }`}
-                    />
-                    <span className="font-mono text-zinc-700">{printerStatus.deviceName}</span>
+                    {printerStatus.isConnected &&
+                    (printerStatus.connectionType === 'bluetooth' ||
+                      printerStatus.connectionType === 'usb') ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                        <span className="relative flex h-2 w-2 shrink-0">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                        </span>
+                        <span className="font-mono">{printerStatus.deviceName}</span>
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${
+                            printerStatus.isConnected ? 'bg-emerald-500' : 'bg-zinc-300'
+                          }`}
+                        />
+                        <span className="font-mono text-zinc-700">{printerStatus.deviceName}</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -3072,18 +3107,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }}
                     className={`p-3 rounded-lg border text-left transition flex flex-col justify-between cursor-pointer ${
                       printerStatus.connectionType === 'usb' && printerStatus.isConnected
-                        ? 'border-zinc-900 bg-zinc-900 text-white'
+                        ? 'border-emerald-700 bg-emerald-950 text-white'
                         : 'border-zinc-200 bg-zinc-50 hover:border-zinc-400 text-zinc-900'
                     }`}
                   >
                     <div>
-                      <div className="font-semibold text-xs mb-0.5">USB Cord (Direct / OTG)</div>
+                      <div className="font-semibold text-xs mb-0.5 flex items-center gap-1.5">
+                        {printerStatus.connectionType === 'usb' && printerStatus.isConnected && (
+                          <span className="relative flex h-2 w-2 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                          </span>
+                        )}
+                        <span>USB Cord (Direct / OTG)</span>
+                      </div>
                       <div className="text-[11px] opacity-70">
                         Direct USB cable for 58mm/80mm printers
                       </div>
                     </div>
                     <div className="mt-2.5 text-[11px] font-medium flex items-center gap-1">
-                      <span>Pair USB</span>
+                      <span>
+                        {printerStatus.connectionType === 'usb' && printerStatus.isConnected
+                          ? 'Connected'
+                          : 'Pair USB'}
+                      </span>
                       <ArrowRight className="w-3 h-3" />
                     </div>
                   </button>
@@ -3096,18 +3143,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }}
                     className={`p-3 rounded-lg border text-left transition flex flex-col justify-between cursor-pointer ${
                       printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
-                        ? 'border-zinc-900 bg-zinc-900 text-white'
+                        ? 'border-emerald-700 bg-emerald-950 text-white'
                         : 'border-zinc-200 bg-zinc-50 hover:border-zinc-400 text-zinc-900'
                     }`}
                   >
                     <div>
-                      <div className="font-semibold text-xs mb-0.5">Wireless Bluetooth</div>
+                      <div className="font-semibold text-xs mb-0.5 flex items-center gap-1.5">
+                        {printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected && (
+                          <span className="relative flex h-2.5 w-2.5 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
+                          </span>
+                        )}
+                        <span>
+                          {printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                            ? 'Bluetooth Connected'
+                            : 'Wireless Bluetooth'}
+                        </span>
+                      </div>
                       <div className="text-[11px] opacity-70">
-                        Scan &amp; pair Bluetooth thermal printers
+                        {printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                          ? printerStatus.deviceName
+                          : 'Scan & pair Bluetooth thermal printers'}
                       </div>
                     </div>
                     <div className="mt-2.5 text-[11px] font-medium flex items-center gap-1">
-                      <span>Scan Bluetooth</span>
+                      <span>
+                        {printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                          ? 'Connected (Tap to Re-Pair)'
+                          : 'Scan Bluetooth'}
+                      </span>
                       <ArrowRight className="w-3 h-3" />
                     </div>
                   </button>

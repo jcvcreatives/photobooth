@@ -2425,7 +2425,16 @@ class ThermalPrinterService {
     const usbBulkChunks = this.sliceBufferChunks(escposBytes, 16384);
     const androidChunks = this.sliceBufferChunks(escposBytes, 8192);
 
-    const mode = this.currentStatus.connectionType;
+    let mode = this.currentStatus.connectionType;
+
+    // If running inside the Android .APK and mode was still left at 'virtual', automatically connect & route to real Android Bluetooth or USB hardware!
+    if (mode === 'virtual' && typeof window !== 'undefined' && window.AndroidPrinter) {
+      if (window.AndroidPrinter.hasUsbPrinter?.()) {
+        mode = 'usb';
+      } else {
+        mode = 'bluetooth';
+      }
+    }
 
     // 1. Universal System / OS Printer Mode (USB Cord or Wireless via Silent Bridge / WebUSB — zero popup)
     if (mode === 'system') {
@@ -2463,6 +2472,18 @@ class ThermalPrinterService {
             const connRes = window.AndroidPrinter.connectUsb();
             if (connRes && connRes.startsWith('OK:')) {
               this.nativeUsbActive = true;
+              const usbName = connRes.slice(3) || 'VOZY G80 (USB OTG)';
+              this.currentStatus = {
+                isConnected: true,
+                connectionType: 'usb',
+                deviceName: usbName,
+                details: 'Connected via Native Android USB OTG Host',
+              };
+              safeStorageSet('snapkiosk_printer_type', 'usb');
+              safeStorageSet('snapkiosk_printer_name', usbName);
+              this.notify();
+            } else if (connRes && connRes.startsWith('ERR:')) {
+              throw new Error(connRes.replace(/^ERR:/, ''));
             }
           }
           for (let c = 0; c < copies; c++) {
@@ -2624,6 +2645,18 @@ class ThermalPrinterService {
               const connRes = window.AndroidPrinter.connectBluetooth();
               if (connRes && connRes.startsWith('OK:')) {
                 this.nativeBluetoothActive = true;
+                const btName = connRes.slice(3) || 'VOZY G80 (Bluetooth)';
+                this.currentStatus = {
+                  isConnected: true,
+                  connectionType: 'bluetooth',
+                  deviceName: btName,
+                  details: 'Connected via Native Android Bluetooth SPP',
+                };
+                safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+                safeStorageSet('snapkiosk_printer_name', btName);
+                this.notify();
+              } else if (connRes && (connRes.startsWith('ERR:') || connRes.startsWith('FALLBACK:'))) {
+                throw new Error(connRes.replace(/^(ERR:|FALLBACK:)/, ''));
               }
             }
             for (let c = 0; c < copies; c++) {

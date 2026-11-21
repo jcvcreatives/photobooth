@@ -15,6 +15,7 @@ import {
 import { ScreenState, KioskTelemetry, RemoteKioskConfig } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { safeStorageGet, safeStorageSet } from '../services/storage';
+import { thermalPrinterService, PrinterDeviceStatus } from '../services/thermalPrinter';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -150,9 +151,21 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   const [secretTapCount, setSecretTapCount] = useState(0);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [printerStatus, setPrinterStatus] = useState<PrinterDeviceStatus>(() =>
+    thermalPrinterService.getStatus()
+  );
 
   const headerRef = useRef<HTMLElement | null>(null);
   const wasNativeFsRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const unsubscribe = thermalPrinterService.subscribe((status) => {
+      setPrinterStatus(status);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const handleExternalLockChange = (e: Event) => {
@@ -311,8 +324,27 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
             </button>
           </div>
 
-          {/* Right Controls: Install App + Hide Bar (when maximized) + Maximize Toggle + Optional Admin */}
+          {/* Right Controls: Bluetooth Connected Green Light + Install App + Hide Bar (when maximized) + Maximize Toggle + Optional Admin */}
           <div className="flex items-center gap-1.5">
+            {printerStatus.isConnected &&
+              (printerStatus.connectionType === 'bluetooth' ||
+                printerStatus.connectionType === 'usb') && (
+                <div
+                  title={`Connected to ${printerStatus.deviceName}`}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold"
+                >
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </span>
+                  <span className="truncate max-w-[140px]">
+                    {printerStatus.connectionType === 'bluetooth'
+                      ? `Bluetooth Connected`
+                      : `USB Connected`}
+                  </span>
+                </div>
+              )}
+
             {!isInstalled && deferredPrompt && (
               <button
                 onClick={handleInstallApp}
