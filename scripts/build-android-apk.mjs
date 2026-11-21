@@ -167,7 +167,7 @@ function buildBinaryAndroidManifest() {
       {
         tag: 'application',
         attrs: [
-          { ns: true, name: 'theme', type: 0x01, data: 0x01030007 }, // @android:style/Theme.NoTitleBar.Fullscreen
+          { ns: true, name: 'theme', type: 0x01, data: 0x0103000a }, // @android:style/Theme.Light.NoTitleBar.Fullscreen
           { ns: true, name: 'label', type: 0x03, data: 'JCVcreatives Photobooth' },
           { ns: true, name: 'icon', type: 0x01, data: 0x7f010000 }, // @drawable/ic_launcher
           { ns: true, name: 'hardwareAccelerated', type: 0x12, data: 0xffffffff },
@@ -580,15 +580,20 @@ function buildClassesDex() {
   const M_OBJ_INIT = addMethod(T_OBJ, '<init>', T_VOID, []);
   const M_ACT_INIT = addMethod(T_ACT, '<init>', T_VOID, []);
   const M_ACT_ONCREATE_SUPER = addMethod(T_ACT, 'onCreate', T_VOID, [T_BUNDLE]);
+  const M_ACT_ONRESUME_SUPER = addMethod(T_ACT, 'onResume', T_VOID, []);
+  const M_ACT_ONWIN_FOCUS_SUPER = addMethod(T_ACT, 'onWindowFocusChanged', T_VOID, [T_BOOL]);
   const M_ACT_REQ_FEAT = addMethod(T_ACT, 'requestWindowFeature', T_BOOL, [T_INT]);
   const M_ACT_GET_WIN = addMethod(T_ACT, 'getWindow', T_WIN, []);
   const M_WIN_SET_FLAGS = addMethod(T_WIN, 'setFlags', T_VOID, [T_INT, T_INT]);
+  const M_WIN_GET_DECOR = addMethod(T_WIN, 'getDecorView', T_VIEW, []);
+  const M_VIEW_SET_SYS_UI = addMethod(T_VIEW, 'setSystemUiVisibility', T_VOID, [T_INT]);
   const M_ACT_REQ_PERMS = addMethod(T_ACT, 'requestPermissions', T_VOID, [T_STR_ARR, T_INT]);
   const M_ACT_SET_CV = addMethod(T_ACT, 'setContentView', T_VOID, [T_VIEW]);
   const M_ACT_GET_SYS = addMethod(T_ACT, 'getSystemService', T_OBJ, [T_STR]);
   const M_ACT_START_ACT = addMethod(T_ACT, 'startActivity', T_VOID, [T_INTENT]);
 
   const M_WV_INIT = addMethod(T_WV, '<init>', T_VOID, [T_CTX]);
+  const M_WV_SET_BG = addMethod(T_WV, 'setBackgroundColor', T_VOID, [T_INT]);
   const M_WV_GET_SET = addMethod(T_WV, 'getSettings', T_WS, []);
   const M_WV_SET_WVC = addMethod(T_WV, 'setWebViewClient', T_VOID, [T_WVC]);
   const M_WV_SET_WCC = addMethod(T_WV, 'setWebChromeClient', T_VOID, [T_WCC]);
@@ -617,7 +622,10 @@ function buildClassesDex() {
   const M_CHROME_ONPERM = addMethod(T_CHROME, 'onPermissionRequest', T_VOID, [T_PREQ]);
 
   const M_MAIN_INIT = addMethod(T_MAIN, '<init>', T_VOID, []);
+  const M_MAIN_HIDE_SYS_UI = addMethod(T_MAIN, 'hideSystemUi', T_VOID, []);
   const M_MAIN_ONCREATE = addMethod(T_MAIN, 'onCreate', T_VOID, [T_BUNDLE]);
+  const M_MAIN_ONRESUME = addMethod(T_MAIN, 'onResume', T_VOID, []);
+  const M_MAIN_ONWIN_FOCUS = addMethod(T_MAIN, 'onWindowFocusChanged', T_VOID, [T_BOOL]);
   const M_MAIN_ONBACK = addMethod(T_MAIN, 'onBackPressed', T_VOID, []);
 
   // Printer Bridge & Android APIs
@@ -872,6 +880,41 @@ function buildClassesDex() {
     ...opReturnVoid(),
   ]);
 
+  // MainActivity.hideSystemUi(): v2 = this
+  // Applies IMMERSIVE_STICKY | HIDE_NAVIGATION | FULLSCREEN | LAYOUT_HIDE_NAVIGATION | LAYOUT_FULLSCREEN | LAYOUT_STABLE (0x1706)
+  // to both Window.getDecorView() and this.webView so the bottom navigation bar (||| O <) stays completely hidden.
+  const codeMainHideSysUi = makeCodeItem(3, 1, 2, [
+    ...opInvokeVirtual(M_ACT_GET_WIN, [2]),
+    ...opMoveResultObj(0),
+    opIfEqz(0, 'hide_wv'),
+    ...opInvokeVirtual(M_WIN_GET_DECOR, [0]),
+    ...opMoveResultObj(0),
+    opIfEqz(0, 'hide_wv'),
+    ...opConst16(1, 0x1706),
+    ...opInvokeVirtual(M_VIEW_SET_SYS_UI, [0, 1]),
+    label('hide_wv'),
+    ...opIgetObj(0, 2, F_MAIN_WV),
+    opIfEqz(0, 'done_hide'),
+    ...opConst16(1, 0x1706),
+    ...opInvokeVirtual(M_VIEW_SET_SYS_UI, [0, 1]),
+    label('done_hide'),
+    ...opReturnVoid(),
+  ]);
+
+  // MainActivity.onResume(): v0 = this
+  const codeMainOnResume = makeCodeItem(1, 1, 1, [
+    ...opInvokeSuper(M_ACT_ONRESUME_SUPER, [0]),
+    ...opInvokeVirtual(M_MAIN_HIDE_SYS_UI, [0]),
+    ...opReturnVoid(),
+  ]);
+
+  // MainActivity.onWindowFocusChanged(boolean): v0 = this, v1 = hasFocus
+  const codeMainOnWinFocus = makeCodeItem(2, 2, 2, [
+    ...opInvokeSuper(M_ACT_ONWIN_FOCUS_SUPER, [0, 1]),
+    ...opInvokeVirtual(M_MAIN_HIDE_SYS_UI, [0]),
+    ...opReturnVoid(),
+  ]);
+
   // MainActivity.onCreate(Bundle):
   // v6 = this, v7 = Bundle
   const mainOnCreateWords = [
@@ -882,39 +925,14 @@ function buildClassesDex() {
     ...opMoveResultObj(0),
     ...opConst16(1, 0x0480), // FLAG_FULLSCREEN | FLAG_KEEP_SCREEN_ON
     ...opInvokeVirtual(M_WIN_SET_FLAGS, [0, 1, 1]),
-    // Check SDK_INT >= 23 for Android 6–14+ Camera + Bluetooth + Location permissions
-    ...opSgetInt(0, F_SDK_INT),
-    ...opConst16(1, 23),
-    opIfLt(0, 1, 'init_webview'),
-    ...opConst4(1, 7),
-    ...opNewArray(2, 1, T_STR_ARR),
-    ...opConst4(3, 0),
-    ...opConstStr(4, S_PERM_CAM),
-    ...opAputObj(4, 2, 3),
-    ...opConst4(3, 1),
-    ...opConstStr(4, S_PERM_BT),
-    ...opAputObj(4, 2, 3),
-    ...opConst4(3, 2),
-    ...opConstStr(4, S_PERM_BT_ADM),
-    ...opAputObj(4, 2, 3),
-    ...opConst4(3, 3),
-    ...opConstStr(4, S_PERM_BT_CON),
-    ...opAputObj(4, 2, 3),
-    ...opConst4(3, 4),
-    ...opConstStr(4, S_PERM_BT_SCN),
-    ...opAputObj(4, 2, 3),
-    ...opConst4(3, 5),
-    ...opConstStr(4, S_PERM_LOC_FINE),
-    ...opAputObj(4, 2, 3),
-    ...opConst4(3, 6),
-    ...opConstStr(4, S_PERM_LOC_COARSE),
-    ...opAputObj(4, 2, 3),
-    ...opConst16(3, 1001),
-    ...opInvokeVirtual(M_ACT_REQ_PERMS, [6, 2, 3]),
-    label('init_webview'),
+    ...opInvokeVirtual(M_MAIN_HIDE_SYS_UI, [6]),
+    // Create and mount WebView FIRST with warm cream (#faf8f5) background before permission checks
+    // so cold start renders immediately without a multi-second black/white flash.
     ...opNewInstance(0, T_WV),
     ...opInvokeDirect(M_WV_INIT, [0, 6]),
     ...opIputObj(0, 6, F_MAIN_WV),
+    ...opConst32(1, 0xfffaf8f5),
+    ...opInvokeVirtual(M_WV_SET_BG, [0, 1]),
     ...opInvokeVirtual(M_WV_GET_SET, [0]),
     ...opMoveResultObj(1),
     ...opConst4(2, 1), // true
@@ -942,24 +960,49 @@ function buildClassesDex() {
     ...opInvokeDirect(M_BR_INIT, [2, 6]),
     ...opConstStr(3, S_JS_NAME),
     ...opInvokeVirtual(M_WV_ADD_JS, [0, 2, 3]),
-    // setContentView & loadUrl
+    // setContentView & loadUrl immediately
     ...opInvokeVirtual(M_ACT_SET_CV, [6, 0]),
     ...opConstStr(2, S_INDEX_URL),
     ...opInvokeVirtual(M_WV_LOAD_URL, [0, 2]),
+    ...opInvokeVirtual(M_MAIN_HIDE_SYS_UI, [6]),
+    // Check SDK_INT >= 23 for Android 6–14+ Camera + Bluetooth + Location permissions
+    ...opSgetInt(0, F_SDK_INT),
+    ...opConst16(1, 23),
+    opIfLt(0, 1, 'done_create'),
+    ...opConst4(1, 7),
+    ...opNewArray(2, 1, T_STR_ARR),
+    ...opConst4(3, 0),
+    ...opConstStr(4, S_PERM_CAM),
+    ...opAputObj(4, 2, 3),
+    ...opConst4(3, 1),
+    ...opConstStr(4, S_PERM_BT),
+    ...opAputObj(4, 2, 3),
+    ...opConst4(3, 2),
+    ...opConstStr(4, S_PERM_BT_ADM),
+    ...opAputObj(4, 2, 3),
+    ...opConst4(3, 3),
+    ...opConstStr(4, S_PERM_BT_CON),
+    ...opAputObj(4, 2, 3),
+    ...opConst4(3, 4),
+    ...opConstStr(4, S_PERM_BT_SCN),
+    ...opAputObj(4, 2, 3),
+    ...opConst4(3, 5),
+    ...opConstStr(4, S_PERM_LOC_FINE),
+    ...opAputObj(4, 2, 3),
+    ...opConst4(3, 6),
+    ...opConstStr(4, S_PERM_LOC_COARSE),
+    ...opAputObj(4, 2, 3),
+    ...opConst16(3, 1001),
+    ...opInvokeVirtual(M_ACT_REQ_PERMS, [6, 2, 3]),
+    label('done_create'),
     ...opReturnVoid(),
   ];
   const codeMainOnCreate = makeCodeItem(8, 2, 3, mainOnCreateWords);
 
-  // MainActivity.onBackPressed(): v1 = this
-  const codeMainOnBack = makeCodeItem(2, 1, 1, [
-    ...opIgetObj(0, 1, F_MAIN_WV),
-    opIfEqz(0, 'done_back'),
-    ...opInvokeVirtual(M_WV_CAN_BACK, [0]),
-    ...opMoveResult(0),
-    opIfEqz(0, 'done_back'),
-    ...opIgetObj(0, 1, F_MAIN_WV),
-    ...opInvokeVirtual(M_WV_GO_BACK, [0]),
-    label('done_back'),
+  // MainActivity.onBackPressed(): v0 = this
+  // Kiosk lock: re-assert immersive sticky fullscreen and ignore accidental system back presses
+  const codeMainOnBack = makeCodeItem(1, 1, 1, [
+    ...opInvokeVirtual(M_MAIN_HIDE_SYS_UI, [0]),
     ...opReturnVoid(),
   ]);
 
@@ -1488,8 +1531,11 @@ function buildClassesDex() {
       instanceFields: [{ fKey: F_MAIN_WV, flags: 0x0002 }],
       directMethods: [{ mKey: M_MAIN_INIT, flags: 0x10001, code: codeMainInit }],
       virtualMethods: [
+        { mKey: M_MAIN_HIDE_SYS_UI, flags: 0x0001, code: codeMainHideSysUi },
         { mKey: M_MAIN_ONBACK, flags: 0x0001, code: codeMainOnBack },
         { mKey: M_MAIN_ONCREATE, flags: 0x0004, code: codeMainOnCreate },
+        { mKey: M_MAIN_ONRESUME, flags: 0x0004, code: codeMainOnResume },
+        { mKey: M_MAIN_ONWIN_FOCUS, flags: 0x0001, code: codeMainOnWinFocus },
       ],
       annotatedMethods: [],
     },
@@ -2045,11 +2091,12 @@ function collectWebAssets(dir, prefix = 'assets/www') {
       results.push(...collectWebAssets(fullPath, relPath));
     } else {
       const ext = path.extname(item).toLowerCase();
-      const alreadyCompressed = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.woff2'].includes(ext);
+      // Store web assets uncompressed so Android WebView directly memory-maps (mmap) HTML/JS/CSS on cold launch with zero inflate delay
+      const storeUncompressed = ['.html', '.js', '.css', '.json', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.woff2'].includes(ext);
       results.push({
         name: relPath,
         rawData: fs.readFileSync(fullPath),
-        storeUncompressed: alreadyCompressed,
+        storeUncompressed,
       });
     }
   }
@@ -2072,7 +2119,8 @@ async function buildApk() {
     // Android 11+ (targetSdkVersion >= 30) REQUIRES resources.arsc to be stored UNCOMPRESSED and 4-byte aligned!
     { name: 'resources.arsc', rawData: resourcesArsc, storeUncompressed: true },
     { name: 'res/drawable/ic_launcher.png', rawData: iconPng, storeUncompressed: true },
-    { name: 'classes.dex', rawData: classesDex, storeUncompressed: false },
+    // Store classes.dex uncompressed and 4-byte aligned so Android ART directly mmaps DEX without extraction delay on cold start
+    { name: 'classes.dex', rawData: classesDex, storeUncompressed: true },
     ...collectWebAssets(distDir, 'assets/www'),
   ];
 

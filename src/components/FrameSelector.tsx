@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Check,
   ArrowRight,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { FrameLayoutType, FrameTheme, PhotoFilterType } from '../types';
 import { soundEffects } from '../services/soundEffects';
+import { cameraStreamService } from '../services/cameraStreamService';
 
 interface FrameSelectorProps {
   selectedLayout: FrameLayoutType;
@@ -80,13 +81,48 @@ const MiniLiveVideo: React.FC<{
   stream?: MediaStream | null;
   facingMode?: 'user' | 'environment';
   className?: string;
-}> = ({ className = '' }) => (
-  <div
-    className={`w-full h-full bg-zinc-100 flex items-center justify-center text-zinc-400 overflow-hidden ${className}`}
-  >
-    <Camera className="w-2.5 h-2.5 opacity-60" />
-  </div>
-);
+}> = ({ stream, facingMode = 'user', className = '' }) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !stream) return;
+    if (videoEl.srcObject !== stream) {
+      videoEl.srcObject = stream;
+    }
+    const playPromise = videoEl.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {});
+    }
+  }, [stream]);
+
+  if (!stream) {
+    return (
+      <div
+        className={`w-full h-full bg-zinc-100 flex items-center justify-center text-zinc-400 overflow-hidden ${className}`}
+      >
+        <Camera className="w-2.5 h-2.5 opacity-60 animate-pulse" />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`w-full h-full bg-zinc-900 overflow-hidden relative ${className}`}>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        onLoadedMetadata={(e) => {
+          e.currentTarget.play().catch(() => {});
+        }}
+        className={`w-full h-full object-cover ${
+          facingMode === 'user' ? '-scale-x-100' : ''
+        }`}
+      />
+    </div>
+  );
+};
 
 export const FrameSelector: React.FC<FrameSelectorProps> = ({
   selectedLayout,
@@ -100,9 +136,28 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
   onSecretAdminTap,
 }) => {
   const [facingMode] = useState<'user' | 'environment'>('user');
-  const cameraStream = null;
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(() =>
+    cameraStreamService.getCachedStream('user')
+  );
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [logoTapCount, setLogoTapCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    cameraStreamService.setIdleEcoMode(false);
+    const cached = cameraStreamService.getCachedStream(facingMode);
+    if (cached) {
+      setCameraStream(cached);
+    }
+    cameraStreamService.getOrStartStream(facingMode).then((stream) => {
+      if (!cancelled && stream) {
+        setCameraStream(stream);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [facingMode]);
 
   useEffect(() => {
     if (logoTapCount === 0) return;

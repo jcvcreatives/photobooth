@@ -105,10 +105,27 @@ class CameraStreamService {
           videoConstraints.deviceId = { ideal: savedDeviceId };
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: videoConstraints,
-          audio: false,
-        });
+        let stream: MediaStream | null = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: videoConstraints,
+            audio: false,
+          });
+        } catch {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode },
+              audio: false,
+            });
+          } catch {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false,
+            });
+          }
+        }
+
+        if (!stream) return null;
 
         this.activeStream = stream;
         safeStorageSet(CAMERA_PERMISSION_STORAGE_KEY, 'true');

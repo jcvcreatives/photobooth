@@ -1337,11 +1337,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="w-7 h-7 rounded-lg bg-zinc-900 flex items-center justify-center text-white">
               <Sliders className="w-3.5 h-3.5" />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-sm font-bold text-zinc-900 tracking-tight">Admin</h1>
               <span className="text-[11px] text-zinc-400 font-mono">
                 • {config.locationName}
               </span>
+              {printerStatus.isConnected &&
+                (printerStatus.connectionType === 'bluetooth' ||
+                  printerStatus.connectionType === 'usb') && (
+                  <div
+                    title={`Connected to ${printerStatus.deviceName}`}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold"
+                  >
+                    <span className="relative flex h-2 w-2 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    </span>
+                    <span className="truncate max-w-[160px]">
+                      {printerStatus.connectionType === 'bluetooth'
+                        ? `Bluetooth Connected (${printerStatus.deviceName})`
+                        : `USB Connected (${printerStatus.deviceName})`}
+                    </span>
+                  </div>
+                )}
             </div>
           </div>
 

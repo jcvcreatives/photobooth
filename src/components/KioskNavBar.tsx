@@ -15,7 +15,6 @@ import {
 import { ScreenState, KioskTelemetry, RemoteKioskConfig } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { safeStorageGet, safeStorageSet } from '../services/storage';
-import { thermalPrinterService, PrinterDeviceStatus } from '../services/thermalPrinter';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -131,41 +130,17 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   onRequestAdmin,
 }) => {
   const [isMaximizedLocked, setIsMaximizedLocked] = useState<boolean>(() => {
-    if (typeof document !== 'undefined') {
-      const doc = document as any;
-      const activeFs = !!(
-        doc.fullscreenElement ||
-        doc.webkitFullscreenElement ||
-        doc.mozFullScreenElement ||
-        doc.msFullscreenElement
-      );
-      if (!activeFs) {
-        safeStorageSet('jcv_fullscreen_locked', 'false');
-        return false;
-      }
-    }
     return safeStorageGet('jcv_fullscreen_locked') === 'true';
   });
-  const [isTopMenuHidden, setIsTopMenuHidden] = useState<boolean>(false);
+  const [isTopMenuHidden, setIsTopMenuHidden] = useState<boolean>(() => {
+    return safeStorageGet('jcv_fullscreen_locked') === 'true';
+  });
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [secretTapCount, setSecretTapCount] = useState(0);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [printerStatus, setPrinterStatus] = useState<PrinterDeviceStatus>(() =>
-    thermalPrinterService.getStatus()
-  );
 
   const headerRef = useRef<HTMLElement | null>(null);
-  const wasNativeFsRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    const unsubscribe = thermalPrinterService.subscribe((status) => {
-      setPrinterStatus(status);
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     const handleExternalLockChange = (e: Event) => {
@@ -190,6 +165,36 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       setIsTopMenuHidden(false);
     }
   }, [currentScreen, isMaximizedLocked]);
+
+  // Re-assert browser/tablet Fullscreen API with navigationUI: 'hide' whenever locked and user taps the screen
+  // so Android's bottom navigation bar (||| O <) stays completely hidden even after system permission prompts.
+  useEffect(() => {
+    if (!isMaximizedLocked) return;
+
+    const enforceHiddenNavOnTap = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('[data-no-fullscreen-enforce="true"]')) {
+        return;
+      }
+      const doc = document as any;
+      const activeFs = !!(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+      if (!activeFs) {
+        enterBrowserFullscreenApi();
+      }
+    };
+
+    window.addEventListener('pointerdown', enforceHiddenNavOnTap, { passive: true });
+    window.addEventListener('click', enforceHiddenNavOnTap, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', enforceHiddenNavOnTap);
+      window.removeEventListener('click', enforceHiddenNavOnTap);
+    };
+  }, [isMaximizedLocked]);
 
   useEffect(() => {
     if (secretTapCount === 0) return;
@@ -243,19 +248,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         doc.msFullscreenElement
       );
       setIsNativeFullscreen(activeFs);
-      if (wasNativeFsRef.current && !activeFs) {
-        // User pressed Esc or exited native browser fullscreen
-        safeStorageSet('jcv_fullscreen_locked', 'false');
-        setIsMaximizedLocked(false);
-        setIsTopMenuHidden(false);
-        window.dispatchEvent(
-          new CustomEvent('jcv_fullscreen_lock_changed', {
-            detail: { locked: false, hideMenu: false },
-          })
-        );
-      }
-      wasNativeFsRef.current = activeFs;
     };
+    fsChange();
     document.addEventListener('fullscreenchange', fsChange);
     document.addEventListener('webkitfullscreenchange', fsChange);
 
@@ -324,26 +318,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
             </button>
           </div>
 
-          {/* Right Controls: Bluetooth Connected Green Light + Install App + Hide Bar (when maximized) + Maximize Toggle + Optional Admin */}
+          {/* Right Controls: Install App + Hide Bar (when maximized) + Maximize Toggle + Optional Admin */}
           <div className="flex items-center gap-1.5">
-            {printerStatus.isConnected &&
-              (printerStatus.connectionType === 'bluetooth' ||
-                printerStatus.connectionType === 'usb') && (
-                <div
-                  title={`Connected to ${printerStatus.deviceName}`}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold"
-                >
-                  <span className="relative flex h-2 w-2 shrink-0">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                  </span>
-                  <span className="truncate max-w-[140px]">
-                    {printerStatus.connectionType === 'bluetooth'
-                      ? `Bluetooth Connected`
-                      : `USB Connected`}
-                  </span>
-                </div>
-              )}
 
             {!isInstalled && deferredPrompt && (
               <button

@@ -34,9 +34,12 @@ import { FrameSelector } from './components/FrameSelector';
 import { CaptureBooth } from './components/CaptureBooth';
 import { EditorScreen } from './components/EditorScreen';
 import { PrintAndShareScreen } from './components/PrintAndShareScreen';
-import { AdminDashboard } from './components/AdminDashboard';
 import { GuestShareModal } from './components/GuestShareModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+
+const AdminDashboard = React.lazy(() =>
+  import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
+);
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenState>('attract');
@@ -65,12 +68,18 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showMobileShareModal, setShowMobileShareModal] = useState(false);
 
-  // Subscribe to live battery level & charger state
+  // Subscribe to live battery level & charger state + preload AdminDashboard in background after first paint
   useEffect(() => {
     const unsubscribe = enduranceManager.subscribe((status) => {
       setPowerStatus(status);
     });
-    return unsubscribe;
+    const preloadTimer = window.setTimeout(() => {
+      import('./components/AdminDashboard').catch(() => {});
+    }, 800);
+    return () => {
+      unsubscribe();
+      window.clearTimeout(preloadTimer);
+    };
   }, []);
 
   // Low-battery warning (< 35% and NOT plugged in): blink screen red and play warning sound.
@@ -448,20 +457,22 @@ export default function App() {
 
       {/* Admin Dashboard Modal */}
       {showAdminModal && (
-        <AdminDashboard
-          config={config}
-          onUpdateConfig={(newConf) => {
-            setConfig(newConf);
-            if (newConf.thermalPrinter?.brightness !== undefined) {
-              setSelectedBrightness(newConf.thermalPrinter.brightness);
-            }
-            if (newConf.thermalPrinter?.printCopies !== undefined && currentScreen === 'attract') {
-              setSelectedCopies(Math.max(1, newConf.thermalPrinter.printCopies));
-            }
-            setTelemetry(analyticsService.getTelemetry());
-          }}
-          onClose={() => setShowAdminModal(false)}
-        />
+        <React.Suspense fallback={null}>
+          <AdminDashboard
+            config={config}
+            onUpdateConfig={(newConf) => {
+              setConfig(newConf);
+              if (newConf.thermalPrinter?.brightness !== undefined) {
+                setSelectedBrightness(newConf.thermalPrinter.brightness);
+              }
+              if (newConf.thermalPrinter?.printCopies !== undefined && currentScreen === 'attract') {
+                setSelectedCopies(Math.max(1, newConf.thermalPrinter.printCopies));
+              }
+              setTelemetry(analyticsService.getTelemetry());
+            }}
+            onClose={() => setShowAdminModal(false)}
+          />
+        </React.Suspense>
       )}
 
       {/* Mobile Guest Share View Simulation */}

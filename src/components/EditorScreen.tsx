@@ -521,10 +521,13 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         </p>
       </div>
 
-      {/* Main Layout: Left Photostrip Preview, Right Theme / Template Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-center flex-1 min-h-0 overflow-hidden my-1">
-        {/* Left Column: Photostrip Preview + Mode Toggle */}
-        <div className="md:col-span-5 h-full min-h-0 flex flex-col items-center justify-between overflow-hidden">
+      {/* Main Layout: Left Photostrip Preview, Right Theme / Emojis / Text Panel */}
+      <div
+        data-kiosk-scrollable="true"
+        className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 sm:gap-4 items-stretch flex-1 min-h-0 overflow-y-auto sm:overflow-hidden my-0.5"
+      >
+        {/* Left Column: Photostrip Preview + Mode Toggle + Add Emojis & Add Text Buttons */}
+        <div className="sm:col-span-5 min-h-0 flex flex-col items-center justify-between">
           {/* Preview Mode Switcher (Thermal Print vs Digital Color & GIF) */}
           <div className="flex items-center gap-1 p-0.5 bg-zinc-200/70 rounded-full border border-zinc-300 mb-1 shrink-0">
             <button
@@ -561,13 +564,13 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           <div
             ref={stripContainerRef}
             onClick={() => setSelectedStickerId(null)}
-            className="relative rounded-2xl shadow-md max-h-[32vh] sm:max-h-[36vh] flex items-center justify-center bg-white border border-zinc-200 select-none p-1 shrink-0"
+            className="relative rounded-2xl shadow-md max-h-[26vh] sm:max-h-[34vh] flex items-center justify-center bg-white border border-zinc-200 select-none p-1 shrink-0"
           >
             {previewSrc ? (
               <img
                 src={previewSrc}
                 alt="Photostrip Preview"
-                className="max-h-[30vh] sm:max-h-[34vh] w-auto object-contain rounded-xl select-none pointer-events-none"
+                className="max-h-[24vh] sm:max-h-[32vh] w-auto object-contain rounded-xl select-none pointer-events-none"
               />
             ) : (
               <div className="w-44 h-60 flex items-center justify-center text-zinc-400 font-mono text-xs">
@@ -806,95 +809,141 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
             <div className="flex items-center justify-center gap-1.5 pt-0.5 flex-wrap">
               <button
+                type="button"
                 onClick={() => {
                   soundEffects.playTap();
                   setShowTextDrawer(false);
                   setShowStickersDrawer((s) => !s);
                 }}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition cursor-pointer shadow-2xs ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition cursor-pointer shadow-xs ${
                   showStickersDrawer
                     ? 'border-black bg-black text-white'
-                    : 'border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700'
+                    : 'border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-900'
                 }`}
               >
-                <Smile className="w-3 h-3" />
-                <span>Add stickers</span>
+                <Smile className="w-3.5 h-3.5 text-amber-500" />
+                <span>😊 Add Emojis &amp; Stickers</span>
               </button>
 
               <button
+                type="button"
                 onClick={() => {
                   soundEffects.playTap();
                   setShowStickersDrawer(false);
                   setShowTextDrawer((s) => !s);
                 }}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition cursor-pointer shadow-2xs ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition cursor-pointer shadow-xs ${
                   showTextDrawer
                     ? 'border-black bg-black text-white'
-                    : 'border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700'
+                    : 'border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-900'
                 }`}
               >
-                <Type className="w-3 h-3" />
-                <span>Add text</span>
+                <Type className="w-3.5 h-3.5 text-rose-500" />
+                <span>🔤 Add Text</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* Right Column: 6 Exclusive Gobble Haus Frame Cards (Zero-scroll 3x2 grid) */}
-        <div className="md:col-span-7 h-full min-h-0 flex flex-col justify-between space-y-1.5 overflow-hidden">
-          {/* High-level Mode Switcher */}
-          <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-200/60 rounded-2xl border border-zinc-200 text-xs shrink-0">
+        {/* Right Column: Frames, Emojis & Stickers, and Add Custom Text */}
+        <div className="sm:col-span-7 min-h-0 flex flex-col justify-between space-y-1.5 overflow-hidden">
+          {/* Top 3-Way Customization Tab Switcher: Frames | Emojis & Stickers | Add Text */}
+          <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-200/75 rounded-2xl border border-zinc-300 text-xs shrink-0">
             <button
+              type="button"
               onClick={() => {
                 soundEffects.playTap();
-                setThemeMode('thermal');
-                setPreviewView('thermal');
+                setShowStickersDrawer(false);
+                setShowTextDrawer(false);
               }}
-              className={`py-1.5 px-2 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
-                themeMode === 'thermal'
-                  ? 'bg-white text-zinc-950 font-bold shadow-xs border border-zinc-200'
-                  : 'text-zinc-600 hover:text-zinc-900'
+              className={`py-1.5 px-2 rounded-xl font-bold transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+                !showStickersDrawer && !showTextDrawer
+                  ? 'bg-black text-white shadow-xs'
+                  : 'text-zinc-700 hover:text-zinc-950 bg-white/60'
               }`}
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print Frames (Thermal)</span>
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>🖼️ Frames</span>
             </button>
             <button
+              type="button"
               onClick={() => {
                 soundEffects.playTap();
-                setThemeMode('digital');
-                setPreviewView('digital');
+                setShowTextDrawer(false);
+                setShowStickersDrawer(true);
               }}
-              className={`py-1.5 px-2 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
-                themeMode === 'digital'
-                  ? 'bg-white text-zinc-950 font-bold shadow-xs border border-zinc-200'
-                  : 'text-zinc-600 hover:text-zinc-900'
+              className={`py-1.5 px-2 rounded-xl font-bold transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+                showStickersDrawer
+                  ? 'bg-black text-white shadow-xs'
+                  : 'text-zinc-700 hover:text-zinc-950 bg-white/60'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5 text-sky-500" />
-              <span>Digital & GIF Colors</span>
+              <Smile className="w-3.5 h-3.5 text-amber-500" />
+              <span>😊 Emojis</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                setShowStickersDrawer(false);
+                setShowTextDrawer(true);
+              }}
+              className={`py-1.5 px-2 rounded-xl font-bold transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+                showTextDrawer
+                  ? 'bg-black text-white shadow-xs'
+                  : 'text-zinc-700 hover:text-zinc-950 bg-white/60'
+              }`}
+            >
+              <Type className="w-3.5 h-3.5 text-rose-500" />
+              <span>🔤 Add Text</span>
             </button>
           </div>
 
-          {/* Informational Subtext */}
-          <div className="flex items-center justify-between gap-2 px-1 shrink-0">
-            <div className="text-[10px] text-zinc-500 truncate">
-              {themeMode === 'thermal'
-                ? 'Centered photo with crisp black top & bottom frame drawings & texts'
-                : 'Centered photo with colored top & bottom Gobble Haus frame art'}
+          {/* Frame Mode Sub-Switcher (Shown when on Frames tab) */}
+          {!showStickersDrawer && !showTextDrawer && (
+            <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-200/60 rounded-xl border border-zinc-200 text-[11px] shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  setThemeMode('thermal');
+                  setPreviewView('thermal');
+                }}
+                className={`py-1 px-2 rounded-lg font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+                  themeMode === 'thermal'
+                    ? 'bg-white text-zinc-950 font-bold shadow-2xs border border-zinc-200'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                <Printer className="w-3 h-3" />
+                <span>Print Frames (Thermal)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  setThemeMode('digital');
+                  setPreviewView('digital');
+                }}
+                className={`py-1 px-2 rounded-lg font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+                  themeMode === 'digital'
+                    ? 'bg-white text-zinc-950 font-bold shadow-2xs border border-zinc-200'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 text-sky-500" />
+                <span>Digital &amp; GIF Colors</span>
+              </button>
             </div>
-            <span className="text-[10px] font-mono font-semibold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full shrink-0">
-              {displayedThemes.length} Gobble Haus Frames
-            </span>
-          </div>
+          )}
 
-          {/* MAIN RIGHT PANEL CONTENT: Either Full-Size Stickers Menu, Custom Text Menu, or 6 Gobble Haus Frames */}
+          {/* MAIN RIGHT PANEL CONTENT: Either Full-Size Stickers Menu, Custom Text Menu, or Gobble Haus Frames + Quick Emoji/Text Bar */}
           {showStickersDrawer ? (
             /* LARGE FULL-HEIGHT SCROLLABLE STICKERS MENU */
             <div
               data-kiosk-scrollable="true"
               data-admin-scrollable="true"
-              className="flex-1 min-h-0 p-3 sm:p-4 bg-white rounded-2xl border-2 border-zinc-900/15 shadow-md animate-fadeIn flex flex-col gap-2.5 overflow-hidden"
+              className="flex-1 min-h-[210px] p-3 sm:p-4 bg-white rounded-2xl border-2 border-zinc-900/15 shadow-md animate-fadeIn flex flex-col gap-2.5 overflow-hidden"
             >
               {/* Top Header: Title + Sticker Size Controls + Scroll Up/Down + Done Button */}
               <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-zinc-200 shrink-0">
@@ -1023,101 +1072,25 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 ))}
               </div>
             </div>
-          ) : (
-            /* Gobble Haus Frame Template Grid (All 10 frames) */
+          ) : showTextDrawer ? (
+            /* FULL-SIZE ADD CUSTOM TEXT PANEL (Replaces frame grid when active so it is never clipped) */
             <div
               data-kiosk-scrollable="true"
               data-admin-scrollable="true"
-              style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
-              className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto overscroll-contain content-start p-0.5"
+              className="flex-1 min-h-[210px] p-3 sm:p-4 bg-white rounded-2xl border-2 border-zinc-900/15 shadow-md animate-fadeIn flex flex-col justify-between gap-2.5 overflow-y-auto"
             >
-              {displayedThemes.map((t) => {
-                const isSelected = thermalTheme.id === t.id || digitalTheme.id === t.id;
-
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      soundEffects.playTap();
-                      const matchingThermal =
-                        THERMAL_FRAME_THEMES.find((th) => th.id === t.id) || THERMAL_FRAME_THEMES[0];
-                      const matchingDigital =
-                        DIGITAL_COLOR_THEMES.find((dg) => dg.id === t.id) || DIGITAL_COLOR_THEMES[0];
-                      setThermalTheme(matchingThermal);
-                      setDigitalTheme(matchingDigital);
-                      setPreviewView(themeMode);
-                    }}
-                    className={`p-2 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
-                      isSelected
-                        ? 'border-black bg-white ring-2 ring-black/10 shadow-sm'
-                        : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
-                    }`}
-                  >
-                    <div className="w-full flex items-center justify-between">
-                      <span className="text-[10px] leading-none">
-                        {t.cornerIcon || '🥡'}
-                      </span>
-                      {isSelected ? (
-                        <div className="w-3.5 h-3.5 rounded-full bg-black text-white flex items-center justify-center">
-                          <Check className="w-2 h-2 stroke-[3]" />
-                        </div>
-                      ) : (
-                        <div className="w-3.5 h-3.5" />
-                      )}
-                    </div>
-
-                    {/* Mini graphic preview card showing Top Art + Centered Photo + Bottom Art */}
-                    <div
-                      style={{
-                        backgroundColor: themeMode === 'thermal' ? '#ffffff' : t.background,
-                      }}
-                      className={`w-12 h-14 rounded-md border my-0.5 flex flex-col items-center justify-between p-1 shadow-2xs ${
-                        themeMode === 'thermal' ? 'border-zinc-300' : 'border-zinc-300'
-                      }`}
-                    >
-                      {/* Top Frame Drawing & Text Indicator */}
-                      <div className="w-full border-b border-zinc-300 pb-0.5 flex items-center justify-center gap-0.5">
-                        <span className="text-[6px] font-mono font-bold text-zinc-700 uppercase truncate">
-                          {t.cornerIcon} TOP ART
-                        </span>
-                      </div>
-
-                      {/* Centered Photo Slot */}
-                      <div className="w-full h-5 bg-zinc-800 rounded-2xs flex items-center justify-center text-[5.5px] font-mono text-white tracking-tighter">
-                        PHOTO
-                      </div>
-
-                      {/* Bottom Frame Drawing & Text Indicator */}
-                      <div className="w-full border-t border-zinc-300 pt-0.5 text-[5px] font-mono font-bold text-zinc-600 truncate">
-                        FRAME TEXT
-                      </div>
-                    </div>
-
-                    <div className="font-semibold text-[11px] text-zinc-900 leading-tight truncate w-full">
-                      {t.name}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Add Custom Text Drawer with Style, Color & Size Control */}
-          {showTextDrawer && (
-            <div
-              data-kiosk-scrollable="true"
-              data-admin-scrollable="true"
-              className="p-3 bg-white rounded-2xl border-2 border-zinc-900/15 shadow-md animate-fadeIn shrink-0 space-y-2"
-            >
-              <div className="flex items-center justify-between pb-1.5 border-b border-zinc-100 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-zinc-900">Add Custom Text</span>
-                  <div className="flex items-center gap-1 bg-zinc-100 px-2.5 py-0.5 rounded-full text-xs border border-zinc-200">
-                    <span className="text-zinc-500">Size:</span>
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-200 text-xs flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm sm:text-base font-extrabold text-zinc-900 flex items-center gap-1.5">
+                    <Type className="w-4 h-4 text-rose-500" />
+                    <span>Add Custom Text</span>
+                  </span>
+                  <div className="flex items-center gap-1.5 bg-zinc-100 px-2.5 py-1 rounded-full text-xs border border-zinc-200">
+                    <span className="text-zinc-600 font-semibold">Size:</span>
                     <button
                       type="button"
                       onClick={() => handleUpdateSelectedScale(currentScaleVal - 0.15)}
-                      className="w-5 h-5 rounded-full bg-white hover:bg-zinc-200 border border-zinc-300 flex items-center justify-center font-bold cursor-pointer"
+                      className="w-6 h-6 rounded-full bg-white hover:bg-zinc-200 border border-zinc-300 flex items-center justify-center font-bold cursor-pointer"
                     >
                       -
                     </button>
@@ -1128,23 +1101,24 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       step="0.05"
                       value={currentScaleVal}
                       onChange={(e) => handleUpdateSelectedScale(Number(e.target.value))}
-                      className="w-16 h-1.5 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-black"
+                      className="w-20 h-1.5 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-black"
                     />
                     <button
                       type="button"
                       onClick={() => handleUpdateSelectedScale(currentScaleVal + 0.15)}
-                      className="w-5 h-5 rounded-full bg-white hover:bg-zinc-200 border border-zinc-300 flex items-center justify-center font-bold cursor-pointer"
+                      className="w-6 h-6 rounded-full bg-white hover:bg-zinc-200 border border-zinc-300 flex items-center justify-center font-bold cursor-pointer"
                     >
                       +
                     </button>
-                    <span className="font-mono font-bold text-zinc-800 w-8 text-right">
+                    <span className="font-mono font-bold text-zinc-900 w-9 text-right">
                       {Math.round(currentScaleVal * 100)}%
                     </span>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowTextDrawer(false)}
-                  className="px-2.5 py-1 rounded-lg bg-black text-white text-xs font-bold cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl bg-black text-white text-xs font-bold cursor-pointer"
                 >
                   Done ✕
                 </button>
@@ -1174,12 +1148,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     }
                   }}
                   placeholder="Type caption, name, or message..."
-                  className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-zinc-300 focus:outline-none focus:ring-1 focus:ring-black bg-zinc-50"
+                  className="flex-1 px-3 py-2 text-xs sm:text-sm rounded-xl border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-black bg-zinc-50"
                 />
                 <button
                   type="submit"
                   disabled={!customTextInput.trim()}
-                  className="px-3.5 py-1.5 rounded-xl bg-black hover:bg-zinc-800 disabled:opacity-40 text-white text-xs font-bold cursor-pointer shrink-0"
+                  className="px-4 py-2 rounded-xl bg-black hover:bg-zinc-800 disabled:opacity-40 text-white text-xs sm:text-sm font-bold cursor-pointer shrink-0"
                 >
                   + Add Text
                 </button>
@@ -1187,7 +1161,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
               {/* Style & Color Selector Row */}
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-wrap">
                   {(
                     [
                       { id: 'white_pill', label: 'White Tag' },
@@ -1210,7 +1184,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                           );
                         }
                       }}
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
+                      className={`px-3 py-1 rounded-full text-xs font-semibold border transition cursor-pointer ${
                         customTextStyle === stOpt.id
                           ? 'bg-black text-white border-black'
                           : 'bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-200'
@@ -1238,7 +1212,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                         }
                       }}
                       style={{ backgroundColor: hex }}
-                      className={`w-5 h-5 rounded-full border transition cursor-pointer ${
+                      className={`w-6 h-6 rounded-full border transition cursor-pointer ${
                         customTextColor === hex
                           ? 'ring-2 ring-black scale-110 border-white'
                           : 'border-zinc-300 opacity-80 hover:opacity-100'
@@ -1250,22 +1224,145 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
               </div>
 
               {/* Quick Text Presets */}
+              <div className="space-y-1">
+                <div className="text-[10.5px] font-bold text-zinc-500 uppercase tracking-wider">
+                  Tap a Quick Preset to Add Instantly:
+                </div>
+                <div
+                  data-kiosk-scrollable="true"
+                  data-admin-scrollable="true"
+                  className="flex flex-wrap items-center gap-1.5"
+                >
+                  {QUICK_TEXT_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => handleAddCustomText(preset)}
+                      className="px-2.5 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 text-xs font-bold whitespace-nowrap transition cursor-pointer active:scale-95"
+                    >
+                      + {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Gobble Haus Frame Template Grid + Always-Visible Quick Emojis & Add Text Bar */
+            <div className="flex-1 min-h-0 flex flex-col justify-between gap-1.5 overflow-hidden">
               <div
                 data-kiosk-scrollable="true"
                 data-admin-scrollable="true"
-                style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
-                className="flex items-center gap-1.5 overflow-x-auto pb-0.5"
+                style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+                className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto overscroll-contain content-start p-0.5"
               >
-                {QUICK_TEXT_PRESETS.map((preset) => (
+                {displayedThemes.map((t) => {
+                  const isSelected = thermalTheme.id === t.id || digitalTheme.id === t.id;
+
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        const matchingThermal =
+                          THERMAL_FRAME_THEMES.find((th) => th.id === t.id) || THERMAL_FRAME_THEMES[0];
+                        const matchingDigital =
+                          DIGITAL_COLOR_THEMES.find((dg) => dg.id === t.id) || DIGITAL_COLOR_THEMES[0];
+                        setThermalTheme(matchingThermal);
+                        setDigitalTheme(matchingDigital);
+                        setPreviewView(themeMode);
+                      }}
+                      className={`p-2 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
+                        isSelected
+                          ? 'border-black bg-white ring-2 ring-black/10 shadow-sm'
+                          : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
+                      }`}
+                    >
+                      <div className="w-full flex items-center justify-between">
+                        <span className="text-[10px] leading-none">
+                          {t.cornerIcon || '🥡'}
+                        </span>
+                        {isSelected ? (
+                          <div className="w-3.5 h-3.5 rounded-full bg-black text-white flex items-center justify-center">
+                            <Check className="w-2 h-2 stroke-[3]" />
+                          </div>
+                        ) : (
+                          <div className="w-3.5 h-3.5" />
+                        )}
+                      </div>
+
+                      {/* Mini graphic preview card showing Top Art + Centered Photo + Bottom Art */}
+                      <div
+                        style={{
+                          backgroundColor: themeMode === 'thermal' ? '#ffffff' : t.background,
+                        }}
+                        className="w-12 h-13 rounded-md border border-zinc-300 my-0.5 flex flex-col items-center justify-between p-1 shadow-2xs"
+                      >
+                        <div className="w-full border-b border-zinc-300 pb-0.5 flex items-center justify-center gap-0.5">
+                          <span className="text-[6px] font-mono font-bold text-zinc-700 uppercase truncate">
+                            {t.cornerIcon} TOP ART
+                          </span>
+                        </div>
+                        <div className="w-full h-4.5 bg-zinc-800 rounded-2xs flex items-center justify-center text-[5.5px] font-mono text-white tracking-tighter">
+                          PHOTO
+                        </div>
+                        <div className="w-full border-t border-zinc-300 pt-0.5 text-[5px] font-mono font-bold text-zinc-600 truncate">
+                          FRAME TEXT
+                        </div>
+                      </div>
+
+                      <div className="font-semibold text-[11px] text-zinc-900 leading-tight truncate w-full">
+                        {t.name}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Always-Visible Quick Emojis & Quick Add Text Bar directly under frames */}
+              <div className="bg-white border border-zinc-200 rounded-2xl px-2.5 py-1.5 shadow-2xs flex items-center justify-between gap-1.5 shrink-0">
+                <div
+                  data-kiosk-scrollable="true"
+                  style={{ touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
+                  className="flex items-center gap-1 overflow-x-auto py-0.5"
+                >
+                  {['🥡', '🍗', '🍦', '🔥', '✨', '💖', '👑', '😎', '🎉', '🫶', '✌️', '🎀'].map((em) => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => handleAddSticker(em)}
+                      title={`Add ${em}`}
+                      className="w-7 h-7 rounded-xl bg-zinc-50 hover:bg-amber-50 border border-zinc-200 hover:border-amber-300 flex items-center justify-center text-base shrink-0 cursor-pointer active:scale-90 transition"
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
                   <button
-                    key={preset}
                     type="button"
-                    onClick={() => handleAddCustomText(preset)}
-                    className="px-2.5 py-1 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-950 text-xs font-bold whitespace-nowrap transition cursor-pointer"
+                    onClick={() => {
+                      soundEffects.playTap();
+                      setShowTextDrawer(false);
+                      setShowStickersDrawer(true);
+                    }}
+                    className="px-2 py-1 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold cursor-pointer whitespace-nowrap"
                   >
-                    + {preset}
+                    More 😊
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEffects.playTap();
+                      setShowStickersDrawer(false);
+                      setShowTextDrawer(true);
+                    }}
+                    className="px-2.5 py-1 rounded-xl bg-black hover:bg-zinc-800 text-white text-[11px] font-bold cursor-pointer whitespace-nowrap flex items-center gap-1"
+                  >
+                    <Type className="w-3 h-3" />
+                    <span>+ Text</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

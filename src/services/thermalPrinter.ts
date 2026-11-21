@@ -178,19 +178,28 @@ class ThermalPrinterService {
     this.setupBluetoothKeepAliveWatchdog();
     this.setupTabletLockWakeListeners();
     this.setupSilentBridgeListener();
-    this.probeSilentBridge();
-    this.probeAndroidApkPrinterOnStartup();
+
+    // Defer hardware & bridge probes until AFTER React has mounted and painted the Home Screen
+    // so cold-starting the .APK after a force-close renders instantaneously with zero blank-screen delay.
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        this.probeAndroidApkPrinterOnStartup(false);
+        this.probeSilentBridge();
+      }, 1500);
+    }
   }
 
   /**
-   * When running inside the Native Android .APK (window.AndroidPrinter), automatically checks
-   * if a USB OTG thermal printer is plugged in or a paired Bluetooth printer (like VOZY G80) is ready.
+   * When running inside the Native Android .APK (window.AndroidPrinter), checks if a USB OTG
+   * thermal printer is plugged in or a remembered Bluetooth printer is configured.
+   * On passive cold startup (openBluetoothSocketNow = false), we avoid calling synchronous
+   * RFCOMM BluetoothSocket.connect() on the WebView UI thread so the app never freezes on launch.
    */
-  public probeAndroidApkPrinterOnStartup(): boolean {
+  public probeAndroidApkPrinterOnStartup(openBluetoothSocketNow: boolean = false): boolean {
     if (typeof window === 'undefined' || !window.AndroidPrinter) return false;
 
     try {
-      // 1. If a physical USB OTG printer is plugged into the tablet, check if permission is already granted
+      // 1. If a physical USB OTG printer is plugged into the tablet, check if permission is already granted (<1ms)
       if (window.AndroidPrinter.hasUsbPrinter?.() && window.AndroidPrinter.connectUsb) {
         const usbRes = window.AndroidPrinter.connectUsb();
         if (usbRes && usbRes.startsWith('OK:')) {
@@ -214,17 +223,23 @@ class ThermalPrinterService {
       // 2. If already connected via native Bluetooth or USB, don't overwrite
       if (this.nativeBluetoothActive || this.nativeUsbActive) return true;
 
-      // 3. Check if a paired Bluetooth printer (VOZY G80) is available via Android Bluetooth Adapter
-      // Only auto-probe Bluetooth without opening Settings if we don't already have a physical connection
-      if (
-        (this.currentStatus.connectionType === 'virtual' ||
-          this.currentStatus.connectionType === 'bluetooth' ||
-          !this.currentStatus.isConnected) &&
-        window.AndroidPrinter.connectBluetooth
-      ) {
-        // Avoid auto-launching Android Settings on passive startup; only connect if already paired
-        const savedType = safeStorageGet('snapkiosk_printer_type');
-        if (savedType === 'bluetooth') {
+      // 3. If Bluetooth was remembered, keep it marked ready without blocking the UI thread on cold boot.
+      // Only open the synchronous RFCOMM socket immediately if explicitly requested (openBluetoothSocketNow = true).
+      const savedType = safeStorageGet('snapkiosk_printer_type');
+      const savedName = safeStorageGet('snapkiosk_printer_name');
+      if (savedType === 'bluetooth') {
+        if (!openBluetoothSocketNow) {
+          this.currentStatus = {
+            isConnected: true,
+            connectionType: 'bluetooth',
+            deviceName: savedName || 'VOZY G80 (Bluetooth)',
+            details: 'Paired via Android Bluetooth SPP • Instant print ready',
+          };
+          this.notify();
+          return true;
+        }
+
+        if (window.AndroidPrinter.connectBluetooth) {
           const btRes = window.AndroidPrinter.connectBluetooth();
           if (btRes && btRes.startsWith('OK:')) {
             const devName = btRes.slice(3) || 'VOZY G80 (Bluetooth)';
@@ -314,6 +329,10 @@ class ThermalPrinterService {
 
   public async probeSilentBridge(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
+    // Skip Windows desktop localhost bridge probe when running inside the Android .APK
+    if (window.AndroidPrinter || window.location.protocol === 'file:') {
+      return false;
+    }
 
     const endpoints = ['http://127.0.0.1:19100/status', 'http://localhost:19100/status'];
     for (const url of endpoints) {

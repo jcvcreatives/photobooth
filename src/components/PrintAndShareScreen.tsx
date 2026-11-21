@@ -659,20 +659,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           J
         </button>
 
-        {livePrinterStatus.isConnected && livePrinterStatus.connectionType !== 'virtual' && (
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 text-[10px] font-mono font-bold tracking-wide mb-1 shadow-xs">
-            <span className="relative flex h-2 w-2 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-            </span>
-            <span className="truncate max-w-[200px]">
-              {livePrinterStatus.connectionType === 'bluetooth'
-                ? `Bluetooth Connected • ${livePrinterStatus.deviceName}`
-                : `Printer Connected • ${livePrinterStatus.deviceName}`}
-            </span>
-          </div>
-        )}
-
         <h1 className="text-lg sm:text-xl font-bold tracking-tight text-zinc-950 leading-tight">
           {printerErrorReport ? 'Oops! Tiny printer hiccup, bestie 🫶' : 'Your photos are ready'}
         </h1>

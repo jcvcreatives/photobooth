@@ -67,8 +67,8 @@ const AnimatedThemeStickers = React.memo(
         className={`absolute inset-0 pointer-events-none overflow-hidden z-0 select-none ${opacityClass}`}
       >
         {stickers.map((item, idx) => {
-          const delayMs = item.delayMs ?? idx * 320;
-          const durationMs = item.durationMs ?? 5200;
+          const delayMs = item.delayMs ?? idx * 450;
+          const durationMs = item.durationMs ?? 5800;
 
           // 0. Custom Die-Cut Image Sticker (e.g. Gobble Haus Rice Box Stickers dropping & bouncing)
           if (item.imageUrl) {
@@ -506,76 +506,146 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
       // 2. Animate all background & corner stickers ([data-js-sticker])
       const root = containerRef.current;
       if (root) {
+        const vhPx = Math.max(480, root.clientHeight || window.innerHeight || 800) / 100;
         const stickerEls = root.querySelectorAll<HTMLElement>('[data-js-sticker="1"]');
         stickerEls.forEach((el, i) => {
           const anim = el.dataset.anim || 'twinkle_shine';
-          const delay = Number(el.dataset.delay || i * 300);
-          const duration = Math.max(1200, Number(el.dataset.duration || 5000));
+          const delay = Number(el.dataset.delay || i * 400);
+          const duration = Math.max(1200, Number(el.dataset.duration || 5600));
+          // Use elapsed time from mount/now with per-sticker delay offset so each sticker rains continuously
           const p = ((((now + delay) % duration) + duration) % duration) / duration;
           const angle = p * Math.PI * 2;
 
           let tx = 0;
           let ty = 0;
           let rot = 0;
-          let scale = 1;
+          let scaleX = 1;
+          let scaleY = 1;
           let opacity = 1;
 
           if (anim === 'food_drop') {
+            // Matches @keyframes foodStickerDrop: rains from -18vh at top all the way down to +106vh past bottom
+            // Keyframe stops: 0% (-18vh), 28% (22vh), 42% (38vh), 65% (66vh), 100% (106vh)
+            if (p < 0.28) {
+              const t = p / 0.28;
+              tx = 0 + 14 * t;
+              ty = (-18 + (22 - -18) * t) * vhPx;
+              rot = -14 + (10 - -14) * t;
+              const s = 0.85 + (1.04 - 0.85) * t;
+              scaleX = s;
+              scaleY = s;
+            } else if (p < 0.42) {
+              const t = (p - 0.28) / (0.42 - 0.28);
+              tx = 14 + (-8 - 14) * t;
+              ty = (22 + (38 - 22) * t) * vhPx;
+              rot = 10 + (-8 - 10) * t;
+              scaleX = 1.04 + (0.98 - 1.04) * t;
+              scaleY = 1.04 + (1.03 - 1.04) * t;
+            } else if (p < 0.65) {
+              const t = (p - 0.42) / (0.65 - 0.42);
+              tx = -8 + (12 - -8) * t;
+              ty = (38 + (66 - 38) * t) * vhPx;
+              rot = -8 + (12 - -8) * t;
+              scaleX = 0.98 + (1.03 - 0.98) * t;
+              scaleY = 1.03;
+            } else {
+              const t = (p - 0.65) / (1 - 0.65);
+              tx = 12 + (-10 - 12) * t;
+              ty = (66 + (106 - 66) * t) * vhPx;
+              rot = 12 + (-10 - 12) * t;
+              const s = 1.03 + (0.94 - 1.03) * t;
+              scaleX = s;
+              scaleY = s;
+            }
+
+            if (p < 0.08) {
+              opacity = (p / 0.08) * 0.96;
+            } else if (p > 0.88) {
+              opacity = ((1 - p) / 0.12) * 0.96;
+            } else {
+              opacity = 0.96;
+            }
+          } else if (anim === 'food_land') {
+            // Matches @keyframes foodStickerLandBounce: bouncy squash-and-stretch landing
             if (p < 0.18) {
               const t = p / 0.18;
-              ty = -68 * (1 - t) + Math.sin(t * Math.PI * 2) * 9;
-              scale = 0.72 + 0.28 * t;
-              rot = -14 + 20 * t;
-              opacity = Math.min(1, 0.2 + t * 1.4);
-            } else if (p < 0.86) {
-              const t = (p - 0.18) / 0.68;
-              ty = Math.sin(t * Math.PI * 4) * 11;
-              tx = Math.cos(t * Math.PI * 2) * 5;
-              rot = Math.sin(t * Math.PI * 4) * 9;
-              scale = 1 + Math.sin(t * Math.PI * 4) * 0.06;
-              opacity = 1;
+              ty = -28 + (5 - -28) * t;
+              rot = -10 + (6 - -10) * t;
+              scaleX = 0.9 + (1.16 - 0.9) * t;
+              scaleY = 1.08 + (0.84 - 1.08) * t;
+            } else if (p < 0.32) {
+              const t = (p - 0.18) / (0.32 - 0.18);
+              ty = 5 + (-10 - 5) * t;
+              rot = 6 + (-5 - 6) * t;
+              scaleX = 1.16 + (0.96 - 1.16) * t;
+              scaleY = 0.84 + (1.05 - 0.84) * t;
+            } else if (p < 0.46) {
+              const t = (p - 0.32) / (0.46 - 0.32);
+              ty = -10 + (0 - -10) * t;
+              rot = -5 + (3 - -5) * t;
+              scaleX = 0.96 + (1.04 - 0.96) * t;
+              scaleY = 1.05 + (0.96 - 1.05) * t;
+            } else if (p < 0.65) {
+              const t = (p - 0.46) / (0.65 - 0.46);
+              ty = 0 + (-7 - 0) * t;
+              rot = 3 + (-3 - 3) * t;
+              scaleX = 1.04 + (1 - 1.04) * t;
+              scaleY = 0.96 + (1 - 0.96) * t;
+            } else if (p < 0.82) {
+              const t = (p - 0.65) / (0.82 - 0.65);
+              ty = -7 + (0 - -7) * t;
+              rot = -3 + (2 - -3) * t;
+              scaleX = 1 + (1.02 - 1) * t;
+              scaleY = 1 + (0.98 - 1) * t;
             } else {
-              const t = (p - 0.86) / 0.14;
-              ty = 30 * t;
-              scale = 1 - 0.22 * t;
-              rot = -10 * t;
-              opacity = Math.max(0.2, 1 - t * 0.8);
+              const t = (p - 0.82) / (1 - 0.82);
+              ty = 0 + (-28 - 0) * t;
+              rot = 2 + (-10 - 2) * t;
+              scaleX = 1.02 + (0.9 - 1.02) * t;
+              scaleY = 0.98 + (1.08 - 0.98) * t;
             }
           } else if (
-            anim === 'food_land' ||
             anim === 'clown_wiggle' ||
             anim === 'cake_with_candle'
           ) {
             ty = Math.sin(angle) * 9;
             tx = Math.cos(angle * 2) * 3.5;
             rot = Math.sin(angle) * 10;
-            scale = 1 + Math.sin(angle * 2) * 0.06;
+            const s = 1 + Math.sin(angle * 2) * 0.06;
+            scaleX = s;
+            scaleY = s;
           } else if (anim === 'disco_ball_shine') {
             ty = Math.sin(angle) * 6;
             rot = p * 360;
-            scale = 1 + Math.sin(angle * 2) * 0.08;
+            const s = 1 + Math.sin(angle * 2) * 0.08;
+            scaleX = s;
+            scaleY = s;
           } else if (anim === 'balloon_rise') {
-            ty = 35 - p * 85;
-            tx = Math.sin(angle * 2) * 8;
+            // Rises across the full screen height from 95vh up to -18vh
+            ty = (95 - p * 113) * vhPx;
+            tx = Math.sin(angle * 2) * 14;
             rot = Math.sin(angle * 2) * 7;
-            opacity = p < 0.1 ? p * 10 : p > 0.88 ? (1 - p) / 0.12 : 1;
+            opacity = p < 0.08 ? p / 0.08 : p > 0.88 ? (1 - p) / 0.12 : 0.95;
           } else if (anim === 'snow_fall') {
-            ty = -30 + p * 85;
-            tx = Math.sin(angle * 2) * 10;
+            // Falls across the full screen height from -12vh down to 100vh
+            ty = (-12 + p * 112) * vhPx;
+            tx = Math.sin(angle * 2) * 12;
             rot = p * 360;
-            opacity = p < 0.1 ? p * 10 : p > 0.88 ? (1 - p) / 0.12 : 1;
+            opacity = p < 0.1 ? p / 0.1 : p > 0.88 ? (1 - p) / 0.12 : 0.95;
           } else if (anim === 'wing_glide' || anim === 'ghost_float') {
             tx = Math.sin(angle) * 14;
             ty = Math.cos(angle * 2) * 9;
             rot = Math.sin(angle) * 8;
           } else {
             ty = Math.sin(angle) * 5;
-            scale = 1 + Math.sin(angle * 2) * 0.13;
+            const s = 1 + Math.sin(angle * 2) * 0.13;
+            scaleX = s;
+            scaleY = s;
             rot = Math.sin(angle) * 8;
             opacity = 0.82 + Math.sin(angle * 2) * 0.18;
           }
 
-          el.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0) rotate(${rot.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+          el.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0) rotate(${rot.toFixed(1)}deg) scale3d(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}, 1)`;
           el.style.opacity = opacity.toFixed(2);
         });
 
