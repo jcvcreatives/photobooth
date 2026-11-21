@@ -199,6 +199,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   );
   const [customHeaderStatusMsg, setCustomHeaderStatusMsg] = useState<string | null>(null);
   const customHeaderFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [customFooterStatusMsg, setCustomFooterStatusMsg] = useState<string | null>(null);
+  const customFooterFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [showResetStatsPrompt, setShowResetStatsPrompt] = useState(false);
   const [resetStatsPassword, setResetStatsPassword] = useState('');
   const [resetStatsError, setResetStatsError] = useState(false);
@@ -549,6 +551,98 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch {
       setCustomHeaderStatusMsg('Could not process image. Please upload a PNG or JPG image.');
       setTimeout(() => setCustomHeaderStatusMsg(null), 3500);
+    }
+
+    e.target.value = '';
+  };
+
+  const updateCustomFooterConfig = async (
+    patch: Partial<ThermalPrinterConfig>,
+    feedbackMsg?: string
+  ) => {
+    const updated: RemoteKioskConfig = {
+      ...localConfig,
+      thermalPrinter: {
+        ...localConfig.thermalPrinter,
+        ...patch,
+      },
+    };
+    setLocalConfig(updated);
+    await remoteConfigService.updateConfig(updated);
+    onUpdateConfig(updated);
+    if (feedbackMsg) {
+      setCustomFooterStatusMsg(feedbackMsg);
+      setTimeout(() => setCustomFooterStatusMsg(null), 3500);
+    }
+  };
+
+  const handleCustomFooterImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    soundEffects.playTap();
+
+    try {
+      const processedDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const nw = img.naturalWidth || img.width || 300;
+            const nh = img.naturalHeight || img.height || 120;
+            const maxW = 540;
+            const maxH = 200;
+            const ratio = Math.min(maxW / nw, maxH / nh, 2);
+            const targetW = Math.max(32, Math.round(nw * ratio));
+            const targetH = Math.max(32, Math.round(nh * ratio));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(reader.result as string);
+              return;
+            }
+
+            // Fill pure white receipt background so transparent PNG watermark logos never turn black
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, targetW, targetH);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+
+            // Convert to high-contrast thermal monochrome for crisp receipt bottom watermark printing
+            const imgData = ctx.getImageData(0, 0, targetW, targetH);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              const contrasted = Math.max(0, Math.min(255, Math.round((lum - 128) * 1.2 + 128)));
+              d[i] = contrasted;
+              d[i + 1] = contrasted;
+              d[i + 2] = contrasted;
+              d[i + 3] = 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
+          };
+          img.onerror = () => reject(new Error('Invalid image'));
+          img.src = reader.result as string;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      await updateCustomFooterConfig(
+        {
+          customFooterEnabled: true,
+          customFooterImageUrl: processedDataUrl,
+        },
+        '✓ Custom bottom watermark logo uploaded & added to the bottom of every printed strip!'
+      );
+      soundEffects.playSuccessChime();
+    } catch {
+      setCustomFooterStatusMsg('Could not process image. Please upload a PNG or JPG logo.');
+      setTimeout(() => setCustomFooterStatusMsg(null), 3500);
     }
 
     e.target.value = '';
@@ -2456,6 +2550,336 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           className="flex-1 py-1.5 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs transition cursor-pointer"
                         >
                           Save Header
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isTestPrinting}
+                          onClick={handleTestPrint}
+                          className="flex-1 py-1.5 px-3 rounded-lg bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 font-semibold text-xs transition cursor-pointer disabled:opacity-50"
+                        >
+                          {isTestPrinting ? 'Printing...' : 'Test Print'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* #2B CUSTOM BOTTOM WATERMARK LOGO & TEXT LABELS (BOTTOM OF EVERY PRINTED STRIP) */}
+              <div className="p-4 bg-white border border-zinc-200 rounded-xl space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-zinc-700" />
+                      <h3 className="text-sm font-bold text-zinc-900">
+                        Custom Bottom Watermark Logo &amp; Text Labels
+                      </h3>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      Upload a custom watermark logo or add custom text labels that appear at the very bottom of every printed strip, beyond the default Gobble Haus branding.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        const nextEnabled = localConfig.thermalPrinter.customFooterEnabled === false;
+                        updateCustomFooterConfig(
+                          { customFooterEnabled: nextEnabled },
+                          nextEnabled
+                            ? '✓ Custom bottom watermark enabled'
+                            : 'Custom bottom watermark paused'
+                        );
+                      }}
+                      className={`px-3 py-1.5 rounded-lg border font-mono font-semibold text-xs transition cursor-pointer ${
+                        localConfig.thermalPrinter.customFooterEnabled !== false
+                          ? 'bg-zinc-900 border-zinc-900 text-white'
+                          : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      {localConfig.thermalPrinter.customFooterEnabled !== false
+                        ? '✓ Watermark: ON'
+                        : 'Watermark: OFF'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                  {/* Left Controls: Watermark Logo Upload + Bottom Text Label Inputs + Alignment & Size */}
+                  <div className="lg:col-span-7 space-y-3">
+                    {/* 1. Custom Bottom Watermark Logo Upload */}
+                    <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200 space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div>
+                          <div className="text-xs font-bold text-zinc-900 flex items-center gap-1.5">
+                            <ImageIcon className="w-3.5 h-3.5 text-zinc-700" />
+                            <span>1. Custom Bottom Watermark Logo</span>
+                          </div>
+                          <div className="text-[11px] text-zinc-500">
+                            PNG, JPG, or WEBP — auto-formatted to crisp thermal monochrome at the bottom of the strip
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            ref={customFooterFileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleCustomFooterImageUpload}
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEffects.playTap();
+                              customFooterFileInputRef.current?.click();
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>
+                              {localConfig.thermalPrinter.customFooterImageUrl
+                                ? 'Change Watermark Logo'
+                                : 'Upload Watermark Logo'}
+                            </span>
+                          </button>
+
+                          {localConfig.thermalPrinter.customFooterImageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                soundEffects.playTap();
+                                updateCustomFooterConfig(
+                                  { customFooterImageUrl: '' },
+                                  'Removed custom bottom watermark logo'
+                                );
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs font-medium flex items-center gap-1 transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Remove</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2. Custom Bottom Watermark Text Labels */}
+                    <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200 space-y-2.5">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-zinc-900">
+                          2. Bottom Watermark Text Label (Primary Line)
+                        </label>
+                        <input
+                          type="text"
+                          value={localConfig.thermalPrinter.customFooterText || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setLocalConfig((prev) => ({
+                              ...prev,
+                              thermalPrinter: {
+                                ...prev.thermalPrinter,
+                                customFooterEnabled: true,
+                                customFooterText: val,
+                              },
+                            }));
+                          }}
+                          onBlur={() =>
+                            updateCustomFooterConfig(
+                              {
+                                customFooterEnabled: true,
+                                customFooterText: localConfig.thermalPrinter.customFooterText || '',
+                              },
+                              '✓ Saved custom bottom watermark text label'
+                            )
+                          }
+                          placeholder="e.g. SPONSORED BY ACME STUDIO • SPECIAL EDITION"
+                          className="w-full px-3 py-1.5 rounded-lg bg-white border border-zinc-200 text-zinc-900 text-xs focus:outline-none focus:border-zinc-900"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-zinc-700">
+                          3. Bottom Secondary Text Label / Handle / Hashtag (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={localConfig.thermalPrinter.customFooterSubtext || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setLocalConfig((prev) => ({
+                              ...prev,
+                              thermalPrinter: {
+                                ...prev.thermalPrinter,
+                                customFooterEnabled: true,
+                                customFooterSubtext: val,
+                              },
+                            }));
+                          }}
+                          onBlur={() =>
+                            updateCustomFooterConfig(
+                              {
+                                customFooterEnabled: true,
+                                customFooterSubtext:
+                                  localConfig.thermalPrinter.customFooterSubtext || '',
+                              },
+                              '✓ Saved custom bottom watermark secondary text label'
+                            )
+                          }
+                          placeholder="e.g. @gobblehaus.ph • #GobbleHausMemories • Keep this receipt!"
+                          className="w-full px-3 py-1.5 rounded-lg bg-white border border-zinc-200 text-zinc-900 text-xs focus:outline-none focus:border-zinc-900"
+                        />
+                      </div>
+
+                      {/* Alignment & Font Size Controls */}
+                      <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] font-mono text-zinc-500">Align:</span>
+                          {(['left', 'center', 'right'] as const).map((alignOpt) => {
+                            const activeAlign =
+                              (localConfig.thermalPrinter.customFooterTextAlign || 'center') ===
+                              alignOpt;
+                            return (
+                              <button
+                                key={alignOpt}
+                                type="button"
+                                onClick={() => {
+                                  soundEffects.playTap();
+                                  updateCustomFooterConfig({ customFooterTextAlign: alignOpt });
+                                }}
+                                className={`px-2 py-1 rounded border font-mono text-[10px] font-semibold uppercase transition cursor-pointer ${
+                                  activeAlign
+                                    ? 'bg-zinc-900 border-zinc-900 text-white'
+                                    : 'bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900'
+                                }`}
+                              >
+                                {alignOpt}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] font-mono text-zinc-500">Size:</span>
+                          {(['small', 'medium', 'large'] as const).map((sizeOpt) => {
+                            const activeSize =
+                              (localConfig.thermalPrinter.customFooterFontSize || 'medium') ===
+                              sizeOpt;
+                            return (
+                              <button
+                                key={sizeOpt}
+                                type="button"
+                                onClick={() => {
+                                  soundEffects.playTap();
+                                  updateCustomFooterConfig({ customFooterFontSize: sizeOpt });
+                                }}
+                                className={`px-2 py-1 rounded border font-mono text-[10px] font-semibold uppercase transition cursor-pointer ${
+                                  activeSize
+                                    ? 'bg-zinc-900 border-zinc-900 text-white'
+                                    : 'bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900'
+                                }`}
+                              >
+                                {sizeOpt}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {customFooterStatusMsg && (
+                      <div className="text-xs font-medium text-zinc-700">
+                        {customFooterStatusMsg}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Live Bottom-of-Strip Watermark Preview */}
+                  <div className="lg:col-span-5 flex flex-col items-center">
+                    <div className="w-full p-3 rounded-lg bg-zinc-50 border border-zinc-200 flex flex-col items-center space-y-2.5">
+                      <div className="w-full flex items-center justify-between text-[10px] font-mono text-zinc-500">
+                        <span>BOTTOM WATERMARK PREVIEW</span>
+                        <span>{localConfig.thermalPrinter.paperWidthMm || 80}mm</span>
+                      </div>
+
+                      <div
+                        className={`w-full max-w-[260px] bg-white text-black rounded-b-md shadow-xs px-4 pt-3 pb-3.5 border border-zinc-200 flex flex-col ${
+                          (localConfig.thermalPrinter.customFooterTextAlign || 'center') === 'left'
+                            ? 'items-start text-left'
+                            : (localConfig.thermalPrinter.customFooterTextAlign || 'center') ===
+                              'right'
+                            ? 'items-end text-right'
+                            : 'items-center text-center'
+                        }`}
+                      >
+                        <div className="w-full py-2 bg-zinc-50 border border-zinc-200 rounded flex flex-col items-center justify-center text-[9px] font-mono text-zinc-400">
+                          <span>[ PHOTOSTRIP &amp; GOBBLE HAUS FRAME ]</span>
+                        </div>
+
+                        {localConfig.thermalPrinter.customFooterEnabled !== false &&
+                        (localConfig.thermalPrinter.customFooterImageUrl ||
+                          localConfig.thermalPrinter.customFooterText?.trim() ||
+                          localConfig.thermalPrinter.customFooterSubtext?.trim()) ? (
+                          <>
+                            <div className="w-full border-b border-dashed border-zinc-400 mt-2 mb-2" />
+                            {localConfig.thermalPrinter.customFooterImageUrl && (
+                              <img
+                                src={localConfig.thermalPrinter.customFooterImageUrl}
+                                alt="Custom Bottom Watermark Logo"
+                                className="max-h-16 w-auto object-contain mb-1.5"
+                              />
+                            )}
+                            {localConfig.thermalPrinter.customFooterText?.trim() && (
+                              <div
+                                className={`font-black tracking-tight text-black leading-tight break-words w-full ${
+                                  localConfig.thermalPrinter.customFooterFontSize === 'large'
+                                    ? 'text-sm'
+                                    : localConfig.thermalPrinter.customFooterFontSize === 'small'
+                                    ? 'text-[11px]'
+                                    : 'text-xs'
+                                }`}
+                              >
+                                {localConfig.thermalPrinter.customFooterText}
+                              </div>
+                            )}
+                            {localConfig.thermalPrinter.customFooterSubtext?.trim() && (
+                              <div
+                                className={`font-mono font-semibold text-zinc-700 mt-0.5 leading-snug break-words w-full ${
+                                  localConfig.thermalPrinter.customFooterFontSize === 'large'
+                                    ? 'text-[11px]'
+                                    : 'text-[10px]'
+                                }`}
+                              >
+                                {localConfig.thermalPrinter.customFooterSubtext}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="pt-2.5 pb-1 text-[10px] font-mono text-zinc-400 text-center w-full">
+                            Upload a watermark logo or type bottom text labels to preview.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-full flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateCustomFooterConfig(
+                              {
+                                customFooterEnabled: true,
+                                customFooterText: localConfig.thermalPrinter.customFooterText || '',
+                                customFooterSubtext:
+                                  localConfig.thermalPrinter.customFooterSubtext || '',
+                              },
+                              '✓ Custom bottom watermark saved!'
+                            )
+                          }
+                          className="flex-1 py-1.5 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs transition cursor-pointer"
+                        >
+                          Save Watermark
                         </button>
                         <button
                           type="button"

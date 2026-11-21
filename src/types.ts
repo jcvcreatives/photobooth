@@ -175,6 +175,12 @@ export interface ThermalPrinterConfig {
   customHeaderImageUrl?: string;
   customHeaderTextAlign?: 'left' | 'center' | 'right';
   customHeaderFontSize?: 'small' | 'medium' | 'large';
+  customFooterEnabled?: boolean;
+  customFooterText?: string;
+  customFooterSubtext?: string;
+  customFooterImageUrl?: string;
+  customFooterTextAlign?: 'left' | 'center' | 'right';
+  customFooterFontSize?: 'small' | 'medium' | 'large';
 }
 
 export interface EmailQueueItem {

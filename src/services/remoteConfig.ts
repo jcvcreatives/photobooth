@@ -47,6 +47,12 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
     customHeaderImageUrl: '',
     customHeaderTextAlign: 'center',
     customHeaderFontSize: 'medium',
+    customFooterEnabled: true,
+    customFooterText: '',
+    customFooterSubtext: '',
+    customFooterImageUrl: '',
+    customFooterTextAlign: 'center',
+    customFooterFontSize: 'medium',
   },
   tabletEndurance: {
     enabled: true,

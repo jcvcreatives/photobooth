@@ -2974,7 +2974,7 @@ export async function prependCustomHeaderToCanvas(
   configOverride?: Partial<ThermalPrinterConfig>
 ): Promise<HTMLCanvasElement> {
   if ((sourceCanvas as any).__hasCustomReceiptHeader) {
-    return sourceCanvas;
+    return await appendCustomFooterWatermarkToCanvas(sourceCanvas, configOverride);
   }
 
   const savedCfg = remoteConfigService.getConfig()?.thermalPrinter;
@@ -2984,7 +2984,7 @@ export async function prependCustomHeaderToCanvas(
   };
 
   if (cfg.customHeaderEnabled === false) {
-    return sourceCanvas;
+    return await appendCustomFooterWatermarkToCanvas(sourceCanvas, configOverride);
   }
 
   const imgUrl = (cfg.customHeaderImageUrl || '').trim();
@@ -2992,7 +2992,7 @@ export async function prependCustomHeaderToCanvas(
   const subText = (cfg.customHeaderSubtext || '').trim();
 
   if (!imgUrl && !mainText && !subText) {
-    return sourceCanvas;
+    return await appendCustomFooterWatermarkToCanvas(sourceCanvas, configOverride);
   }
 
   const w = sourceCanvas.width || 576;
@@ -3189,6 +3189,240 @@ export async function prependCustomHeaderToCanvas(
   outCtx.drawImage(sourceCanvas, 0, headerHeight);
 
   (outCanvas as any).__hasCustomReceiptHeader = true;
+  if ((sourceCanvas as any).__hasCustomReceiptFooter) {
+    (outCanvas as any).__hasCustomReceiptFooter = true;
+  }
+  return await appendCustomFooterWatermarkToCanvas(outCanvas, configOverride);
+}
+
+/**
+ * Automatically appends the Admin-configured custom bottom watermark logo image and/or
+ * custom bottom text labels at the very bottom of every printed receipt strip, beyond
+ * the default Gobble Haus branding.
+ * Ensures idempotency via `__hasCustomReceiptFooter` so a canvas is never given a duplicate footer watermark.
+ */
+export async function appendCustomFooterWatermarkToCanvas(
+  sourceCanvas: HTMLCanvasElement,
+  configOverride?: Partial<ThermalPrinterConfig>
+): Promise<HTMLCanvasElement> {
+  if ((sourceCanvas as any).__hasCustomReceiptFooter) {
+    return sourceCanvas;
+  }
+
+  const savedCfg = remoteConfigService.getConfig()?.thermalPrinter;
+  const cfg: Partial<ThermalPrinterConfig> = {
+    ...savedCfg,
+    ...configOverride,
+  };
+
+  if (cfg.customFooterEnabled === false) {
+    return sourceCanvas;
+  }
+
+  const imgUrl = (cfg.customFooterImageUrl || '').trim();
+  const mainText = (cfg.customFooterText || '').trim();
+  const subText = (cfg.customFooterSubtext || '').trim();
+
+  if (!imgUrl && !mainText && !subText) {
+    return sourceCanvas;
+  }
+
+  const w = sourceCanvas.width || 576;
+  const scale = w / 576;
+  const padTop = Math.round(18 * scale);
+  const padBottom = Math.round(24 * scale);
+  const marginX = Math.round(32 * scale);
+  const maxContentW = Math.max(120, w - marginX * 2);
+
+  // Load custom watermark logo image if provided
+  let footerImg: HTMLImageElement | null = null;
+  let drawImgW = 0;
+  let drawImgH = 0;
+
+  if (imgUrl) {
+    footerImg = await new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = imgUrl;
+    });
+
+    if (footerImg) {
+      const nw = footerImg.naturalWidth || footerImg.width || 200;
+      const nh = footerImg.naturalHeight || footerImg.height || 100;
+      const maxImgW = Math.round(maxContentW * 0.85);
+      const maxImgH = Math.round(180 * scale);
+      const ratio = Math.min(maxImgW / nw, maxImgH / nh, 2.5);
+      drawImgW = Math.max(24, Math.round(nw * ratio));
+      drawImgH = Math.max(24, Math.round(nh * ratio));
+    }
+  }
+
+  const fontSizeMode = cfg.customFooterFontSize || 'medium';
+  const mainFontPx = Math.max(
+    13,
+    Math.round((fontSizeMode === 'large' ? 30 : fontSizeMode === 'small' ? 20 : 25) * scale)
+  );
+  const subFontPx = Math.max(
+    11,
+    Math.round((fontSizeMode === 'large' ? 19 : fontSizeMode === 'small' ? 13 : 16) * scale)
+  );
+
+  // Measure & word-wrap lines using an offscreen context
+  const measureCanvas = document.createElement('canvas');
+  const mCtx = measureCanvas.getContext('2d')!;
+
+  const wrapTextLines = (raw: string, fontSpec: string, maxW: number): string[] => {
+    if (!raw) return [];
+    mCtx.font = fontSpec;
+    const paragraphs = raw.split(/\r?\n/);
+    const lines: string[] = [];
+    for (const para of paragraphs) {
+      const trimmed = para.trim();
+      if (!trimmed) continue;
+      const words = trimmed.split(/\s+/);
+      let currentLine = words[0] || '';
+      for (let i = 1; i < words.length; i++) {
+        const candidate = `${currentLine} ${words[i]}`;
+        if (mCtx.measureText(candidate).width <= maxW) {
+          currentLine = candidate;
+        } else {
+          lines.push(currentLine);
+          currentLine = words[i];
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+    }
+    return lines;
+  };
+
+  const mainFontSpec = `900 ${mainFontPx}px 'Inter', system-ui, -apple-system, sans-serif`;
+  const subFontSpec = `700 ${subFontPx}px 'JetBrains Mono', monospace`;
+
+  const mainLines = wrapTextLines(mainText, mainFontSpec, maxContentW);
+  const subLines = wrapTextLines(subText, subFontSpec, maxContentW);
+
+  const mainLineHeight = Math.round(mainFontPx * 1.25);
+  const subLineHeight = Math.round(subFontPx * 1.32);
+
+  let footerHeight = padTop + Math.round(12 * scale);
+  if (drawImgH > 0) {
+    footerHeight += drawImgH;
+    if (mainLines.length > 0 || subLines.length > 0) {
+      footerHeight += Math.round(12 * scale);
+    }
+  }
+  if (mainLines.length > 0) {
+    footerHeight += mainLines.length * mainLineHeight;
+    if (subLines.length > 0) {
+      footerHeight += Math.round(5 * scale);
+    }
+  }
+  if (subLines.length > 0) {
+    footerHeight += subLines.length * subLineHeight;
+  }
+  footerHeight += padBottom;
+
+  // Keep height a multiple of 8px for clean thermal raster rows
+  footerHeight = Math.ceil(footerHeight / 8) * 8;
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = w;
+  outCanvas.height = sourceCanvas.height + footerHeight;
+  const outCtx = outCanvas.getContext('2d')!;
+
+  // Fill pure white receipt paper background
+  outCtx.fillStyle = '#ffffff';
+  outCtx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+
+  // 1. Draw the existing photostrip canvas at the top
+  outCtx.drawImage(sourceCanvas, 0, 0);
+
+  // 2. Draw clean dashed separator line above the custom bottom watermark
+  const dividerY = sourceCanvas.height + Math.round(10 * scale);
+  outCtx.save();
+  outCtx.strokeStyle = '#000000';
+  outCtx.lineWidth = Math.max(1.5, Math.round(2 * scale));
+  outCtx.setLineDash([Math.round(8 * scale), Math.round(6 * scale)]);
+  outCtx.beginPath();
+  outCtx.moveTo(marginX, dividerY);
+  outCtx.lineTo(w - marginX, dividerY);
+  outCtx.stroke();
+  outCtx.restore();
+
+  const align = cfg.customFooterTextAlign || 'center';
+  let cursorY = sourceCanvas.height + padTop + Math.round(12 * scale);
+
+  // 3. Draw custom bottom watermark logo image in high-contrast monochrome on white background
+  if (footerImg && drawImgW > 0 && drawImgH > 0) {
+    const imgX =
+      align === 'left'
+        ? marginX
+        : align === 'right'
+        ? w - marginX - drawImgW
+        : Math.round((w - drawImgW) / 2);
+
+    outCtx.save();
+    outCtx.fillStyle = '#ffffff';
+    outCtx.fillRect(imgX, cursorY, drawImgW, drawImgH);
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = 'high';
+    outCtx.drawImage(footerImg, imgX, cursorY, drawImgW, drawImgH);
+
+    // Convert image region to crisp thermal monochrome (compositing transparent pixels on white)
+    const imgData = outCtx.getImageData(imgX, cursorY, drawImgW, drawImgH);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const alpha = d[i + 3] / 255;
+      const r = d[i] * alpha + 255 * (1 - alpha);
+      const g = d[i + 1] * alpha + 255 * (1 - alpha);
+      const b = d[i + 2] * alpha + 255 * (1 - alpha);
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const contrasted = Math.max(0, Math.min(255, Math.round((lum - 128) * 1.25 + 128)));
+      d[i] = contrasted;
+      d[i + 1] = contrasted;
+      d[i + 2] = contrasted;
+      d[i + 3] = 255;
+    }
+    outCtx.putImageData(imgData, imgX, cursorY);
+    outCtx.restore();
+
+    cursorY += drawImgH + (mainLines.length > 0 || subLines.length > 0 ? Math.round(12 * scale) : 0);
+  }
+
+  const textX =
+    align === 'left' ? marginX : align === 'right' ? w - marginX : Math.round(w / 2);
+
+  outCtx.fillStyle = '#000000';
+  outCtx.textAlign = align;
+  outCtx.textBaseline = 'top';
+
+  // 4. Draw custom bottom watermark primary text label lines
+  if (mainLines.length > 0) {
+    outCtx.font = mainFontSpec;
+    for (const line of mainLines) {
+      outCtx.fillText(line, textX, cursorY);
+      cursorY += mainLineHeight;
+    }
+    if (subLines.length > 0) {
+      cursorY += Math.round(5 * scale);
+    }
+  }
+
+  // 5. Draw custom bottom watermark secondary text label lines
+  if (subLines.length > 0) {
+    outCtx.font = subFontSpec;
+    for (const line of subLines) {
+      outCtx.fillText(line, textX, cursorY);
+      cursorY += subLineHeight;
+    }
+  }
+
+  (outCanvas as any).__hasCustomReceiptFooter = true;
+  if ((sourceCanvas as any).__hasCustomReceiptHeader) {
+    (outCanvas as any).__hasCustomReceiptHeader = true;
+  }
   return outCanvas;
 }
 
