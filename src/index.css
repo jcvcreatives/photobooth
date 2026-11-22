@@ -374,12 +374,36 @@
 
 .sticker-food-drop {
   animation: foodStickerDrop 7.2s infinite cubic-bezier(0.32, 0, 0.67, 1);
-  background: transparent;
+  background: transparent !important;
 }
 
 .sticker-food-land {
   animation: foodStickerLandBounce 3.2s infinite ease-in-out;
-  background: transparent;
+  background: transparent !important;
+}
+
+.gpu-transparent-sticker {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: 1px solid transparent;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
+
+.gpu-transparent-sticker img {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: 1px solid transparent;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
 }
 
 /* Thermal Printer Physical Output Slide-Down Toward Printer Below Tablet (60fps GPU-composited) */

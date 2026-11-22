@@ -48,23 +48,153 @@ export const resolveStickerAssetUrl = (url: string): string => {
   return cleanUrl;
 };
 
+// In-memory cache of alpha-cleaned, pre-scaled transparent PNG data URLs
+const cleanStickerDataUrlCache = new Map<string, string>();
+
+/**
+ * Normalizes a sticker image onto an explicit RGBA transparent offscreen <canvas> (160x160):
+ * - Clears canvas with ctx.clearRect(0, 0, size, size) so background pixels are strictly rgba(0,0,0,0)
+ * - Removes faint outer halo pixels (alpha < 48 -> 0) and snaps semi-translucent interior pixels
+ *   (alpha >= 215 -> 255) so Android WebView's hardware tile compositor never treats the image quad
+ *   as a dithered RGBA_4444 surface or renders a pixelated box behind falling icons.
+ */
+const sanitizeStickerToTransparentCanvas = (srcUrl: string): Promise<string> => {
+  const cached = cleanStickerDataUrlCache.get(srcUrl);
+  if (cached) return Promise.resolve(cached);
+
+  return new Promise((resolve) => {
+    if (typeof document === 'undefined') {
+      resolve(srcUrl);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const targetSize = 160;
+        const canvas = document.createElement('canvas');
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+        const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true });
+        if (!ctx) {
+          resolve(srcUrl);
+          return;
+        }
+        ctx.clearRect(0, 0, targetSize, targetSize);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        // Leave a 2px transparent border around the quad so rotated GPU quads never bleed at edges
+        ctx.drawImage(img, 2, 2, targetSize - 4, targetSize - 4);
+
+        const imgData = ctx.getImageData(0, 0, targetSize, targetSize);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const a = data[i + 3];
+          if (a < 48) {
+            data[i] = 0;
+            data[i + 1] = 0;
+            data[i + 2] = 0;
+            data[i + 3] = 0;
+          } else if (a >= 215) {
+            data[i + 3] = 255;
+          }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+        cleanStickerDataUrlCache.set(srcUrl, dataUrl);
+        resolve(dataUrl);
+      } catch {
+        resolve(srcUrl);
+      }
+    };
+    img.onerror = () => {
+      const fileName = srcUrl.split('?')[0].split('/').pop() || '';
+      const fallbackUrl = `./assets/aistudio/${fileName}`;
+      resolve(fallbackUrl);
+    };
+    img.src = srcUrl;
+  });
+};
+
+const TransparentStickerImg: React.FC<{
+  imageUrl: string;
+  alt: string;
+  className?: string;
+  dataJsSticker?: boolean;
+  dataAnim?: string;
+  dataDelay?: number | string;
+  dataDuration?: number | string;
+}> = React.memo(
+  ({ imageUrl, alt, className = '', dataJsSticker, dataAnim, dataDelay, dataDuration }) => {
+    const resolvedUrl = resolveStickerAssetUrl(imageUrl);
+    const [cleanSrc, setCleanSrc] = useState<string>(
+      () => cleanStickerDataUrlCache.get(resolvedUrl) || resolvedUrl
+    );
+
+    useEffect(() => {
+      let mounted = true;
+      const url = resolveStickerAssetUrl(imageUrl);
+      sanitizeStickerToTransparentCanvas(url).then((result) => {
+        if (mounted) setCleanSrc(result);
+      });
+      return () => {
+        mounted = false;
+      };
+    }, [imageUrl]);
+
+    return (
+      <img
+        src={cleanSrc}
+        alt={alt}
+        {...(dataJsSticker
+          ? {
+              'data-js-sticker': '1',
+              'data-anim': dataAnim,
+              'data-delay': String(dataDelay ?? 0),
+              'data-duration': String(dataDuration ?? 3400),
+            }
+          : {})}
+        onError={(e) => {
+          const img = e.currentTarget;
+          if (!img.dataset.fallback) {
+            img.dataset.fallback = '1';
+            const fileName = (imageUrl || '').split('?')[0].split('/').pop() || '';
+            img.src = `./assets/aistudio/${fileName}`;
+          }
+        }}
+        style={{
+          animation: 'none',
+          backgroundColor: 'transparent',
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+          outline: '1px solid transparent',
+          willChange: dataJsSticker ? 'transform' : undefined,
+        }}
+        className={`bg-transparent select-none pointer-events-none ${className}`}
+      />
+    );
+  }
+);
+
 /**
  * Memoized GPU-accelerated Animated Stickers Layer.
  * Uses data-js-sticker attributes driven by a 60fps requestAnimationFrame loop in AttractScreen
  * so animations run smoothly in Android .APK WebView even when Android Battery Saver or
  * ANIMATOR_DURATION_SCALE disables CSS @keyframes.
+ * Avoids group opacity (< 1.0) and avoids will-change: opacity so Android WebView never allocates
+ * translucent RGBA_4444 RenderSurface bounding boxes behind falling stickers.
  */
 const AnimatedThemeStickers = React.memo(
   ({
     stickers,
-    opacityClass,
   }: {
     stickers: AnimatedStickerItem[];
-    opacityClass: string;
+    opacityClass?: string;
   }) => {
     return (
       <div
-        className={`absolute inset-0 pointer-events-none overflow-hidden z-0 select-none ${opacityClass}`}
+        style={{ backgroundColor: 'transparent' }}
+        className="absolute inset-0 pointer-events-none overflow-hidden z-0 select-none bg-transparent"
       >
         {stickers.map((item, idx) => {
           const delayMs = item.delayMs ?? idx * 450;
@@ -79,22 +209,21 @@ const AnimatedThemeStickers = React.memo(
                 data-anim={item.animation}
                 data-delay={delayMs}
                 data-duration={durationMs}
-                style={{ animation: 'none', willChange: 'transform, opacity' }}
-                className={`absolute ${item.positionClass} ${item.sizeClass} flex items-center justify-center`}
+                style={{
+                  animation: 'none',
+                  willChange: 'transform',
+                  backgroundColor: 'transparent',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  transformStyle: 'preserve-3d',
+                  outline: '1px solid transparent',
+                }}
+                className={`absolute ${item.positionClass} ${item.sizeClass} flex items-center justify-center bg-transparent gpu-transparent-sticker`}
               >
-                <img
-                  src={resolveStickerAssetUrl(item.imageUrl)}
+                <TransparentStickerImg
+                  imageUrl={item.imageUrl}
                   alt={item.label || 'Sticker'}
-                  decoding="async"
-                  onError={(e) => {
-                    const img = e.currentTarget;
-                    if (!img.dataset.fallback) {
-                      img.dataset.fallback = '1';
-                      const fileName = (item.imageUrl || '').split('?')[0].split('/').pop() || '';
-                      img.src = `./assets/aistudio/${fileName}`;
-                    }
-                  }}
-                  className="w-full h-full object-contain bg-transparent"
+                  className="w-full h-full object-contain"
                 />
               </div>
             );
@@ -109,8 +238,14 @@ const AnimatedThemeStickers = React.memo(
                 data-anim="disco_ball_shine"
                 data-delay={delayMs}
                 data-duration={durationMs}
-                style={{ animation: 'none', willChange: 'transform' }}
-                className={`absolute ${item.positionClass} flex items-center justify-center bg-transparent`}
+                style={{
+                  animation: 'none',
+                  willChange: 'transform',
+                  backgroundColor: 'transparent',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+                className={`absolute ${item.positionClass} flex items-center justify-center bg-transparent gpu-transparent-sticker`}
               >
                 <span className="absolute -top-3 -right-3 text-xs sm:text-sm text-amber-300">
                   ✨
@@ -134,8 +269,14 @@ const AnimatedThemeStickers = React.memo(
                 data-anim="cake_with_candle"
                 data-delay={delayMs}
                 data-duration={durationMs}
-                style={{ animation: 'none', willChange: 'transform' }}
-                className={`absolute ${item.positionClass} flex flex-col items-center`}
+                style={{
+                  animation: 'none',
+                  willChange: 'transform',
+                  backgroundColor: 'transparent',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+                className={`absolute ${item.positionClass} flex flex-col items-center bg-transparent gpu-transparent-sticker`}
               >
                 <div className="relative -mb-2.5 z-10 flex items-center justify-center">
                   <span className="text-sm sm:text-base">
@@ -158,8 +299,14 @@ const AnimatedThemeStickers = React.memo(
               data-anim={item.animation}
               data-delay={delayMs}
               data-duration={durationMs}
-              style={{ animation: 'none', willChange: 'transform, opacity' }}
-              className={`absolute ${item.positionClass} ${item.sizeClass}`}
+              style={{
+                animation: 'none',
+                willChange: 'transform',
+                backgroundColor: 'transparent',
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+              }}
+              className={`absolute ${item.positionClass} ${item.sizeClass} bg-transparent gpu-transparent-sticker`}
             >
               {item.emoji}
             </span>
@@ -521,17 +668,16 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
           let rot = 0;
           let scaleX = 1;
           let scaleY = 1;
-          let opacity = 1;
-
           if (anim === 'food_drop') {
-            // Matches @keyframes foodStickerDrop: rains from -18vh at top all the way down to +106vh past bottom
-            // Keyframe stops: 0% (-18vh), 28% (22vh), 42% (38vh), 65% (66vh), 100% (106vh)
+            // Rains from -20vh offscreen at top all the way down to +108vh past bottom
+            // Keeps scale near 1.0 (0.98..1.04) and opacity strictly at 1 so Android WebView
+            // never locks a downscaled 0.85x texture or allocates a translucent RGBA_4444 FBO bounding box.
             if (p < 0.28) {
               const t = p / 0.28;
               tx = 0 + 14 * t;
-              ty = (-18 + (22 - -18) * t) * vhPx;
+              ty = (-20 + (22 - -20) * t) * vhPx;
               rot = -14 + (10 - -14) * t;
-              const s = 0.85 + (1.04 - 0.85) * t;
+              const s = 0.98 + (1.03 - 0.98) * t;
               scaleX = s;
               scaleY = s;
             } else if (p < 0.42) {
@@ -539,31 +685,23 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               tx = 14 + (-8 - 14) * t;
               ty = (22 + (38 - 22) * t) * vhPx;
               rot = 10 + (-8 - 10) * t;
-              scaleX = 1.04 + (0.98 - 1.04) * t;
-              scaleY = 1.04 + (1.03 - 1.04) * t;
+              scaleX = 1.03 + (0.99 - 1.03) * t;
+              scaleY = 1.03 + (1.02 - 1.03) * t;
             } else if (p < 0.65) {
               const t = (p - 0.42) / (0.65 - 0.42);
               tx = -8 + (12 - -8) * t;
               ty = (38 + (66 - 38) * t) * vhPx;
               rot = -8 + (12 - -8) * t;
-              scaleX = 0.98 + (1.03 - 0.98) * t;
-              scaleY = 1.03;
+              scaleX = 0.99 + (1.02 - 0.99) * t;
+              scaleY = 1.02;
             } else {
               const t = (p - 0.65) / (1 - 0.65);
               tx = 12 + (-10 - 12) * t;
-              ty = (66 + (106 - 66) * t) * vhPx;
+              ty = (66 + (108 - 66) * t) * vhPx;
               rot = 12 + (-10 - 12) * t;
-              const s = 1.03 + (0.94 - 1.03) * t;
+              const s = 1.02 + (0.98 - 1.02) * t;
               scaleX = s;
               scaleY = s;
-            }
-
-            if (p < 0.08) {
-              opacity = (p / 0.08) * 0.96;
-            } else if (p > 0.88) {
-              opacity = ((1 - p) / 0.12) * 0.96;
-            } else {
-              opacity = 0.96;
             }
           } else if (anim === 'food_land') {
             // Matches @keyframes foodStickerLandBounce: bouncy squash-and-stretch landing
@@ -571,26 +709,26 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               const t = p / 0.18;
               ty = -28 + (5 - -28) * t;
               rot = -10 + (6 - -10) * t;
-              scaleX = 0.9 + (1.16 - 0.9) * t;
-              scaleY = 1.08 + (0.84 - 1.08) * t;
+              scaleX = 0.96 + (1.12 - 0.96) * t;
+              scaleY = 1.06 + (0.88 - 1.06) * t;
             } else if (p < 0.32) {
               const t = (p - 0.18) / (0.32 - 0.18);
               ty = 5 + (-10 - 5) * t;
               rot = 6 + (-5 - 6) * t;
-              scaleX = 1.16 + (0.96 - 1.16) * t;
-              scaleY = 0.84 + (1.05 - 0.84) * t;
+              scaleX = 1.12 + (0.97 - 1.12) * t;
+              scaleY = 0.88 + (1.04 - 0.88) * t;
             } else if (p < 0.46) {
               const t = (p - 0.32) / (0.46 - 0.32);
               ty = -10 + (0 - -10) * t;
               rot = -5 + (3 - -5) * t;
-              scaleX = 0.96 + (1.04 - 0.96) * t;
-              scaleY = 1.05 + (0.96 - 1.05) * t;
+              scaleX = 0.97 + (1.03 - 0.97) * t;
+              scaleY = 1.04 + (0.97 - 1.04) * t;
             } else if (p < 0.65) {
               const t = (p - 0.46) / (0.65 - 0.46);
               ty = 0 + (-7 - 0) * t;
               rot = 3 + (-3 - 3) * t;
-              scaleX = 1.04 + (1 - 1.04) * t;
-              scaleY = 0.96 + (1 - 0.96) * t;
+              scaleX = 1.03 + (1 - 1.03) * t;
+              scaleY = 0.97 + (1 - 0.97) * t;
             } else if (p < 0.82) {
               const t = (p - 0.65) / (0.82 - 0.65);
               ty = -7 + (0 - -7) * t;
@@ -601,8 +739,8 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               const t = (p - 0.82) / (1 - 0.82);
               ty = 0 + (-28 - 0) * t;
               rot = 2 + (-10 - 2) * t;
-              scaleX = 1.02 + (0.9 - 1.02) * t;
-              scaleY = 0.98 + (1.08 - 0.98) * t;
+              scaleX = 1.02 + (0.96 - 1.02) * t;
+              scaleY = 0.98 + (1.06 - 0.98) * t;
             }
           } else if (
             anim === 'clown_wiggle' ||
@@ -621,32 +759,28 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
             scaleX = s;
             scaleY = s;
           } else if (anim === 'balloon_rise') {
-            // Rises across the full screen height from 95vh up to -18vh
-            ty = (95 - p * 113) * vhPx;
+            // Rises across the full screen height from 102vh up to -20vh
+            ty = (102 - p * 122) * vhPx;
             tx = Math.sin(angle * 2) * 14;
             rot = Math.sin(angle * 2) * 7;
-            opacity = p < 0.08 ? p / 0.08 : p > 0.88 ? (1 - p) / 0.12 : 0.95;
           } else if (anim === 'snow_fall') {
-            // Falls across the full screen height from -12vh down to 100vh
-            ty = (-12 + p * 112) * vhPx;
+            // Falls across the full screen height from -18vh down to 106vh
+            ty = (-18 + p * 124) * vhPx;
             tx = Math.sin(angle * 2) * 12;
             rot = p * 360;
-            opacity = p < 0.1 ? p / 0.1 : p > 0.88 ? (1 - p) / 0.12 : 0.95;
           } else if (anim === 'wing_glide' || anim === 'ghost_float') {
             tx = Math.sin(angle) * 14;
             ty = Math.cos(angle * 2) * 9;
             rot = Math.sin(angle) * 8;
           } else {
             ty = Math.sin(angle) * 5;
-            const s = 1 + Math.sin(angle * 2) * 0.13;
+            const s = 1 + Math.sin(angle * 2) * 0.12;
             scaleX = s;
             scaleY = s;
             rot = Math.sin(angle) * 8;
-            opacity = 0.82 + Math.sin(angle * 2) * 0.18;
           }
 
-          el.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0) rotate(${rot.toFixed(1)}deg) scale3d(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}, 1)`;
-          el.style.opacity = opacity.toFixed(2);
+          el.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0px) rotate3d(0, 0, 1, ${rot.toFixed(1)}deg) scale3d(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}, 1)`;
         });
 
         // 3. Animate the floating Start button ([data-js-float-cta="1"])
@@ -787,15 +921,14 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
             className={`absolute left-1/2 top-2 w-26 h-52 flex flex-col p-2 strip-card-gpu select-none ${theme.stripCardClass}`}
           >
             {theme.leftCornerStickerImage ? (
-              <img
-                src={resolveStickerAssetUrl(theme.leftCornerStickerImage)}
+              <TransparentStickerImg
+                imageUrl={theme.leftCornerStickerImage}
                 alt="Left Strip Sticker"
-                data-js-sticker="1"
-                data-anim="food_land"
-                data-delay="0"
-                data-duration="3400"
-                style={{ animation: 'none' }}
-                className="absolute -top-4 -left-4 w-10 h-10 object-contain z-20 pointer-events-none bg-transparent"
+                dataJsSticker
+                dataAnim="food_land"
+                dataDelay={0}
+                dataDuration={3400}
+                className="absolute -top-4 -left-4 w-10 h-10 object-contain z-20 gpu-transparent-sticker"
               />
             ) : theme.leftCornerSticker ? (
               <span
@@ -858,15 +991,14 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
             className={`absolute left-1/2 top-2 w-30 h-44 flex flex-col p-2 strip-card-gpu select-none ${theme.polaroidCardClass}`}
           >
             {theme.centerCornerBadgeImage ? (
-              <img
-                src={resolveStickerAssetUrl(theme.centerCornerBadgeImage)}
+              <TransparentStickerImg
+                imageUrl={theme.centerCornerBadgeImage}
                 alt="Center Strip Sticker"
-                data-js-sticker="1"
-                data-anim="food_land"
-                data-delay="450"
-                data-duration="3600"
-                style={{ animation: 'none' }}
-                className="absolute -top-5 -right-5 w-11 h-11 object-contain z-20 pointer-events-none bg-transparent"
+                dataJsSticker
+                dataAnim="food_land"
+                dataDelay={450}
+                dataDuration={3600}
+                className="absolute -top-5 -right-5 w-11 h-11 object-contain z-20 gpu-transparent-sticker"
               />
             ) : theme.centerCornerBadge ? (
               <div
@@ -921,15 +1053,14 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
             className={`absolute left-1/2 top-2 w-26 h-52 flex flex-col p-2 strip-card-gpu select-none ${theme.stripCardClass}`}
           >
             {theme.rightCornerStickerImage ? (
-              <img
-                src={resolveStickerAssetUrl(theme.rightCornerStickerImage)}
+              <TransparentStickerImg
+                imageUrl={theme.rightCornerStickerImage}
                 alt="Right Strip Sticker"
-                data-js-sticker="1"
-                data-anim="food_land"
-                data-delay="900"
-                data-duration="3500"
-                style={{ animation: 'none' }}
-                className="absolute -top-4 -right-4 w-10 h-10 object-contain z-20 pointer-events-none bg-transparent"
+                dataJsSticker
+                dataAnim="food_land"
+                dataDelay={900}
+                dataDuration={3500}
+                className="absolute -top-4 -right-4 w-10 h-10 object-contain z-20 gpu-transparent-sticker"
               />
             ) : theme.rightCornerSticker ? (
               <span
