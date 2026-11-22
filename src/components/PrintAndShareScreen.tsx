@@ -286,11 +286,12 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     };
   }, []);
 
-  // Generate QR Code only when online (deferred so 60fps receipt slide & confetti never drop a frame)
+  // Generate QR Code only when online and AFTER active thermal printing finishes (so zero CPU/canvas work stalls continuous printing)
   useEffect(() => {
     if (!isOnline) return;
+    if (isPrinting && !showQrModal) return;
     let cancelled = false;
-    const delayMs = showQrModal ? 0 : 1200;
+    const delayMs = showQrModal ? 0 : 600;
     const qrTimer = setTimeout(() => {
       buildOfflineQrPacket(
         activeCanvas,
@@ -310,22 +311,22 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       cancelled = true;
       clearTimeout(qrTimer);
     };
-  }, [activeCanvas, result, showQrModal, isOnline]);
+  }, [activeCanvas, result, showQrModal, isOnline, isPrinting]);
 
-  // Host Full-HD photostrip & raw photos via WebRTC P2P when online
+  // Host Full-HD photostrip & raw photos via WebRTC P2P when online (deferred until printing completes)
   useEffect(() => {
-    if (!isOnline) return;
+    if (!isOnline || isPrinting) return;
     let stopPeerHost: (() => void) | null = null;
     const deferTimer = setTimeout(() => {
       stopPeerHost = startTabletHdPeerHost(result, () => {
         setCountdownSeconds(60);
       });
-    }, 250);
+    }, 350);
     return () => {
       clearTimeout(deferTimer);
       stopPeerHost?.();
     };
-  }, [result, isOnline]);
+  }, [result, isOnline, isPrinting]);
 
   const handleQuickShareOffline = async () => {
     soundEffects.playTap();

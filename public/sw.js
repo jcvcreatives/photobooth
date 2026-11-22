@@ -4,7 +4,7 @@
  * and the app has been force-closed in Android Recents.
  */
 
-const CACHE_NAME = 'jcv-kiosk-offline-v32';
+const CACHE_NAME = 'jcv-kiosk-offline-v33';
 
 const CORE_PRECACHE_URLS = [
   '/icon.svg',

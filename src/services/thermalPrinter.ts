@@ -1371,21 +1371,34 @@ class ThermalPrinterService {
       }
     };
 
-    const stepCandidates = [512, 244, 180, 144, 96, 72, 48, 20];
+    // Row-aligned MTU candidates (504 = 7*72, 240 = 5*48, 216 = 3*72, 144 = 2*72 = 3*48, 72, 48, 20)
+    const stepCandidates = [504, 244, 216, 180, 144, 96, 72, 48, 20];
 
     let offset = 0;
+    let mtuLocked = false;
+    let queueRetryCount = 0;
+
     while (offset < chunk.length) {
       const len = Math.min(this.bleMaxChunkBytes, chunk.length - offset);
       const subSlice = chunk.subarray(offset, offset + len);
       try {
         await writeRaw(subSlice);
+        mtuLocked = true;
+        queueRetryCount = 0;
         offset += len;
       } catch {
-        // Step down MTU ceiling to the next largest size accepted by the OS/printer BLE stack
+        if (mtuLocked && queueRetryCount < 6) {
+          // Transient BLE controller HCI queue full — wait 4ms for queue to drain without shrinking MTU to 20B!
+          queueRetryCount++;
+          await new Promise((r) => setTimeout(r, 4 * queueRetryCount));
+          continue;
+        }
+        // Step down MTU ceiling only if the initial packet size exceeded the link MTU
         const nextSmaller = stepCandidates.find((s) => s < len) ?? 20;
         this.bleMaxChunkBytes = nextSmaller;
+        queueRetryCount = 0;
         if (len <= 20) {
-          // Final fallback retry for 20-byte minimum BLE packet
+          await new Promise((r) => setTimeout(r, 8));
           await writeRaw(subSlice);
           offset += len;
         }
@@ -1429,18 +1442,21 @@ class ThermalPrinterService {
     if (typeof window !== 'undefined' && window.AndroidPrinter && (escposBytes || commandBands)) {
       const fullStream =
         escposBytes || (commandBands ? this.concatUint8Arrays(commandBands) : new Uint8Array(0));
-      const androidChunks = this.sliceBufferChunks(fullStream, 8192);
+      const usbRowAlignedChunks = commandBands
+        ? this.buildPacedPackets(commandBands, 15552)
+        : this.sliceBufferChunks(fullStream, 15552);
+      const fullBase64 = uint8ToBase64(fullStream);
 
       // 1A. Try Native Android USB OTG first
-      if (window.AndroidPrinter.printUsbBase64) {
+      if (window.AndroidPrinter.printUsbBase64 && window.AndroidPrinter.hasUsbPrinter?.()) {
         try {
           for (let c = 0; c < totalCopies; c++) {
             onProgress?.(
               50 + Math.round((c / totalCopies) * 45),
               totalCopies > 1 ? `Printing copy ${c + 1} of ${totalCopies}...` : 'Printing continuously via USB...'
             );
-            for (let b = 0; b < androidChunks.length; b++) {
-              const res = window.AndroidPrinter.printUsbBase64(uint8ToBase64(androidChunks[b]));
+            for (let b = 0; b < usbRowAlignedChunks.length; b++) {
+              const res = window.AndroidPrinter.printUsbBase64(uint8ToBase64(usbRowAlignedChunks[b]));
               if (!res || !res.startsWith('OK')) throw new Error(res || 'USB transfer not ready');
             }
             if (c < totalCopies - 1) await new Promise((r) => setTimeout(r, 700));
@@ -1452,7 +1468,7 @@ class ThermalPrinterService {
         }
       }
 
-      // 1B. Try Native Android Bluetooth SPP if USB OTG wasn't plugged in
+      // 1B. Try Native Android Bluetooth SPP in ONE single uninterrupted native write call per copy
       if (window.AndroidPrinter.printBluetoothBase64) {
         try {
           for (let c = 0; c < totalCopies; c++) {
@@ -1460,10 +1476,8 @@ class ThermalPrinterService {
               50 + Math.round((c / totalCopies) * 45),
               totalCopies > 1 ? `Printing copy ${c + 1} of ${totalCopies}...` : 'Printing continuously via Bluetooth...'
             );
-            for (let b = 0; b < androidChunks.length; b++) {
-              const res = window.AndroidPrinter.printBluetoothBase64(uint8ToBase64(androidChunks[b]));
-              if (!res || !res.startsWith('OK')) throw new Error(res || 'Bluetooth transfer not ready');
-            }
+            const res = window.AndroidPrinter.printBluetoothBase64(fullBase64);
+            if (!res || !res.startsWith('OK')) throw new Error(res || 'Bluetooth transfer not ready');
             if (c < totalCopies - 1) await new Promise((r) => setTimeout(r, 700));
           }
           onProgress?.(100, `Printed ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'}!`);
@@ -1474,7 +1488,7 @@ class ThermalPrinterService {
       }
     }
 
-    // 2. Try silent direct WebUSB if an authorized USB printer is available — stream in 16KB bulk chunks with 0ms pause
+    // 2. Try silent direct WebUSB if an authorized USB printer is available — stream in row-aligned 15.5KB bulk chunks with 0ms pause
     if ((escposBytes || commandBands) && typeof navigator !== 'undefined' && 'usb' in navigator && navigator.usb) {
       try {
         if (!this.usbDevice || this.usbEndpointNumber === null) {
@@ -1486,7 +1500,9 @@ class ThermalPrinterService {
         if (this.usbDevice && this.usbEndpointNumber !== null) {
           const fullStream =
             escposBytes || (commandBands ? this.concatUint8Arrays(commandBands) : new Uint8Array(0));
-          const bulkChunks = this.sliceBufferChunks(fullStream, 16384);
+          const bulkChunks = commandBands
+            ? this.buildPacedPackets(commandBands, 15552)
+            : this.sliceBufferChunks(fullStream, 15552);
           for (let c = 0; c < totalCopies; c++) {
             const copyLabel = totalCopies > 1 ? ` (Copy ${c + 1}/${totalCopies})` : '';
             onProgress?.(
@@ -1694,14 +1710,15 @@ class ThermalPrinterService {
 
     // Physical print head energy limits:
     // - minActivationEnergyPct (E_min): minimum halftone dot density for subtle highlights (prevents washed-out faces)
-    // - maxSaturationEnergyPct (E_max): maximum continuous halftone dot density for deep shadows (prevents solid black burn)
+    // - maxSaturationEnergyPct (E_max): capped at 68..78% so dark shadows never overheat the 203 DPI printhead thermistor
+    //   into mid-print thermal protection cooldown pauses (75% halftone dots already fuse to rich optical black on thermal paper).
     const minActivationEnergyPct = Math.max(
       4,
       Math.min(14, Math.round(7 + darknessDelta * 4))
     );
     const maxSaturationEnergyPct = Math.max(
-      74,
-      Math.min(90, Math.round(83 + darknessDelta * 6))
+      68,
+      Math.min(78, Math.round(74 + darknessDelta * 5))
     );
 
     // Convert energy percentages [E_min..E_max] into target luminance bounds [shadowFloorLum..highlightCeilingLum]
@@ -1765,13 +1782,13 @@ class ThermalPrinterService {
       }
     }
 
-    // Physical ESC/POS printhead strobe parameters (heating dots, heating time in 10us, interval in 10us)
-    const heatingDots = density === 'light' ? 7 : density === 'dark' ? 11 : 9;
+    // Physical ESC/POS printhead strobe parameters (heating dots = 15 -> 128 dots/strobe, heating time in 10us, interval in 10us)
+    const heatingDots = density === 'light' ? 11 : 15;
     const heatingTimeUs = Math.max(
       45,
-      Math.min(110, Math.round(65 + darknessDelta * 25))
+      Math.min(75, Math.round(58 + darknessDelta * 14))
     );
-    const heatingIntervalUs = density === 'light' ? 4 : 2;
+    const heatingIntervalUs = 2;
 
     return {
       effectiveGamma,
@@ -2007,10 +2024,11 @@ class ThermalPrinterService {
     const bands: Uint8Array[] = [];
 
     if (commandMode === 'esc_star_33') {
-      // Standard ESC/POS initialization: ESC @ (reset), ESC a 0 (left align), ESC 3 24 (24-dot line spacing)
+      // Standard ESC/POS initialization: ESC @ (reset), ESC 7 (128-dot high-speed continuous heating), ESC a 0 (left align), ESC 3 24 (24-dot line spacing)
       bands.push(
         new Uint8Array([
           0x1b, 0x40,
+          0x1b, 0x37, 15, 60, 2,
           0x1b, 0x61, 0x00,
           0x1b, 0x33, 24,
         ])
@@ -2058,13 +2076,21 @@ class ThermalPrinterService {
       return bands;
     }
 
-    // Standard ESC/POS initialization for VOZY G80 (80mm) & Xprinter XP-58IIB (58mm):
-    // - ESC @ (0x1B, 0x40): Reset printer & clear any stale bytes in SRAM
-    // - ESC a 0 (0x1B, 0x61, 0x00): Left alignment so full 384-dot (48B) or 576-dot (72B) raster rows never wrap
-    // - ESC 3 0 (0x1B, 0x33, 0x00): Zero line-spacing so raster rows print in one continuous motion
+    // High-speed continuous printhead heating configuration (ESC 7 n1 n2 n3):
+    // After ESC @ (0x1B, 0x40), the printer resets maxHeatingDots to 7 (64 dots/strobe) and 800us heating time,
+    // which splits dark photo rows into 5–8 strobes and triggers mid-print thermal cooldown stops.
+    // Sending ESC 7 15 60 2 (128 dots per single strobe, 600us heating pulse, 20us interval) + ESC 3 0 (zero line spacing)
+    // keeps the stepper motor running in one continuous non-stop motion from top to bottom!
+    const rawDarkness = config?.printDarkness ?? 38;
+    const density = config?.density || 'normal';
+    const heatingDots = density === 'light' ? 11 : 15;
+    const heatingTime = Math.max(48, Math.min(72, Math.round(58 + ((rawDarkness - 42) / 58) * 12)));
+    const heatingInterval = 2;
+
     bands.push(
       new Uint8Array([
         0x1b, 0x40,
+        0x1b, 0x37, heatingDots, heatingTime, heatingInterval,
         0x1b, 0x61, 0x00,
         0x1b, 0x33, 0x00,
       ])
@@ -2074,11 +2100,12 @@ class ThermalPrinterService {
     const xL = bytesWidth & 0xff;
     const xH = (bytesWidth >> 8) & 0xff;
 
-    // In default 'gs_v_0' continuous mode, emit ONE single uninterrupted GS v 0 command for the ENTIRE image height (yL = height & 0xff, yH = height >> 8).
+    // In default 'gs_v_0' continuous mode, emit ONE single uninterrupted GS v 0 command (capped at 900 rows = 64,800B < 65,535 uint16 limit).
     // This prevents the printer firmware from decelerating and stopping the stepper motor every 32/64 rows,
     // making the VOZY G80 and Xprinter feed continuously from top to bottom with zero horizontal stop-lines!
+    const maxSafeSingleBandRows = Math.floor(64800 / bytesWidth); // 900 rows on 80mm, 1350 rows on 58mm
     const bandHeight =
-      commandMode === 'gs_v_0_banded' ? 24 : height;
+      commandMode === 'gs_v_0_banded' ? 24 : Math.min(height, maxSafeSingleBandRows);
 
     for (let startY = 0; startY < height; startY += bandHeight) {
       const currentBandHeight = Math.min(bandHeight, height - startY);
@@ -2526,99 +2553,17 @@ class ThermalPrinterService {
     errorCategory?: PrinterErrorCategory;
   }> {
     soundEffects.playPrintingMotor();
+    this.isPrintingBusy = true;
 
-    const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
-    // VOZY G80 and 80mm POS printers use 576 dots/line (72 bytes/row); Xprinter 58iiB / KPrinter_461a / 58mm printers use 384 dots/line (48 bytes/row)
-    const is80mmModel =
-      (config.printerModel || 'vozy_g80') === 'vozy_g80' ||
-      config.printerModel === 'epson_80mm' ||
-      /vozy|g80|pos-?80|xp-?80|80mm|tm-?t88|tm-?t20/i.test(
-        this.currentStatus.deviceName || ''
-      );
-    const is58mmHardware =
-      !is80mmModel &&
-      (config.printerModel === 'xprinter_58iib' ||
-        config.printerModel === 'kprinter_461a' ||
-        config.printerModel === 'generic_58mm' ||
-        /xprinter|xp-?58|58iib|58iih|kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210/i.test(
-          this.currentStatus.deviceName || ''
-        ));
-    const targetWidth = is80mmModel ? 576 : is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
+    try {
+      const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
+      let mode = this.currentStatus.connectionType;
 
-    onProgress?.(15, 'Calibrating print head gamma & energy curve...');
-    // Yield to browser animation frames so the 60fps downward receipt slide & 60fps confetti start with zero main-thread lag
-    await new Promise((r) => setTimeout(r, 70));
-
-    // Automatically add custom header image and/or text to the top of every printed receipt if not already applied
-    const receiptCanvas = await prependCustomHeaderToCanvas(canvas, config);
-
-    const calibratedCanvas = this.applyDarknessToCanvas(receiptCanvas, config);
-    const hdPreviewUrl = calibratedCanvas.toDataURL('image/jpeg', 0.96);
-
-    await new Promise((r) => setTimeout(r, 16));
-    const dithered = this.generateDitheredRaster(
-      receiptCanvas,
-      targetWidth,
-      1.0,
-      0,
-      config
-    );
-
-    onProgress?.(35, 'Compiling continuous ESC/POS raster stream...');
-    await new Promise((r) => setTimeout(r, 16));
-    const commandBands = this.buildEscPosCommandBands(
-      dithered.bitmap,
-      dithered.width,
-      dithered.height,
-      config
-    );
-    const escposBytes = this.concatUint8Arrays(commandBands);
-    const usbBulkChunks = this.sliceBufferChunks(escposBytes, 16384);
-    const androidChunks = this.sliceBufferChunks(escposBytes, 8192);
-
-    let mode = this.currentStatus.connectionType;
-
-    // If running inside the Android .APK and mode was still left at 'virtual', automatically connect & route to real Android Bluetooth or USB hardware!
-    if (mode === 'virtual' && typeof window !== 'undefined' && window.AndroidPrinter) {
-      if (window.AndroidPrinter.hasUsbPrinter?.()) {
-        mode = 'usb';
-      } else {
-        mode = 'bluetooth';
-      }
-    }
-
-    // 1. Universal System / OS Printer Mode (USB Cord or Wireless via Silent Bridge / WebUSB — zero popup)
-    if (mode === 'system') {
-      const sysRes = await this.printViaSystemDriver(
-        calibratedCanvas,
-        config.paperWidthMm || (is80mmModel ? 80 : 58),
-        copies,
-        onProgress,
-        escposBytes,
-        commandBands
-      );
-      if (sysRes.success) {
-        this.clearPrinterError();
-        soundEffects.playPaperCut();
-        return {
-          success: true,
-          previewDataUrl: hdPreviewUrl,
-        };
-      }
-      const errCat = this.recordFailureStatus(sysRes.error || 'System print spooler error.');
-      return {
-        success: false,
-        previewDataUrl: hdPreviewUrl,
-        error: sysRes.error,
-        errorCategory: errCat,
-      };
-    }
-
-    // 2. USB Cord Flow (Native Android USB Host OR WebUSB) — Continuous 16KB Bulk Transfers with 0ms Delay
-    if (mode === 'usb') {
-      // A. Native Android USB OTG Host
-      if (typeof window !== 'undefined' && window.AndroidPrinter?.printUsbBase64) {
-        try {
+      // If running inside the Android .APK, pre-verify/wake the native USB OTG or Bluetooth SPP socket BEFORE
+      // rasterizing so this.currentStatus.deviceName (58mm vs 80mm) is accurate and the socket is already warm!
+      if (typeof window !== 'undefined' && window.AndroidPrinter) {
+        if (window.AndroidPrinter.hasUsbPrinter?.()) {
+          mode = 'usb';
           if (!this.nativeUsbActive && window.AndroidPrinter.connectUsb) {
             const connRes = window.AndroidPrinter.connectUsb();
             if (connRes && connRes.startsWith('OK:')) {
@@ -2633,160 +2578,270 @@ class ThermalPrinterService {
               safeStorageSet('snapkiosk_printer_type', 'usb');
               safeStorageSet('snapkiosk_printer_name', usbName);
               this.notify();
-            } else if (connRes && connRes.startsWith('ERR:')) {
-              throw new Error(connRes.replace(/^ERR:/, ''));
             }
           }
-          for (let c = 0; c < copies; c++) {
-            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            onProgress?.(60, `Streaming continuously to USB OTG printer${copyLabel}...`);
-            for (let p = 0; p < androidChunks.length; p++) {
-              const b64 = uint8ToBase64(androidChunks[p]);
-              const res = window.AndroidPrinter.printUsbBase64(b64);
-              if (!res || !res.startsWith('OK')) {
-                throw new Error((res || 'Android USB transfer failed').replace(/^ERR:/, ''));
+        } else if (mode === 'virtual' || mode === 'bluetooth') {
+          mode = 'bluetooth';
+          if (!this.nativeBluetoothActive && window.AndroidPrinter.connectBluetooth) {
+            const connRes = window.AndroidPrinter.connectBluetooth();
+            if (connRes && connRes.startsWith('OK:')) {
+              this.nativeBluetoothActive = true;
+              const btName = connRes.slice(3) || 'VOZY G80 (Bluetooth)';
+              this.currentStatus = {
+                isConnected: true,
+                connectionType: 'bluetooth',
+                deviceName: btName,
+                details: 'Connected via Native Android Bluetooth SPP',
+              };
+              safeStorageSet('snapkiosk_printer_type', 'bluetooth');
+              safeStorageSet('snapkiosk_printer_name', btName);
+              this.notify();
+            }
+          }
+        }
+      }
+
+      // VOZY G80 and 80mm POS printers use 576 dots/line (72 bytes/row); Xprinter 58iiB / KPrinter_461a / 58mm printers use 384 dots/line (48 bytes/row)
+      const is80mmModel =
+        (config.printerModel || 'vozy_g80') === 'vozy_g80' ||
+        config.printerModel === 'epson_80mm' ||
+        /vozy|g80|pos-?80|xp-?80|80mm|tm-?t88|tm-?t20/i.test(
+          this.currentStatus.deviceName || ''
+        );
+      const is58mmHardware =
+        !is80mmModel &&
+        (config.printerModel === 'xprinter_58iib' ||
+          config.printerModel === 'kprinter_461a' ||
+          config.printerModel === 'generic_58mm' ||
+          /xprinter|xp-?58|58iib|58iih|kprinter|mp58|58mm|pos-?58|mtp-?2|pt-?210/i.test(
+            this.currentStatus.deviceName || ''
+          ));
+      const targetWidth = is80mmModel ? 576 : is58mmHardware ? 384 : config.paperWidthMm === 80 ? 576 : 384;
+
+      onProgress?.(15, 'Calibrating print head gamma & energy curve...');
+      // Automatically add custom header image and/or text to the top of every printed receipt if not already applied
+      const receiptCanvas = await prependCustomHeaderToCanvas(canvas, config);
+
+      const calibratedCanvas = this.applyDarknessToCanvas(receiptCanvas, config);
+      const hdPreviewUrl = calibratedCanvas.toDataURL('image/jpeg', 0.96);
+
+      const dithered = this.generateDitheredRaster(
+        receiptCanvas,
+        targetWidth,
+        1.0,
+        0,
+        config
+      );
+
+      onProgress?.(35, 'Compiling continuous ESC/POS raster stream...');
+      const commandBands = this.buildEscPosCommandBands(
+        dithered.bitmap,
+        dithered.width,
+        dithered.height,
+        config
+      );
+      const escposBytes = this.concatUint8Arrays(commandBands);
+      // Row-aligned 15,552-byte packets (216 * 72B = 324 * 48B = 15,552B < 16KB USB bulk ceiling) so a dot-row is NEVER split across USB packets
+      const usbBulkChunks = this.buildPacedPackets(commandBands, 15552);
+
+      // 1. Universal System / OS Printer Mode (USB Cord or Wireless via Silent Bridge / WebUSB — zero popup)
+      if (mode === 'system') {
+        const sysRes = await this.printViaSystemDriver(
+          calibratedCanvas,
+          config.paperWidthMm || (is80mmModel ? 80 : 58),
+          copies,
+          onProgress,
+          escposBytes,
+          commandBands
+        );
+        if (sysRes.success) {
+          this.clearPrinterError();
+          soundEffects.playPaperCut();
+          return {
+            success: true,
+            previewDataUrl: hdPreviewUrl,
+          };
+        }
+        const errCat = this.recordFailureStatus(sysRes.error || 'System print spooler error.');
+        return {
+          success: false,
+          previewDataUrl: hdPreviewUrl,
+          error: sysRes.error,
+          errorCategory: errCat,
+        };
+      }
+
+      // 2. USB Cord Flow (Native Android USB Host OR WebUSB) — Continuous Row-Aligned Bulk Transfers with 0ms Delay
+      if (mode === 'usb') {
+        // A. Native Android USB OTG Host
+        if (typeof window !== 'undefined' && window.AndroidPrinter?.printUsbBase64) {
+          try {
+            if (!this.nativeUsbActive && window.AndroidPrinter.connectUsb) {
+              const connRes = window.AndroidPrinter.connectUsb();
+              if (connRes && connRes.startsWith('OK:')) {
+                this.nativeUsbActive = true;
+                const usbName = connRes.slice(3) || 'VOZY G80 (USB OTG)';
+                this.currentStatus = {
+                  isConnected: true,
+                  connectionType: 'usb',
+                  deviceName: usbName,
+                  details: 'Connected via Native Android USB OTG Host',
+                };
+                safeStorageSet('snapkiosk_printer_type', 'usb');
+                safeStorageSet('snapkiosk_printer_name', usbName);
+                this.notify();
+              } else if (connRes && connRes.startsWith('ERR:')) {
+                throw new Error(connRes.replace(/^ERR:/, ''));
               }
             }
-            soundEffects.playPaperCut();
-            if (c < copies - 1) {
-              await new Promise((r) => setTimeout(r, 700));
+            const usbB64Chunks = usbBulkChunks.map((chunk) => uint8ToBase64(chunk));
+            for (let c = 0; c < copies; c++) {
+              const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+              onProgress?.(60, `Streaming continuously to USB OTG printer${copyLabel}...`);
+              for (let p = 0; p < usbB64Chunks.length; p++) {
+                const res = window.AndroidPrinter.printUsbBase64(usbB64Chunks[p]);
+                if (!res || !res.startsWith('OK')) {
+                  throw new Error((res || 'Android USB transfer failed').replace(/^ERR:/, ''));
+                }
+              }
+              soundEffects.playPaperCut();
+              if (c < copies - 1) {
+                await new Promise((r) => setTimeout(r, 700));
+              }
+            }
+            this.clearPrinterError();
+            onProgress?.(100, 'USB Print complete!');
+            return { success: true, previewDataUrl: hdPreviewUrl };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // If WebUSB is not available (Android APK WebView), return the specific USB OTG message
+            if (typeof navigator === 'undefined' || !('usb' in navigator) || !navigator.usb) {
+              const errCat = this.recordFailureStatus(`USB OTG: ${msg}`);
+              return {
+                success: false,
+                previewDataUrl: hdPreviewUrl,
+                error: `USB OTG: ${msg}`,
+                errorCategory: errCat,
+              };
             }
           }
-          this.clearPrinterError();
-          onProgress?.(100, 'USB Print complete!');
-          return { success: true, previewDataUrl: hdPreviewUrl };
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          // If WebUSB is not available (Android APK WebView), return the specific USB OTG message
-          if (typeof navigator === 'undefined' || !('usb' in navigator) || !navigator.usb) {
-            const errCat = this.recordFailureStatus(`USB OTG: ${msg}`);
+        }
+
+        // B. WebUSB Direct Continuous Bulk Transfer (with automatic wake-reconnect if tablet was locked)
+        if (!this.usbDevice || this.usbEndpointNumber === null || !(this.usbDevice as any).opened) {
+          onProgress?.(45, 'Waking remembered USB printer...');
+          await this.reconnectRememberedUsb();
+        }
+
+        if (this.usbDevice && this.usbEndpointNumber !== null) {
+          try {
+            for (let c = 0; c < copies; c++) {
+              const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+              onProgress?.(60, `Streaming continuously to USB printer${copyLabel}...`);
+              for (let p = 0; p < usbBulkChunks.length; p++) {
+                try {
+                  await this.withTransferTimeout(
+                    this.usbDevice.transferOut(
+                      this.usbEndpointNumber,
+                      usbBulkChunks[p] as unknown as BufferSource
+                    ),
+                    4500,
+                    'Printer hardware buffer stalled mid-feed (possible paper jam, cover open, or out of paper).'
+                  );
+                } catch {
+                  // Re-claim USB interface once if tablet lock suspended the endpoint
+                  await this.openAndClaimUsbDevice(this.usbDevice);
+                  await this.withTransferTimeout(
+                    this.usbDevice.transferOut(
+                      this.usbEndpointNumber!,
+                      usbBulkChunks[p] as unknown as BufferSource
+                    ),
+                    4500,
+                    'Printer hardware buffer stalled mid-feed (possible paper jam, cover open, or out of paper).'
+                  );
+                }
+              }
+              soundEffects.playPaperCut();
+              if (c < copies - 1) {
+                await new Promise((r) => setTimeout(r, 700));
+              }
+            }
+            this.clearPrinterError();
+            onProgress?.(100, 'Print complete!');
+            return { success: true, previewDataUrl: hdPreviewUrl };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const errCat = this.recordFailureStatus(`USB print failed: ${msg}`);
             return {
               success: false,
               previewDataUrl: hdPreviewUrl,
-              error: `USB OTG: ${msg}`,
+              error: `USB print failed: ${msg}`,
               errorCategory: errCat,
             };
           }
         }
+
+        const usbMissingMsg =
+          'No USB printer connected. Check the USB / OTG cable or tap "Check Connection" to reconnect.';
+        const errCat = this.recordFailureStatus(usbMissingMsg);
+        return {
+          success: false,
+          previewDataUrl: hdPreviewUrl,
+          error: usbMissingMsg,
+          errorCategory: errCat,
+        };
       }
 
-      // B. WebUSB Direct Continuous Bulk Transfer (with automatic wake-reconnect if tablet was locked)
-      if (!this.usbDevice || this.usbEndpointNumber === null || !(this.usbDevice as any).opened) {
-        onProgress?.(45, 'Waking remembered USB printer...');
-        await this.reconnectRememberedUsb();
-      }
-
-      if (this.usbDevice && this.usbEndpointNumber !== null) {
-        try {
-          for (let c = 0; c < copies; c++) {
-            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            onProgress?.(60, `Streaming continuously to USB printer${copyLabel}...`);
-            for (let p = 0; p < usbBulkChunks.length; p++) {
-              try {
+      // 3. USB-Serial Cord Flow (Web Serial API) — Continuous Stream with 0ms Delay
+      if (mode === 'serial') {
+        if (!this.serialPort || !this.serialPort.writable) {
+          await this.reconnectRememberedSerial();
+        }
+        if (this.serialPort && this.serialPort.writable) {
+          try {
+            const writer = this.serialPort.writable.getWriter();
+            for (let c = 0; c < copies; c++) {
+              const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+              onProgress?.(60, `Writing continuously to Serial USB${copyLabel}...`);
+              for (let p = 0; p < usbBulkChunks.length; p++) {
                 await this.withTransferTimeout(
-                  this.usbDevice.transferOut(
-                    this.usbEndpointNumber,
-                    usbBulkChunks[p] as unknown as BufferSource
-                  ),
+                  writer.write(usbBulkChunks[p]),
                   4500,
-                  'Printer hardware buffer stalled mid-feed (possible paper jam, cover open, or out of paper).'
-                );
-              } catch {
-                // Re-claim USB interface once if tablet lock suspended the endpoint
-                await this.openAndClaimUsbDevice(this.usbDevice);
-                await this.withTransferTimeout(
-                  this.usbDevice.transferOut(
-                    this.usbEndpointNumber!,
-                    usbBulkChunks[p] as unknown as BufferSource
-                  ),
-                  4500,
-                  'Printer hardware buffer stalled mid-feed (possible paper jam, cover open, or out of paper).'
+                  'Serial printer buffer stalled mid-feed (possible paper jam or cover open).'
                 );
               }
+              soundEffects.playPaperCut();
+              if (c < copies - 1) {
+                await new Promise((r) => setTimeout(r, 700));
+              }
             }
-            soundEffects.playPaperCut();
-            if (c < copies - 1) {
-              await new Promise((r) => setTimeout(r, 700));
-            }
+            writer.releaseLock();
+            this.clearPrinterError();
+            onProgress?.(100, 'Print complete!');
+            return { success: true, previewDataUrl: hdPreviewUrl };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const errCat = this.recordFailureStatus(`USB-Serial print failed: ${msg}`);
+            return {
+              success: false,
+              previewDataUrl: hdPreviewUrl,
+              error: `USB-Serial print failed: ${msg}`,
+              errorCategory: errCat,
+            };
           }
-          this.clearPrinterError();
-          onProgress?.(100, 'Print complete!');
-          return { success: true, previewDataUrl: hdPreviewUrl };
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const errCat = this.recordFailureStatus(`USB print failed: ${msg}`);
-          return {
-            success: false,
-            previewDataUrl: hdPreviewUrl,
-            error: `USB print failed: ${msg}`,
-            errorCategory: errCat,
-          };
         }
+        const serialMissingMsg = 'USB-Serial printer port is disconnected. Check the USB cable and tap Check Connection.';
+        const errCat = this.recordFailureStatus(serialMissingMsg);
+        return {
+          success: false,
+          previewDataUrl: hdPreviewUrl,
+          error: serialMissingMsg,
+          errorCategory: errCat,
+        };
       }
 
-      const usbMissingMsg =
-        'No USB printer connected. Check the USB / OTG cable or tap "Check Connection" to reconnect.';
-      const errCat = this.recordFailureStatus(usbMissingMsg);
-      return {
-        success: false,
-        previewDataUrl: hdPreviewUrl,
-        error: usbMissingMsg,
-        errorCategory: errCat,
-      };
-    }
-
-    // 3. USB-Serial Cord Flow (Web Serial API) — Continuous Stream with 0ms Delay
-    if (mode === 'serial') {
-      if (!this.serialPort || !this.serialPort.writable) {
-        await this.reconnectRememberedSerial();
-      }
-      if (this.serialPort && this.serialPort.writable) {
-        try {
-          const writer = this.serialPort.writable.getWriter();
-          for (let c = 0; c < copies; c++) {
-            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
-            onProgress?.(60, `Writing continuously to Serial USB${copyLabel}...`);
-            for (let p = 0; p < usbBulkChunks.length; p++) {
-              await this.withTransferTimeout(
-                writer.write(usbBulkChunks[p]),
-                4500,
-                'Serial printer buffer stalled mid-feed (possible paper jam or cover open).'
-              );
-            }
-            soundEffects.playPaperCut();
-            if (c < copies - 1) {
-              await new Promise((r) => setTimeout(r, 700));
-            }
-          }
-          writer.releaseLock();
-          this.clearPrinterError();
-          onProgress?.(100, 'Print complete!');
-          return { success: true, previewDataUrl: hdPreviewUrl };
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const errCat = this.recordFailureStatus(`USB-Serial print failed: ${msg}`);
-          return {
-            success: false,
-            previewDataUrl: hdPreviewUrl,
-            error: `USB-Serial print failed: ${msg}`,
-            errorCategory: errCat,
-          };
-        }
-      }
-      const serialMissingMsg = 'USB-Serial printer port is disconnected. Check the USB cable and tap Check Connection.';
-      const errCat = this.recordFailureStatus(serialMissingMsg);
-      return {
-        success: false,
-        previewDataUrl: hdPreviewUrl,
-        error: serialMissingMsg,
-        errorCategory: errCat,
-      };
-    }
-
-    // 4. Wireless Bluetooth Flow (Native Android Classic SPP OR Web Bluetooth BLE) — Continuous Stream with 0ms Delay
-    if (mode === 'bluetooth') {
-      this.isPrintingBusy = true;
-      try {
+      // 4. Wireless Bluetooth Flow (Native Android Classic SPP OR Web Bluetooth BLE) — Single Uninterrupted Continuous Stream
+      if (mode === 'bluetooth') {
         if (
           typeof window !== 'undefined' &&
           window.AndroidPrinter?.printBluetoothBase64
@@ -2810,15 +2865,15 @@ class ThermalPrinterService {
                 throw new Error(connRes.replace(/^(ERR:|FALLBACK:)/, ''));
               }
             }
+            // Pre-encode the entire receipt stream ONCE and send in a single native BluetoothSocket write call per copy
+            // so the printer stepper motor never pauses between 8KB JS-to-Java IPC chunks!
+            const fullReceiptB64 = uint8ToBase64(escposBytes);
             for (let c = 0; c < copies; c++) {
               const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
               onProgress?.(60, `Transmitting continuously via Bluetooth SPP${copyLabel}...`);
-              for (let p = 0; p < androidChunks.length; p++) {
-                const b64 = uint8ToBase64(androidChunks[p]);
-                const res = window.AndroidPrinter.printBluetoothBase64(b64);
-                if (!res || !res.startsWith('OK')) {
-                  throw new Error((res || 'Bluetooth SPP print failed').replace(/^(ERR:|FALLBACK:)/, ''));
-                }
+              const res = window.AndroidPrinter.printBluetoothBase64(fullReceiptB64);
+              if (!res || !res.startsWith('OK')) {
+                throw new Error((res || 'Bluetooth SPP print failed').replace(/^(ERR:|FALLBACK:)/, ''));
               }
               soundEffects.playPaperCut();
               if (c < copies - 1) {
@@ -2850,7 +2905,7 @@ class ThermalPrinterService {
 
         if (this.bluetoothCharacteristic) {
           try {
-            this.bleMaxChunkBytes = 512;
+            this.bleMaxChunkBytes = 504;
 
             for (let c = 0; c < copies; c++) {
               const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
@@ -2858,7 +2913,7 @@ class ThermalPrinterService {
               try {
                 await this.withTransferTimeout(
                   this.writeBleChunkSafe(this.bluetoothCharacteristic!, escposBytes),
-                  14000,
+                  18000,
                   'Bluetooth printer stream stalled mid-feed (possible paper jam, cover open, or printer powered off).'
                 );
               } catch {
@@ -2869,7 +2924,7 @@ class ThermalPrinterService {
                 }
                 await this.withTransferTimeout(
                   this.writeBleChunkSafe(this.bluetoothCharacteristic, escposBytes),
-                  14000,
+                  18000,
                   'Bluetooth printer stream stalled mid-feed (possible paper jam, cover open, or printer powered off).'
                 );
               }
@@ -2902,10 +2957,7 @@ class ThermalPrinterService {
           error: btMissingMsg,
           errorCategory: errCat,
         };
-      } finally {
-        this.isPrintingBusy = false;
       }
-    }
 
     // 5. Wireless Wi-Fi / LAN Network Printer Flow (Port 9100 Raw TCP / WebSocket / HTTP)
     if (mode === 'network') {
@@ -2986,18 +3038,21 @@ class ThermalPrinterService {
       }
     }
 
-    // 6. Virtual Simulator Flow
-    onProgress?.(60, copies > 1 ? `Simulating ${copies} thermal print copies...` : 'Simulating thermal print head feed...');
-    await new Promise((r) => setTimeout(r, 700));
-    onProgress?.(85, 'Cutting thermal paper strip...');
-    soundEffects.playPaperCut();
-    await new Promise((r) => setTimeout(r, 400));
-    onProgress?.(100, 'Thermal strip ready!');
+      // 6. Virtual Simulator Flow
+      onProgress?.(60, copies > 1 ? `Simulating ${copies} thermal print copies...` : 'Simulating thermal print head feed...');
+      await new Promise((r) => setTimeout(r, 700));
+      onProgress?.(85, 'Cutting thermal paper strip...');
+      soundEffects.playPaperCut();
+      await new Promise((r) => setTimeout(r, 400));
+      onProgress?.(100, 'Thermal strip ready!');
 
-    return {
-      success: true,
-      previewDataUrl: hdPreviewUrl,
-    };
+      return {
+        success: true,
+        previewDataUrl: hdPreviewUrl,
+      };
+    } finally {
+      this.isPrintingBusy = false;
+    }
   }
 }
 

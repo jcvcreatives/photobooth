@@ -426,7 +426,7 @@
 }
 
 .animate-thermalFeed {
-  animation: thermalFeedDownToBottomSlot 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: thermalFeedDownToBottomSlot 2.6s linear forwards;
   will-change: transform;
   backface-visibility: hidden;
   transform: translateZ(0);
@@ -436,10 +436,10 @@
   animation: thermalSlotPulse 1.8s infinite ease-in-out;
 }
 
-/* Full-Screen Big Receipt Printout Sliding Downward Into Bottom Printer Slot Below Tablet (Pure 60fps GPU Glide) */
+/* Full-Screen Big Receipt Printout Sliding Downward Into Bottom Printer Slot Below Tablet (Continuous Constant-Speed Stepper Feed) */
 @keyframes bigReceiptSlideDownBelow {
   0% {
-    transform: translate3d(0, -28%, 0);
+    transform: translate3d(0, -32%, 0);
   }
   100% {
     transform: translate3d(0, 56%, 0);
@@ -458,7 +458,7 @@
 }
 
 .animate-big-receipt-slide-below {
-  animation: bigReceiptSlideDownBelow 3.0s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: bigReceiptSlideDownBelow 2.9s linear forwards;
   will-change: transform;
   backface-visibility: hidden;
   perspective: 1000px;
