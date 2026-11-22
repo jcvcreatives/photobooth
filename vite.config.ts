@@ -280,6 +280,7 @@ export default defineConfig(() => {
       android7CompatPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: null,
         includeAssets: [
           'icon.svg',
           'apple-touch-icon.png',

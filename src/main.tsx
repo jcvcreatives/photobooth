@@ -39,21 +39,97 @@ try {
   // Ignore
 }
 
+const OFFLINE_CACHE_NAME = 'jcv-kiosk-offline-v30';
+
 export async function warmKioskOfflineCache(): Promise<number> {
-  return 0;
+  if (typeof window === 'undefined' || !('caches' in window)) return 0;
+  if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') {
+    // Native Android file:// APK already has all HTML/CSS/JS/images embedded locally inside the APK
+    window.dispatchEvent(new Event('jcv-offline-ready'));
+    return 1;
+  }
+
+  try {
+    const cache = await window.caches.open(OFFLINE_CACHE_NAME);
+    const urlsToCache = new Set<string>([
+      '/',
+      './',
+      './index.html',
+      window.location.href.split('#')[0],
+      './manifest.webmanifest',
+      './icon.svg',
+      './apple-touch-icon.png',
+      './pwa-192x192.png',
+      './pwa-512x512.png',
+      './pwa-maskable-512x512.png',
+      './assets/aistudio/01_shredded_beef_and_egg_883d5ffc.png',
+      './assets/aistudio/02_tapa_and_garlic_rice_77785a88.png',
+      './assets/aistudio/03_hotdogs_and_scrambled_egg_28f526aa.png',
+      './assets/aistudio/05_diced_hotdogs_and_egg_44d5a234.png',
+      './assets/aistudio/06_beef_and_egg_rice_062af470.png',
+      './assets/aistudio/07_luncheon_meat_rice_8770438d.png',
+      './assets/aistudio/08_beef_and_scrambled_egg_177c915a.png',
+      './assets/aistudio/09_creamy_chicken_and_egg_rice_bfe9e7b2.png',
+    ]);
+
+    if (typeof document !== 'undefined') {
+      document
+        .querySelectorAll<HTMLScriptElement>('script[src]')
+        .forEach((el) => el.src && urlsToCache.add(el.src));
+      document
+        .querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href], link[rel="manifest"][href]')
+        .forEach((el) => el.href && urlsToCache.add(el.href));
+      document
+        .querySelectorAll<HTMLImageElement>('img[src]')
+        .forEach((el) => el.src && !el.src.startsWith('data:') && urlsToCache.add(el.src));
+    }
+
+    let cachedCount = 0;
+    await Promise.all(
+      Array.from(urlsToCache).map(async (url) => {
+        try {
+          const res = await fetch(url, { credentials: 'same-origin' });
+          if (res && (res.ok || res.type === 'opaque')) {
+            await cache.put(url, res);
+            cachedCount++;
+          }
+        } catch {
+          // Ignore individual offline or cross-origin asset errors
+        }
+      })
+    );
+
+    if (cachedCount > 0) {
+      window.dispatchEvent(new Event('jcv-offline-ready'));
+    }
+    return cachedCount;
+  } catch {
+    return 0;
+  }
 }
 
-// Clean up any stale service workers in dev/preview mode so fresh code always runs without freezing
+// Register offline Service Worker on http/https so the installed app/WebAPK launches 100% offline after force-close
 try {
-  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      for (const reg of registrations) {
-        reg.unregister().catch(() => {});
-      }
-    }).catch(() => {});
+  if (
+    typeof window !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    (window.location.protocol === 'https:' || window.location.protocol === 'http:')
+  ) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('./sw.js', { scope: './' })
+        .then(() => {
+          if (navigator.onLine) {
+            window.setTimeout(() => {
+              warmKioskOfflineCache().catch(() => {});
+            }, 1200);
+          }
+        })
+        .catch(() => {});
+    });
   }
 } catch {
-  // Ignore
+  // Ignore in restricted WebViews
 }
 
 

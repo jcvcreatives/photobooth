@@ -925,7 +925,6 @@ function buildClassesDex() {
     ...opMoveResultObj(0),
     ...opConst16(1, 0x0480), // FLAG_FULLSCREEN | FLAG_KEEP_SCREEN_ON
     ...opInvokeVirtual(M_WIN_SET_FLAGS, [0, 1, 1]),
-    ...opInvokeVirtual(M_MAIN_HIDE_SYS_UI, [6]),
     // Create and mount WebView FIRST with warm cream (#faf8f5) background before permission checks
     // so cold start renders immediately without a multi-second black/white flash.
     ...opNewInstance(0, T_WV),
@@ -1350,8 +1349,10 @@ function buildClassesDex() {
       ...opMoveResult(3),
       opIfNez(3, 'bt_connected_ok'),
       opGoto('bt_pass1_loop'),
-      // Pass 2: Try connecting RFCOMM socket to any bonded device
+      // Pass 2: Only try connecting RFCOMM socket to other bonded devices if Pass 1 did not already match a printer
       label('bt_pass2_start'),
+      ...opIgetObj(2, 6, F_BR_BT),
+      opIfNez(2, 'bt_no_live_sock'),
       ...opInvokeInterface(M_SET_ITER, [0]),
       ...opMoveResultObj(1), // v1 = Iterator
       label('bt_pass2_loop'),
@@ -2083,7 +2084,16 @@ function collectWebAssets(dir, prefix = 'assets/www') {
   const results = [];
   if (!fs.existsSync(dir)) return results;
   for (const item of fs.readdirSync(dir)) {
-    if (isUnusedChatAttachment(item) || item === 'downloads' || item.toLowerCase().endsWith('.apk')) continue;
+    if (
+      isUnusedChatAttachment(item) ||
+      item === 'downloads' ||
+      item === 'sw.js' ||
+      item === 'registerSW.js' ||
+      item.startsWith('workbox-') ||
+      item.toLowerCase().endsWith('.apk')
+    ) {
+      continue;
+    }
     const fullPath = path.join(dir, item);
     const relPath = `${prefix}/${item}`;
     const stat = fs.statSync(fullPath);
@@ -2091,12 +2101,55 @@ function collectWebAssets(dir, prefix = 'assets/www') {
       results.push(...collectWebAssets(fullPath, relPath));
     } else {
       const ext = path.extname(item).toLowerCase();
-      // Store web assets uncompressed so Android WebView directly memory-maps (mmap) HTML/JS/CSS on cold launch with zero inflate delay
-      const storeUncompressed = ['.html', '.js', '.css', '.json', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.woff2'].includes(ext);
+      // Skip external .js and .css bundle files inside assets/www/assets/ because they are inlined directly into assets/www/index.html
+      if (prefix.startsWith('assets/www/assets') && (ext === '.js' || ext === '.css')) {
+        continue;
+      }
+      const alreadyCompressed = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.woff2'].includes(ext);
+      let rawData = fs.readFileSync(fullPath);
+
+      // For the root index.html inside the APK, inline the compiled CSS and JS bundles directly into index.html
+      // so file:///android_asset/www/index.html is 100% self-contained and boots offline with zero external script/style requests.
+      if (relPath === 'assets/www/index.html') {
+        let html = rawData.toString('utf8');
+        const assetsSubdir = path.join(dir, 'assets');
+        if (fs.existsSync(assetsSubdir)) {
+          const assetFiles = fs.readdirSync(assetsSubdir);
+          const cssFile = assetFiles.find((f) => f.endsWith('.css'));
+          const jsFile = assetFiles.find((f) => f.endsWith('.js'));
+          if (cssFile) {
+            const cssContent = fs.readFileSync(path.join(assetsSubdir, cssFile), 'utf8');
+            html = html.replace(
+              /<link\s+rel="stylesheet"[^>]*href="[^"]*assets\/[^"]+\.css"[^>]*>/i,
+              () => `<style>${cssContent}</style>`
+            );
+          }
+          if (jsFile) {
+            const jsContent = fs
+              .readFileSync(path.join(assetsSubdir, jsFile), 'utf8')
+              .replace(/<\/script/gi, '<\\/script');
+            // Remove external script tag from head and inject inline script at end of body
+            html = html.replace(
+              /<script[^>]*src="[^"]*assets\/[^"]+\.js"[^>]*><\/script>/i,
+              ''
+            );
+            html = html.replace(
+              /<\/body>/i,
+              () => `<script>${jsContent}</script></body>`
+            );
+          }
+        }
+        // Strip any service worker or webmanifest tags not applicable to file:// APK
+        html = html
+          .replace(/<script[^>]*src="[^"]*registerSW\.js"[^>]*><\/script>/gi, '')
+          .replace(/<link[^>]*rel="manifest"[^>]*>/gi, '');
+        rawData = Buffer.from(html, 'utf8');
+      }
+
       results.push({
         name: relPath,
-        rawData: fs.readFileSync(fullPath),
-        storeUncompressed,
+        rawData,
+        storeUncompressed: alreadyCompressed,
       });
     }
   }
@@ -2119,8 +2172,7 @@ async function buildApk() {
     // Android 11+ (targetSdkVersion >= 30) REQUIRES resources.arsc to be stored UNCOMPRESSED and 4-byte aligned!
     { name: 'resources.arsc', rawData: resourcesArsc, storeUncompressed: true },
     { name: 'res/drawable/ic_launcher.png', rawData: iconPng, storeUncompressed: true },
-    // Store classes.dex uncompressed and 4-byte aligned so Android ART directly mmaps DEX without extraction delay on cold start
-    { name: 'classes.dex', rawData: classesDex, storeUncompressed: true },
+    { name: 'classes.dex', rawData: classesDex, storeUncompressed: false },
     ...collectWebAssets(distDir, 'assets/www'),
   ];
 
