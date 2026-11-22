@@ -4,11 +4,9 @@
  * and the app has been force-closed in Android Recents.
  */
 
-const CACHE_NAME = 'jcv-kiosk-offline-v30';
+const CACHE_NAME = 'jcv-kiosk-offline-v31';
 
 const CORE_PRECACHE_URLS = [
-  '/',
-  '/index.html',
   '/icon.svg',
   '/apple-touch-icon.png',
   '/pwa-192x192.png',
@@ -43,7 +41,24 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys.map((key) => {
+            if (key !== CACHE_NAME && key.startsWith('jcv-kiosk-offline-')) {
+              return caches.delete(key);
+            }
+            return Promise.resolve(false);
+          })
+        );
+      } catch {
+        // Ignore
+      }
+      await self.clients.claim();
+    })()
+  );
 });
 
 async function matchAnyCache(request) {
@@ -69,7 +84,10 @@ self.addEventListener('fetch', (event) => {
   if (
     url.pathname.toLowerCase().endsWith('.apk') ||
     url.pathname.startsWith('/downloads/') ||
-    url.pathname.startsWith('/api/')
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/@vite/') ||
+    url.pathname.startsWith('/@react-refresh') ||
+    url.pathname.startsWith('/@fs/')
   ) {
     return;
   }
@@ -82,7 +100,7 @@ self.addEventListener('fetch', (event) => {
         if (!isOffline) {
           try {
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 2500);
+            const timer = setTimeout(() => controller.abort(), 3000);
             const networkRes = await fetch(req, { signal: controller.signal });
             clearTimeout(timer);
             if (networkRes && networkRes.ok) {
@@ -109,7 +127,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Static & module assets (JS, TSX, CSS, images, fonts)
+  // 2. Static & module assets (JS, CSS, images, fonts)
   event.respondWith(
     (async () => {
       const isOffline = self.navigator && self.navigator.onLine === false;
@@ -118,28 +136,18 @@ self.addEventListener('fetch', (event) => {
         if (cached) return cached;
       }
 
-      const cached = await matchAnyCache(req);
-      const fetchPromise = fetch(req)
-        .then(async (networkRes) => {
-          if (networkRes && (networkRes.ok || networkRes.type === 'opaque')) {
-            const cache = await caches.open(CACHE_NAME);
-            cache.put(req, networkRes.clone()).catch(() => {});
-          }
-          return networkRes;
-        })
-        .catch(() => null);
-
-      if (cached) {
-        return cached;
+      try {
+        const networkRes = await fetch(req);
+        if (networkRes && (networkRes.ok || networkRes.type === 'opaque')) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(req, networkRes.clone()).catch(() => {});
+        }
+        return networkRes;
+      } catch {
+        const fallback = await matchAnyCache(req);
+        if (fallback) return fallback;
+        return new Response('', { status: 504, statusText: 'Offline' });
       }
-
-      const netRes = await fetchPromise;
-      if (netRes) return netRes;
-
-      const fallback = await matchAnyCache(req);
-      if (fallback) return fallback;
-
-      return new Response('', { status: 504, statusText: 'Offline' });
     })()
   );
 });

@@ -175,6 +175,7 @@ function unwrapAtBlocks(css: string, prefixRegex: RegExp): string {
 function android7CompatPlugin(): Plugin {
   return {
     name: 'android7-compat-plugin',
+    apply: 'build',
     enforce: 'post',
     generateBundle(_options, bundle) {
       for (const [fileName, chunkOrAsset] of Object.entries(bundle)) {

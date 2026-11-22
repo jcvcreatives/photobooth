@@ -39,7 +39,16 @@ try {
   // Ignore
 }
 
-const OFFLINE_CACHE_NAME = 'jcv-kiosk-offline-v30';
+const OFFLINE_CACHE_NAME = 'jcv-kiosk-offline-v31';
+
+// Immediately purge any stale v30 cache that may have stored dev-mode HTML without type="module"
+try {
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    window.caches.delete('jcv-kiosk-offline-v30').catch(() => {});
+  }
+} catch {
+  // Ignore
+}
 
 export async function warmKioskOfflineCache(): Promise<number> {
   if (typeof window === 'undefined' || !('caches' in window)) return 0;
@@ -75,7 +84,11 @@ export async function warmKioskOfflineCache(): Promise<number> {
     if (typeof document !== 'undefined') {
       document
         .querySelectorAll<HTMLScriptElement>('script[src]')
-        .forEach((el) => el.src && urlsToCache.add(el.src));
+        .forEach((el) => {
+          if (el.src && !el.src.includes('/@vite/') && !el.src.includes('/src/')) {
+            urlsToCache.add(el.src);
+          }
+        });
       document
         .querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href], link[rel="manifest"][href]')
         .forEach((el) => el.href && urlsToCache.add(el.href));
@@ -118,7 +131,8 @@ try {
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register('./sw.js', { scope: './' })
-        .then(() => {
+        .then((reg) => {
+          reg.update().catch(() => {});
           if (navigator.onLine) {
             window.setTimeout(() => {
               warmKioskOfflineCache().catch(() => {});
